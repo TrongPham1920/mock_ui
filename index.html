@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="RideOps - Hệ thống điều hành xe công nghệ">
+  <title>RideOps - Hệ Thống Điều Hành</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-logo">
+          <div class="sidebar-logo-icon">🚗</div>
+          <div class="sidebar-logo-text">
+            <h1>RideOps</h1>
+            <span id="current-role">Admin</span>
+          </div>
+        </div>
+      </div>
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <!-- Role selector -->
+        <div class="role-selector" style="padding:12px;border-bottom:1px solid var(--border-color)">
+          <label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:6px">Đăng nhập với vai trò:</label>
+          <select class="input" id="role-select" onchange="switchRole(this.value)" style="width:100%">
+            <option value="ADMIN">👑 Quản trị viên</option>
+            <option value="OPERATOR">📡 Điều hành</option>
+            <option value="AGENT">💼 Đại lý</option>
+            <option value="FINANCE">💰 Tài chính</option>
+            <option value="VIEWER">👁️ Người xem</option>
+          </select>
+        </div>
+
+        <div class="nav-section-title">Tổng quan</div>
+        <div class="nav-item active" data-page="dashboard" data-roles="ADMIN,OPERATOR,AGENT,FINANCE,VIEWER" onclick="navigateTo('dashboard')">
+          <span class="nav-item-icon">📊</span> Tổng quan
+        </div>
+
+        <div class="nav-section-title" data-perm="user.manage">Quản lý người dùng</div>
+        <div class="nav-item" data-page="users" data-roles="ADMIN" data-perm="user.manage" onclick="navigateTo('users')">
+          <span class="nav-item-icon">👥</span> Người dùng & Vai trò
+        </div>
+
+        <div class="nav-section-title" data-perm="master.view">Dữ liệu vận tải</div>
+        <div class="nav-item" data-page="routes" data-roles="ADMIN,OPERATOR" data-perm="master.view,master.manage" onclick="navigateTo('routes')">
+          <span class="nav-item-icon">🗺️</span> Tuyến & Lịch chạy
+        </div>
+        <div class="nav-item" data-page="partners" data-roles="ADMIN,OPERATOR,AGENT" data-perm="partner.view,partner.manage,driver.view,driver.manage" onclick="navigateTo('partners')">
+          <span class="nav-item-icon">🤝</span> Nhà xe & Tài xế
+        </div>
+
+        <div class="nav-section-title" data-perm="booking.view">Vận hành</div>
+        <div class="nav-item" data-page="bookings" data-roles="ADMIN,OPERATOR,AGENT,FINANCE,VIEWER" data-perm="booking.view" onclick="navigateTo('bookings')">
+          <span class="nav-item-icon">📋</span> Giám sát đơn hàng
+          <span class="nav-item-badge" id="pending-badge">4</span>
+        </div>
+        <div class="nav-item" data-page="fulfillment" data-roles="ADMIN,OPERATOR" data-perm="fulfillment.view,fulfillment.manage" onclick="navigateTo('fulfillment')">
+          <span class="nav-item-icon">📡</span> Nhiệm vụ phân công
+        </div>
+        <div class="nav-item" data-page="intercity" data-roles="ADMIN,OPERATOR,AGENT" data-perm="booking.create,booking.view" onclick="navigateTo('intercity')">
+          <span class="nav-item-icon">🚌</span> Đặt vé
+        </div>
+
+        <div class="nav-section-title" data-perm="wallet.view">Tài chính</div>
+        <div class="nav-item" data-page="wallets" data-roles="ADMIN,OPERATOR,FINANCE" data-perm="wallet.view" onclick="navigateTo('wallets')">
+          <span class="nav-item-icon">💰</span> Ví & Thanh toán
+        </div>
+        <div class="nav-item" data-page="refunds" data-roles="ADMIN,OPERATOR,FINANCE" data-perm="refund.view,refund.process" onclick="navigateTo('refunds')">
+          <span class="nav-item-icon">↩️</span> Hoàn tiền
+          <span class="nav-item-badge" id="refund-badge" style="background:var(--warning)">1</span>
+        </div>
+        <div class="nav-item" data-page="promos" data-roles="ADMIN,OPERATOR" data-perm="promo.manage" onclick="navigateTo('promos')">
+          <span class="nav-item-icon">🎫</span> Mã ưu đãi
+        </div>
+        <div class="nav-item" data-page="commissions" data-roles="ADMIN,FINANCE" data-perm="commission.view,commission.manage" onclick="navigateTo('commissions')">
+          <span class="nav-item-icon">📈</span> Chiết khấu
+        </div>
+
+        <div class="nav-section-title" data-perm="notification.view">Hệ thống</div>
+        <div class="nav-item" data-page="notifications" data-roles="ADMIN,OPERATOR" data-perm="notification.view" onclick="navigateTo('notifications')">
+          <span class="nav-item-icon">🔔</span> Thông báo
+        </div>
+        <div class="nav-item" data-page="audit" data-roles="ADMIN,FINANCE" data-perm="audit.view" onclick="navigateTo('audit')">
+          <span class="nav-item-icon">📜</span> Nhật ký hoạt động
+        </div>
+        <div class="nav-item" data-page="monitoring" data-roles="ADMIN,OPERATOR,VIEWER" data-perm="system.view" onclick="navigateTo('monitoring')">
+          <span class="nav-item-icon">🖥️</span> Giám sát hệ thống
+        </div>
+      </nav>
+    </aside>
+
+    <!-- ========== MAIN CONTENT ========== -->
+    <main class="main-content">
+      <header class="header">
+        <div class="header-left">
+          <button class="header-btn" id="menu-toggle" onclick="toggleSidebar()" style="display:none">☰</button>
+          <h2 class="header-title" id="page-title">Tổng quan</h2>
+        </div>
+        <div class="header-right">
+          <span class="header-time" id="header-time"></span>
+          <div class="user-info" id="user-info" style="display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--text-muted)">👤 <span id="current-user-name">Nguyễn Admin</span></span>
+          </div>
+          <button class="header-btn" onclick="navigateTo('notifications')">🔔</button>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <!-- ===== DASHBOARD ===== -->
+        <div class="page active" id="page-dashboard">
+          <div class="stats-grid" id="dashboard-stats"></div>
+          <div class="dashboard-grid">
+            <div>
+              <div class="chart-container">
+                <div class="chart-title">Booking theo giờ (Hôm nay)</div>
+                <div class="mini-chart" id="hourly-chart"></div>
+                <div class="chart-labels" id="hourly-labels"></div>
+              </div>
+              <div class="table-container">
+                <div class="table-header"><span class="table-title">Đơn gần đây</span></div>
+                <div class="recent-trips-list" id="recent-bookings"></div>
+              </div>
+            </div>
+            <div>
+              <div class="table-container" style="margin-bottom:16px">
+                <div class="table-header"><span class="table-title">Trạng thái dịch vụ</span></div>
+                <div id="service-health-mini" style="padding:8px"></div>
+              </div>
+              <div class="table-container">
+                <div class="table-header"><span class="table-title">Tài xế online</span><span class="badge badge-online" id="online-count"></span></div>
+                <div class="dispatch-list" id="online-drivers-dash"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== USERS ===== -->
+        <div class="page" id="page-users">
+          <div class="tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-tab="users" onclick="switchUserTab('users', this)">👥 Danh sách người dùng</button>
+            <button class="tab-btn" data-tab="roles" onclick="switchUserTab('roles', this)">🔐 Vai trò & Quyền</button>
+          </div>
+
+          <!-- Users Tab -->
+          <div id="users-tab-users">
+            <div class="stats-grid" id="user-stats"></div>
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Danh sách người dùng</span>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openModal('user-create-modal')">➕ Thêm user</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Đăng nhập cuối</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="users-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Roles Tab -->
+          <div id="users-tab-roles" style="display:none">
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Vai trò & Quyền hạn</span>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openModal('role-create-modal')">➕ Tạo vai trò</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Vai trò</th><th>Mã</th><th>Quyền hạn</th><th>Người dùng</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="roles-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== ROUTES ===== -->
+        <div class="page" id="page-routes">
+          <div class="tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-tab="schedules" onclick="switchRouteTab('schedules', this)">📅 Lịch chạy</button>
+            <button class="tab-btn" data-tab="routes" onclick="switchRouteTab('routes', this)">🗺️ Tuyến đường</button>
+            <button class="tab-btn" data-tab="seats" onclick="switchRouteTab('seats', this)">💺 Ghế</button>
+          </div>
+
+          <!-- Schedules Tab (Default) -->
+          <div id="routes-tab-schedules">
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Lịch chạy</span>
+                <div class="table-actions"><button class="btn btn-sm btn-primary" onclick="openModal('schedule-create-modal')">➕ Thêm lịch</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tuyến</th><th>Nhà xe</th><th>Giờ đi</th><th>Giờ đến</th><th>Loại xe</th><th>Ngày chạy</th><th>Thao tác</th></tr></thead>
+                <tbody id="schedules-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Routes Tab -->
+          <div id="routes-tab-routes" style="display:none">
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Tuyến đường</span>
+                <div class="table-actions"><button class="btn btn-primary">➕ Thêm tuyến</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tuyến</th><th>Khoảng cách</th><th>Thời gian</th><th>Điểm dừng</th><th>Nhà xe</th><th>Trạng thái</th></tr></thead>
+                <tbody id="routes-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Seats Tab -->
+          <div id="routes-tab-seats" style="display:none">
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Sơ đồ ghế</span>
+                <div class="table-actions"><button class="btn btn-primary">➕ Thêm ghế</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tên</th><th>Loại</th><th>Tổng ghế</th></tr></thead>
+                <tbody id="seats-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== PARTNERS & DRIVERS ===== -->
+        <div class="page" id="page-partners">
+          <div class="tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-tab="partners" onclick="switchPartnerTab('partners', this)">🏢 Nhà xe</button>
+            <button class="tab-btn" data-tab="drivers" onclick="switchPartnerTab('drivers', this)">🏍️ 🚗 Tài xế (Bike/Car)</button>
+            <button class="tab-btn" data-tab="intercity-drivers" onclick="switchPartnerTab('intercity-drivers', this)">🧑‍✈️ Tài xế liên tỉnh</button>
+            <button class="tab-btn" data-tab="intercity-vehicles" onclick="switchPartnerTab('intercity-vehicles', this)">🚐 Xe liên tỉnh</button>
+          </div>
+
+          <!-- Partners Tab -->
+          <div id="partners-tab-partners">
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Nhà xe Đối tác</span>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openModal('partner-modal')">➕ Thêm nhà xe</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tên nhà xe</th><th>Liên hệ</th><th>SĐT</th><th>Số xe</th><th>Số tài xế</th><th>Tuyến đường</th><th>Chiết khấu</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="partners-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Drivers Tab (Bike/Car only) -->
+          <div id="partners-tab-drivers" style="display:none">
+            <div class="stats-grid" id="driver-stats"></div>
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Tài xế Bike & Car</span>
+                <div class="table-actions">
+                  <select id="driver-status-filter" onchange="renderDrivers()"><option value="">Tất cả</option><option value="online">Online</option><option value="busy">Đang chạy</option><option value="offline">Offline</option></select>
+                  <div class="search-box"><input type="search" placeholder="Tìm tài xế..." id="driver-search" oninput="renderDrivers()"></div>
+                  <button class="btn btn-primary" onclick="openModal('driver-modal')">➕ Thêm tài xế</button>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tài xế</th><th>SĐT</th><th>Loại xe</th><th>Biển số</th><th>Nhà xe</th><th>Đánh giá</th><th>Hoàn thành</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="drivers-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Intercity Drivers Tab -->
+          <div id="partners-tab-intercity-drivers" style="display:none">
+            <div class="stats-grid" id="intercity-driver-stats"></div>
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Tài xế Liên tỉnh (phục vụ Intercity / Đăng kiểm / Bảo dưỡng)</span>
+                <div class="table-actions">
+                  <select id="intercity-driver-status-filter" onchange="renderIntercityDrivers()"><option value="">Tất cả</option><option value="online">Online</option><option value="busy">Đang chạy</option><option value="offline">Offline</option></select>
+                  <select id="intercity-driver-operator-filter" onchange="renderIntercityDrivers()"><option value="">Mọi nhà xe</option></select>
+                  <div class="search-box"><input type="search" placeholder="Tìm tài xế..." id="intercity-driver-search" oninput="renderIntercityDrivers()"></div>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tài xế</th><th>SĐT</th><th>Nhà xe quản lý</th><th>Hạng GPLX</th><th>Đánh giá</th><th>Chuyến đã chạy</th><th>Trạng thái</th><th>Đang gán</th><th>Thao tác</th></tr></thead>
+                <tbody id="intercity-drivers-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Intercity Vehicles Tab -->
+          <div id="partners-tab-intercity-vehicles" style="display:none">
+            <div class="stats-grid" id="intercity-vehicle-stats"></div>
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Xe Liên tỉnh (quản lý bởi nhà xe — không có tài xế cố định)</span>
+                <div class="table-actions">
+                  <select id="intercity-vehicle-status-filter" onchange="renderIntercityVehicles()"><option value="">Tất cả</option><option value="idle">Sẵn sàng</option><option value="busy">Đang chạy</option><option value="maintenance">Bảo dưỡng</option></select>
+                  <select id="intercity-vehicle-operator-filter" onchange="renderIntercityVehicles()"><option value="">Mọi nhà xe</option></select>
+                  <div class="search-box"><input type="search" placeholder="Tìm biển số..." id="intercity-vehicle-search" oninput="renderIntercityVehicles()"></div>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Biển số</th><th>Loại xe</th><th>Nhà xe quản lý</th><th>Số km</th><th>Trạng thái</th><th>Đang gán</th><th>Thao tác</th></tr></thead>
+                <tbody id="intercity-vehicles-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== BOOKINGS ===== -->
+        <div class="page" id="page-bookings">
+          <div class="tabs" id="booking-tabs">
+            <button class="tab-btn active" data-type="ALL" onclick="filterBookings('ALL')">Tất cả</button>
+            <button class="tab-btn" data-type="BIKE" onclick="filterBookings('BIKE')">🏍️ Xe máy</button>
+            <button class="tab-btn" data-type="CAR" onclick="filterBookings('CAR')">🚗 Xe hơi</button>
+            <button class="tab-btn" data-type="INTERCITY" onclick="filterBookings('INTERCITY')">🚌 Liên tỉnh</button>
+            <button class="tab-btn" data-type="SERVICE_ORDER" onclick="filterBookings('SERVICE_ORDER')">📋 Đăng kiểm</button>
+            <button class="tab-btn" data-type="MAINTENANCE_ORDER" onclick="filterBookings('MAINTENANCE_ORDER')">🔧 Bảo dưỡng</button>
+          </div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Booking Monitoring</span>
+              <div class="table-actions">
+                <select id="booking-status-filter" onchange="filterBookings()">
+                  <option value="">Tất cả trạng thái</option>
+                  <option value="DRAFT">Nháp</option>
+                  <option value="PENDING_CONFIRMATION">Chờ xác nhận</option>
+                  <option value="CONFIRMED">Đã xác nhận</option>
+                  <option value="IN_PROGRESS">Đang thực hiện</option>
+                  <option value="COMPLETED">Hoàn thành</option>
+                  <option value="CANCELLED">Đã hủy</option>
+                </select>
+                <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="booking-search" oninput="filterBookings()"></div>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>Mã booking</th><th>Loại</th><th>Khách hàng</th><th>Booking</th><th>Payment</th><th>Fulfillment</th><th>Điểm đón</th><th>Giá</th><th>Thời gian tạo</th><th>Thao tác</th></tr></thead>
+              <tbody id="bookings-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== FULFILLMENT ===== -->
+        <div class="page" id="page-fulfillment">
+          <div class="tabs" id="fulfillment-tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-ftab="all" onclick="switchFulfillmentTab('all', this)">Tất cả</button>
+            <button class="tab-btn" data-ftab="bikecar" onclick="switchFulfillmentTab('bikecar', this)">🏍️ 🚗 Bike & Car</button>
+            <button class="tab-btn" data-ftab="intercity" onclick="switchFulfillmentTab('intercity', this)">🚌 Liên tỉnh</button>
+            <button class="tab-btn" data-ftab="service" onclick="switchFulfillmentTab('service', this)">📋 Đăng kiểm</button>
+            <button class="tab-btn" data-ftab="maintenance" onclick="switchFulfillmentTab('maintenance', this)">🔧 Bảo dưỡng</button>
+          </div>
+
+          <div class="stats-grid" id="fulfillment-stats"></div>
+
+          <!-- 2-column view: chờ gán + TX sẵn sàng (cho all/bikecar/service/maintenance) -->
+          <div class="dispatch-grid" id="fulfillment-cards-default">
+            <div class="dispatch-card">
+              <div class="dispatch-card-header"><span class="dispatch-card-title">📍 Chờ gán tài xế</span><span class="badge badge-pending" id="dispatch-pending-count"></span></div>
+              <div class="dispatch-list" id="dispatch-pending-list"></div>
+            </div>
+            <div class="dispatch-card">
+              <div class="dispatch-card-header"><span class="dispatch-card-title">🟢 Tài xế sẵn sàng</span><span class="badge badge-online" id="dispatch-driver-count"></span></div>
+              <div class="dispatch-list" id="dispatch-driver-list"></div>
+            </div>
+          </div>
+
+          <!-- 3-column view: chờ phân công + xe + TX (chỉ tab liên tỉnh) -->
+          <div class="dispatch-grid" id="fulfillment-cards-intercity" style="display:none;grid-template-columns:1fr 1fr 1fr">
+            <div class="dispatch-card">
+              <div class="dispatch-card-header"><span class="dispatch-card-title">📍 Chờ phân công</span><span class="badge badge-pending" id="intercity-pending-count"></span></div>
+              <div class="dispatch-list" id="intercity-pending-list"></div>
+            </div>
+            <div class="dispatch-card">
+              <div class="dispatch-card-header"><span class="dispatch-card-title">🚐 Xe sẵn sàng</span><span class="badge badge-online" id="intercity-vehicle-count"></span></div>
+              <div class="dispatch-list" id="intercity-vehicle-list"></div>
+            </div>
+            <div class="dispatch-card">
+              <div class="dispatch-card-header"><span class="dispatch-card-title">🧑‍✈️ Tài xế sẵn sàng</span><span class="badge badge-online" id="intercity-driver-count"></span></div>
+              <div class="dispatch-list" id="intercity-driver-list"></div>
+            </div>
+          </div>
+
+          <div class="table-container mt-20">
+            <div class="table-header"><span class="table-title" id="fulfillment-table-title">Tất cả Fulfillment Tasks</span></div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>Task ID</th><th>Booking</th><th>Loại</th><th>Xe</th><th>Tài xế</th><th>Trạng thái</th><th>Gán lúc</th><th>Bắt đầu</th><th>Hoàn thành</th><th>Thao tác</th></tr></thead>
+              <tbody id="fulfillment-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== BOOKING TABS ===== -->
+        <div class="page" id="page-intercity">
+          <div class="tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-tab="intercity" onclick="switchBookingTab('intercity', this)">🚌 Đặt vé liên tỉnh</button>
+            <button class="tab-btn" data-tab="registration" onclick="switchBookingTab('registration', this)">📋 Đăng kiểm hộ</button>
+            <button class="tab-btn" data-tab="maintenance" onclick="switchBookingTab('maintenance', this)">🔧 Bảo dưỡng</button>
+          </div>
+
+          <!-- INTERCITY TAB -->
+          <div id="booking-tab-intercity">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <h3 style="margin:0">Danh sách chuyến xe</h3>
+                          </div>
+            <div class="intercity-search">
+              <div class="search-route">
+                <div class="route-input">
+                  <label>Điểm đi</label>
+                  <select class="input" id="intercity-origin"></select>
+                </div>
+                <button class="route-swap" onclick="swapRoute()">⇄</button>
+                <div class="route-input">
+                  <label>Điểm đến</label>
+                  <select class="input" id="intercity-destination"></select>
+                </div>
+              </div>
+              <div class="search-date-time">
+                <div class="input-group">
+                  <label>Ngày đi</label>
+                  <input type="date" class="input" id="intercity-date">
+                </div>
+                <div class="input-group">
+                  <label>Số khách</label>
+                  <select class="input" id="intercity-passengers">
+                    <option value="1">1 khách</option>
+                    <option value="2">2 khách</option>
+                    <option value="3">3 khách</option>
+                    <option value="4">4 khách</option>
+                    <option value="5">5 khách</option>
+                  </select>
+                </div>
+              </div>
+              <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="searchIntercityTrips()">🔍 Tìm chuyến</button>
+            </div>
+            <div class="search-results" id="intercity-results"></div>
+          </div>
+
+          <!-- REGISTRATION TAB -->
+          <div id="booking-tab-registration" style="display:none">
+            <div class="registration-form" style="max-width:800px">
+              <div class="form-header" style="margin-bottom:20px">
+                <h3 style="margin:0">📋 Tạo đơn đăng kiểm hộ</h3>
+              </div>
+              <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="reg-plate" placeholder="51A-123.45"></div>
+                <div class="input-group"><label>Loại xe *</label><select class="input" id="reg-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
+                <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="reg-owner-name" placeholder="Nguyễn Văn A"></div>
+                <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="reg-owner-phone" placeholder="0901234567"></div>
+                <div class="input-group"><label>Địa chỉ đăng ký *</label><input type="text" class="input" id="reg-address" placeholder="123 Lê Lợi, Q.1, TP.HCM"></div>
+                <div class="input-group"><label>Ngày hết hạn đăng kiểm</label><input type="date" class="input" id="reg-expire-date"></div>
+                <div class="input-group"><label>Trung tâm đăng kiểm *</label><select class="input" id="reg-center"><option value="">Chọn trung tâm</option><option value="50-05V">TTĐK 50-05V (Q.3, TP.HCM)</option><option value="50-06V">TTĐK 50-06V (Q.6, TP.HCM)</option><option value="50-07V">TTĐK 50-07V (Thủ Đức)</option><option value="50-08V">TTĐK 50-08V (Bình Thạnh)</option></select></div>
+                <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="reg-booking-date"></div>
+                <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="reg-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option></select></div>
+                <div class="input-group"><label>Dịch vụ đăng kiểm</label><select class="input" id="reg-service"><option value="normal">Đăng kiểm thường (350.000đ)</option><option value="express">Đăng kiểm nhanh (500.000đ)</option><option value="home">Đăng kiểm tại nhà (700.000đ)</option></select></div>
+                <div class="input-group full-width"><label>Ghi chú</label><textarea class="input" id="reg-notes" rows="2" placeholder="Yêu cầu thêm..."></textarea></div>
+              </div>
+              <div style="margin-top:20px;display:flex;gap:12px;justify-content:flex-end">
+                <button class="btn btn-outline" onclick="clearRegistrationForm()">Xóa</button>
+                <button class="btn btn-primary" onclick="createRegistrationOrder()">📋 Tạo đơn</button>
+              </div>
+            </div>
+
+            <div class="table-container" style="margin-top:30px">
+              <div class="table-header"><span class="table-title">Danh sách đăng kiểm hộ</span>
+                <div class="table-actions">
+                  <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="registration-search" oninput="renderRegistrations()"></div>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>Trung tâm</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="registrations-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- MAINTENANCE TAB -->
+          <div id="booking-tab-maintenance" style="display:none">
+            <div class="registration-form" style="max-width:800px">
+              <div class="form-header" style="margin-bottom:20px">
+                <h3 style="margin:0">🔧 Tạo đơn bảo dưỡng</h3>
+              </div>
+              <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="mnt-plate" placeholder="51A-123.45"></div>
+                <div class="input-group"><label>Loại xe *</label><select class="input" id="mnt-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
+                <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="mnt-owner-name" placeholder="Nguyễn Văn A"></div>
+                <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="mnt-owner-phone" placeholder="0901234567"></div>
+                <div class="input-group"><label>Địa chỉ *</label><input type="text" class="input" id="mnt-address" placeholder="123 Lê Lợi, Q.1, TP.HCM"></div>
+                <div class="input-group"><label>Số km hiện tại</label><input type="number" class="input" id="mnt-mileage" placeholder="50000"></div>
+                <div class="input-group"><label>Gara/Trung tâm *</label><select class="input" id="mnt-center"><option value="">Chọn gara</option><option value="GARA-A1">Gara A1 (Q.1)</option><option value="GARA-B2">Gara B2 (Q.3)</option><option value="GARA-C3">Gara C3 (Tân Bình)</option><option value="GARA-D4">Gara D4 (Q.7)</option><option value="GARA-E5">Gara E5 (Phú Nhuận)</option></select></div>
+                <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="mnt-booking-date"></div>
+                <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="mnt-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option><option value="15:00">15:00</option></select></div>
+                <div class="input-group"><label>Dịch vụ bảo dưỡng</label><select class="input" id="mnt-service"><option value="basic">Bảo dưỡng cơ bản (400.000đ)</option><option value="full">Bảo dưỡng toàn diện (1.200.000đ)</option><option value="oil_change">Thay nhớt (250.000đ)</option><option value="tire">Lốp + cân chỉnh (800.000đ)</option></select></div>
+                <div class="input-group full-width"><label>Ghi chú</label><textarea class="input" id="mnt-notes" rows="2" placeholder="Yêu cầu thêm..."></textarea></div>
+              </div>
+              <div style="margin-top:20px;display:flex;gap:12px;justify-content:flex-end">
+                <button class="btn btn-outline" onclick="clearMaintenanceForm()">Xóa</button>
+                <button class="btn btn-primary" onclick="createMaintenanceOrder()">🔧 Tạo đơn</button>
+              </div>
+            </div>
+
+            <div class="table-container" style="margin-top:30px">
+              <div class="table-header"><span class="table-title">Danh sách bảo dưỡng</span>
+                <div class="table-actions">
+                  <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="maintenance-search" oninput="renderMaintenance()"></div>
+                </div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>Gara</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="maintenance-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== WALLETS ===== -->
+        <div class="page" id="page-wallets">
+          <div class="wallet-summary" id="wallet-stats"></div>
+          <div class="table-container" style="margin-bottom:20px">
+            <div class="table-header"><span class="table-title">Danh sách Ví</span>
+              <div class="table-actions">
+                <select id="wallet-type-filter" onchange="renderWallets()"><option value="">Tất cả</option><option value="CUSTOMER">Khách hàng</option><option value="DRIVER">Tài xế</option><option value="PARTNER">Đối tác</option><option value="SYSTEM">Hệ thống</option></select>
+                <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="wallet-search" oninput="renderWallets()"></div>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>ID</th><th>Chủ ví</th><th>Loại chủ</th><th>Loại ví</th><th>Số dư</th><th>Tạm giữ</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+              <tbody id="wallets-table-body"></tbody></table>
+            </div>
+          </div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Giao dịch gần đây</span></div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>ID</th><th>Ví</th><th>Hướng</th><th>Loại</th><th>Số tiền</th><th>Số dư</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
+              <tbody id="transactions-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== REFUNDS ===== -->
+        <div class="page" id="page-refunds">
+          <div class="stats-grid" id="refund-stats"></div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Quản lý Refund</span></div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>ID</th><th>Booking</th><th>Khách hàng</th><th>Số tiền</th><th>Lý do</th><th>Phương thức</th><th>Xử lý bởi</th><th>Trạng thái</th><th>Tạo lúc</th><th>Thao tác</th></tr></thead>
+              <tbody id="refunds-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== PROMOS ===== -->
+        <div class="page" id="page-promos">
+          <div class="stats-grid" id="promo-stats"></div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Mã ưu đãi</span>
+              <div class="table-actions"><button class="btn btn-primary" onclick="openModal('promo-modal')">➕ Tạo mã mới</button></div>
+            </div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>Mã</th><th>Loại giảm</th><th>Giá trị</th><th>Giảm tối đa</th><th>Đơn tối thiểu</th><th>Loại xe</th><th>Đã dùng</th><th>Thời hạn</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+              <tbody id="promos-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== COMMISSIONS ===== -->
+        <div class="page" id="page-commissions">
+          <div class="commission-cards" id="commission-config"></div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Lịch sử chiết khấu</span></div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>ID</th><th>Booking</th><th>Tài xế</th><th>Loại xe</th><th>Giá chuyến</th><th>Tỉ lệ</th><th>Chiết khấu</th><th>Thời gian</th></tr></thead>
+              <tbody id="commission-history-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== NOTIFICATIONS ===== -->
+        <div class="page" id="page-notifications">
+          <div class="stats-grid" id="notification-stats"></div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Notification History</span></div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>ID</th><th>Loại</th><th>Channel</th><th>Người nhận</th><th>Nội dung</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
+              <tbody id="notifications-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== AUDIT ===== -->
+        <div class="page" id="page-audit">
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Nhật ký hoạt động</span>
+              <div class="table-actions">
+                <select id="audit-action-filter" onchange="renderAudit()">
+                  <option value="">Tất cả actions</option>
+                  <option value="booking">Booking</option>
+                  <option value="payment">Payment</option>
+                  <option value="fulfillment">Fulfillment</option>
+                  <option value="refund">Refund</option>
+                  <option value="wallet">Wallet</option>
+                  <option value="user">User</option>
+                </select>
+                <div class="search-box"><input type="search" placeholder="Tìm trace ID..." id="audit-search" oninput="renderAudit()"></div>
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>Thời gian</th><th>Thao tác</th><th>Người thực hiện</th><th>Vai trò</th><th>Đối tượng</th><th>Site</th><th>Trace ID</th><th>Trước → Sau</th></tr></thead>
+              <tbody id="audit-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== MONITORING ===== -->
+        <div class="page" id="page-monitoring">
+          <div class="stats-grid" id="monitoring-stats"></div>
+          <div class="table-container">
+            <div class="table-header"><span class="table-title">Trạng thái dịch vụ</span></div>
+            <div class="table-wrapper">
+              <table><thead><tr><th>Dịch vụ</th><th>Trạng thái</th><th>Thời gian hoạt động</th><th>Độ trễ</th><th>Tỷ lệ lỗi</th></tr></thead>
+              <tbody id="services-table-body"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ========== MODALS ========== -->
+  <div class="modal-overlay" id="dispatch-modal">
+    <div class="modal">
+      <div class="modal-header"><span class="modal-title">Gán tài xế</span><button class="modal-close" onclick="closeModal('dispatch-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="input-group mb-20"><label>Booking</label><div id="dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
+        <div class="input-group"><label>Chọn tài xế</label><select id="dispatch-driver-select" style="width:100%"></select></div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('dispatch-modal')">Hủy</button><button class="btn btn-primary" onclick="assignDriver()">Gán tài xế</button></div>
+    </div>
+  </div>
+
+  <!-- Intercity Dispatch Modal: chọn xe + tài xế độc lập -->
+  <div class="modal-overlay" id="intercity-dispatch-modal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><span class="modal-title">🚌 Phân công xe & tài xế (Liên tỉnh)</span><button class="modal-close" onclick="closeModal('intercity-dispatch-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="input-group mb-20"><label>Booking</label><div id="intercity-dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
+        <div class="input-group mb-20">
+          <label>1️⃣ Chọn xe (theo nhà xe + loại xe phù hợp)</label>
+          <select id="intercity-dispatch-vehicle-select" style="width:100%"></select>
+        </div>
+        <div class="input-group">
+          <label>2️⃣ Chọn tài xế (chỉ TX hạng INTERCITY đang online)</label>
+          <select id="intercity-dispatch-driver-select" style="width:100%"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('intercity-dispatch-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="assignIntercityDispatch()">Phân công</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="partner-modal">
+    <div class="modal">
+      <div class="modal-header"><span class="modal-title">Thêm đối tác mới</span><button class="modal-close" onclick="closeModal('partner-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="input-group full-width"><label>Tên nhà xe</label><input type="text" placeholder="VD: Nhà xe ABC"></div>
+          <div class="input-group"><label>Người liên hệ</label><input type="text" placeholder="Họ tên"></div>
+          <div class="input-group"><label>Số điện thoại</label><input type="text" placeholder="0xxx-xxx-xxx"></div>
+          <div class="input-group"><label>Số xe</label><input type="number" placeholder="0" min="0"></div>
+          <div class="input-group"><label>Chiết khấu (%)</label><input type="number" placeholder="15" min="0" max="100"></div>
+          <div class="input-group full-width"><label>Tuyến đường</label><input type="text" placeholder="HCM - Đà Lạt, HCM - Cần Thơ"></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('partner-modal')">Hủy</button><button class="btn btn-primary">Thêm đối tác</button></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="promo-modal">
+    <div class="modal">
+      <div class="modal-header"><span class="modal-title">Tạo mã ưu đãi mới</span><button class="modal-close" onclick="closeModal('promo-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="input-group"><label>Mã ưu đãi</label><input type="text" placeholder="VD: SALE30"></div>
+          <div class="input-group"><label>Loại giảm giá</label><select><option value="percent">Phần trăm (%)</option><option value="fixed">Số tiền cố định</option></select></div>
+          <div class="input-group"><label>Giá trị</label><input type="number" placeholder="30" min="0"></div>
+          <div class="input-group"><label>Giảm tối đa (đ)</label><input type="number" placeholder="50000" min="0"></div>
+          <div class="input-group"><label>Đơn tối thiểu (đ)</label><input type="number" placeholder="20000" min="0"></div>
+          <div class="input-group"><label>Số lần sử dụng</label><input type="number" placeholder="1000" min="1"></div>
+          <div class="input-group"><label>Bắt đầu</label><input type="date"></div>
+          <div class="input-group"><label>Kết thúc</label><input type="date"></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('promo-modal')">Hủy</button><button class="btn btn-primary">Tạo mã</button></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="driver-modal">
+    <div class="modal">
+      <div class="modal-header"><span class="modal-title">Thêm tài xế mới</span><button class="modal-close" onclick="closeModal('driver-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="input-group"><label>Họ tên</label><input type="text" id="driver-name" placeholder="Nguyễn Văn A"></div>
+          <div class="input-group"><label>Số điện thoại</label><input type="text" id="driver-phone" placeholder="090xxxxxxx"></div>
+          <div class="input-group"><label>Loại xe</label>
+            <select id="driver-vehicle-type">
+              <option value="BIKE">Xe máy</option>
+              <option value="CAR">Xe hơi</option>
+              <option value="INTERCITY">Xe khách liên tỉnh</option>
+            </select>
+          </div>
+          <div class="input-group"><label>Biển số</label><input type="text" id="driver-plate" placeholder="51F-12345"></div>
+          <div class="input-group"><label>Nhà xe (Operator)</label>
+            <select id="driver-operator">
+              <option value="">Cá nhân</option>
+              <option value="PTR001">Nhà xe Phương Trang</option>
+              <option value="PTR002">Nhà xe Thành Bưởi</option>
+              <option value="PTR003">Nhà xe Hoàng Long</option>
+            </select>
+          </div>
+          <div class="input-group"><label>Trạng thái</label>
+            <select id="driver-status">
+              <option value="offline">Offline</option>
+              <option value="online">Online</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('driver-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="addDriver()">Thêm tài xế</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Trip Create Modal -->
+  <div class="modal-overlay" id="trip-create-modal">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-header"><span class="modal-title">🚌 Tạo chuyến xe liên tỉnh</span><button class="modal-close" onclick="closeModal('trip-create-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="input-group"><label>Tuyến đường *</label><select class="input" id="trip-route"><option value="">Chọn tuyến</option></select></div>
+          <div class="input-group"><label>Nhà xe *</label><select class="input" id="trip-operator"><option value="">Chọn nhà xe</option></select></div>
+          <div class="input-group"><label>Ngày khởi hành *</label><input type="date" class="input" id="trip-date"></div>
+          <div class="input-group"><label>Giờ khởi hành *</label><input type="time" class="input" id="trip-departure-time"></div>
+          <div class="input-group"><label>Giờ đến (dự kiến) *</label><input type="time" class="input" id="trip-arrival-time"></div>
+          <div class="input-group"><label>Loại xe *</label><select class="input" id="trip-vehicle-type"><option value="Ghế ngồi 45 chỗ">Ghế ngồi 45 chỗ</option><option value="Giường nằm 36 chỗ">Giường nằm 36 chỗ</option><option value="Limousine 22 chỗ">Limousine 22 chỗ</option><option value="Giường nằm 40 chỗ">Giường nằm 40 chỗ</option></select></div>
+          <div class="input-group"><label>Giá vé (VNĐ) *</label><input type="number" class="input" id="trip-price" placeholder="280000"></div>
+          <div class="input-group"><label>Tổng số ghế *</label><input type="number" class="input" id="trip-seats" value="45"></div>
+          <div class="input-group full-width"><label>Ghi chú</label><textarea class="input" id="trip-notes" rows="2" placeholder="Ghi chú thêm..."></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('trip-create-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createIntercityTrip()">Tạo chuyến</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Create Modal -->
+  <div class="modal-overlay" id="schedule-create-modal">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-header"><span class="modal-title">📅 Tạo lịch chạy</span><button class="modal-close" onclick="closeModal('schedule-create-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="input-group"><label>Tuyến đường *</label><select class="input" id="schedule-route"><option value="">Chọn tuyến</option></select></div>
+          <div class="input-group"><label>Nhà xe *</label><select class="input" id="schedule-operator"><option value="">Chọn nhà xe</option></select></div>
+          <div class="input-group"><label>Giờ khởi hành *</label><input type="time" class="input" id="schedule-departure"></div>
+          <div class="input-group"><label>Giờ đến (dự kiến) *</label><input type="time" class="input" id="schedule-arrival"></div>
+          <div class="input-group"><label>Loại xe/ghế *</label><select class="input" id="schedule-seat-layout"><option value="SL001">Ghế ngồi 45 chỗ</option><option value="SL002">Giường nằm 36 chỗ</option><option value="SL003">Limousine 22 chỗ</option></select></div>
+          <div class="input-group"><label>Ngày chạy *</label><select class="input" id="schedule-days" multiple style="height:80px"><option value="Mon">Thứ 2</option><option value="Tue">Thứ 3</option><option value="Wed">Thứ 4</option><option value="Thu">Thứ 5</option><option value="Fri">Thứ 6</option><option value="Sat">Thứ 7</option><option value="Sun">Chủ nhật</option></select></div>
+          <div class="input-group full-width"><label>Trạng thái</label><select class="input" id="schedule-status"><option value="active">Hoạt động</option><option value="inactive">Tạm dừng</option></select></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('schedule-create-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createSchedule()">Tạo lịch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Create Modal -->
+  <div class="modal-overlay" id="user-create-modal">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header"><span class="modal-title">👤 Thêm người dùng mới</span><button class="modal-close" onclick="closeModal('user-create-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid" style="display:grid;gap:16px">
+          <div class="input-group"><label>Họ tên *</label><input type="text" class="input" id="new-user-name" placeholder="Nguyễn Văn A"></div>
+          <div class="input-group"><label>Email *</label><input type="email" class="input" id="new-user-email" placeholder="email@example.com"></div>
+          <div class="input-group"><label>SĐT *</label><input type="tel" class="input" id="new-user-phone" placeholder="0901234567"></div>
+          <div class="input-group"><label>Vai trò *</label><select class="input" id="new-user-role"><option value="ADMIN">Quản trị viên</option><option value="OPERATOR">Điều hành</option><option value="AGENT">Đại lý</option><option value="FINANCE">Tài chính</option><option value="VIEWER">Người xem</option></select></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('user-create-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createUser()">Tạo user</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Role Create Modal -->
+  <div class="modal-overlay" id="role-create-modal">
+    <div class="modal" style="max-width:600px">
+      <div class="modal-header"><span class="modal-title">🔐 Tạo vai trò mới</span><button class="modal-close" onclick="closeModal('role-create-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid" style="display:grid;gap:16px">
+          <div class="input-group"><label>Tên vai trò *</label><input type="text" class="input" id="new-role-name" placeholder="Quản lý"></div>
+          <div class="input-group"><label>Mã vai trò *</label><input type="text" class="input" id="new-role-code" placeholder="MANAGER"></div>
+          <div class="input-group full-width"><label>Quyền hạn</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+              <label><input type="checkbox" value="booking.view"> Booking xem</label>
+              <label><input type="checkbox" value="booking.create"> Booking tạo</label>
+              <label><input type="checkbox" value="booking.cancel"> Booking hủy</label>
+              <label><input type="checkbox" value="fulfillment.assign"> Phân công tài xế</label>
+              <label><input type="checkbox" value="wallet.view"> Wallet xem</label>
+              <label><input type="checkbox" value="wallet.adjust"> Wallet điều chỉnh</label>
+              <label><input type="checkbox" value="refund.process"> Xử lý hoàn tiền</label>
+              <label><input type="checkbox" value="user.manage"> Quản lý user</label>
+              <label><input type="checkbox" value="partner.view"> Đối tác xem</label>
+              <label><input type="checkbox" value="partner.manage"> Đối tác quản lý</label>
+              <label><input type="checkbox" value="driver.view"> Tài xế xem</label>
+              <label><input type="checkbox" value="driver.manage"> Tài xế quản lý</label>
+              <label><input type="checkbox" value="report.view"> Báo cáo xem</label>
+              <label><input type="checkbox" value="system.view"> Hệ thống xem</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('role-create-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createRole()">Tạo vai trò</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="booking-detail-modal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-header"><span class="modal-title">Chi tiết Booking</span><button class="modal-close" onclick="closeModal('booking-detail-modal')">✕</button></div>
+      <div class="modal-body" id="booking-detail-content"></div>
+      <div class="modal-footer" id="booking-detail-actions"></div>
+    </div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

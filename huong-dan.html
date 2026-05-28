@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hướng Dẫn RideOps - Quản lý Chuyến Xe</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, sans-serif; background: #1a1a2e; color: #fff; }
+    .slide { display: none; width: 100vw; height: 100vh; padding: 60px; position: relative; }
+    .slide.active { display: flex; flex-direction: column; }
+    .slide-number { position: absolute; bottom: 20px; right: 30px; font-size: 14px; color: #666; }
+    .logo { position: absolute; top: 20px; left: 30px; font-size: 18px; color: #f39c12; }
+    h1 { font-size: 48px; margin-bottom: 30px; color: #f39c12; }
+    h2 { font-size: 36px; margin-bottom: 25px; color: #3498db; }
+    h3 { font-size: 24px; margin-bottom: 20px; color: #2ecc71; }
+    p { font-size: 22px; line-height: 1.6; margin-bottom: 15px; color: #ddd; }
+    .step { display: flex; align-items: flex-start; margin: 20px 0; font-size: 22px; }
+    .step-num { background: #f39c12; color: #000; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 20px; flex-shrink: 0; }
+    .step-content { flex: 1; }
+    .highlight { color: #f39c12; font-weight: bold; }
+    .nav { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; }
+    .nav button { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; transition: 0.3s; }
+    .nav .prev { background: #34495e; color: #fff; }
+    .nav .next { background: #f39c12; color: #000; }
+    .nav button:hover { opacity: 0.8; }
+    .nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+    .note { background: #2c3e50; padding: 15px 20px; border-radius: 8px; border-left: 4px solid #f39c12; margin: 15px 0; font-size: 18px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 20px; }
+    .img-placeholder { background: #2c3e50; border: 2px dashed #555; border-radius: 12px; padding: 40px; text-align: center; font-size: 80px; color: #555; margin: 15px 0; }
+    ul { font-size: 20px; margin-left: 30px; line-height: 1.8; }
+    li { margin: 10px 0; }
+    .table-demo { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 18px; }
+    .table-demo th, .table-demo td { border: 1px solid #444; padding: 12px; text-align: left; }
+    .table-demo th { background: #2c3e50; color: #f39c12; }
+    .table-demo tr:nth-child(even) { background: #2a2a4a; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 14px; margin: 2px; }
+    .badge-success { background: #27ae60; }
+    .badge-warning { background: #f39c12; color: #000; }
+    .badge-info { background: #3498db; }
+    .progress-bar { width: 200px; height: 8px; background: #333; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+    .progress-bar-fill { height: 100%; background: #f39c12; }
+    .end-slide { justify-content: center; align-items: center; text-align: center; }
+    .end-slide h1 { font-size: 64px; color: #2ecc71; }
+  </style>
+</head>
+<body>
+
+<!-- Slide 1: Title -->
+<div class="slide active">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center;">
+    <h1>Hướng Dẫn Quản Lý Chuyến Xe</h1>
+    <p style="font-size:28px; color:#888; margin-top:20px;">Tạo Nhà Xe → Xe → Tài Xế → Tuyến → Lịch Trình → Chuyến Đã Tạo</p>
+    <div class="note" style="max-width:600px; margin-top:40px;">
+      Các bước thực hiện theo thứ tự. Hoàn thành bước trước để tiếp tục bước sau.
+    </div>
+  </div>
+  <div class="slide-number">1 / 12</div>
+</div>
+
+<!-- Slide 2: Tổng quan flow -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Quy Trình Tạo Chuyến Xe</h2>
+  <div style="display:flex; justify-content:center; align-items:center; gap:20px; font-size:24px; flex-wrap:wrap; margin:40px 0;">
+    <div style="background:#2c3e50; padding:20px 30px; border-radius:12px; text-align:center;">
+      <div style="font-size:50px;">🏢</div>
+      <div style="margin-top:10px;">1. Tạo Nhà Xe</div>
+    </div>
+    <div style="font-size:30px; color:#f39c12;">→</div>
+    <div style="background:#2c3e50; padding:20px 30px; border-radius:12px; text-align:center;">
+      <div style="font-size:50px;">🚐</div>
+      <div style="margin-top:10px;">2. Thêm Xe</div>
+    </div>
+    <div style="font-size:30px; color:#f39c12;">→</div>
+    <div style="background:#2c3e50; padding:20px 30px; border-radius:12px; text-align:center;">
+      <div style="font-size:50px;">🧑‍✈️</div>
+      <div style="margin-top:10px;">3. Thêm Tài Xế</div>
+    </div>
+    <div style="font-size:30px; color:#f39c12;">→</div>
+    <div style="background:#2c3e50; padding:20px 30px; border-radius:12px; text-align:center;">
+      <div style="font-size:50px;">🗺️</div>
+      <div style="margin-top:10px;">4. Tạo Tuyến Đường</div>
+    </div>
+    <div style="font-size:30px; color:#f39c12;">→</div>
+    <div style="background:#2c3e50; padding:20px 30px; border-radius:12px; text-align:center;">
+      <div style="font-size:50px;">📅</div>
+      <div style="margin-top:10px;">5. Tạo Lịch Trình</div>
+    </div>
+  </div>
+  <div class="note">
+    Sau khi có lịch trình, hệ thống sẽ tự động tạo <span class="highlight">chuyến xe</span> theo lịch đã cấu hình.
+  </div>
+  <div class="slide-number">2 / 12</div>
+</div>
+
+<!-- Slide 3: Tạo Nhà Xe -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Bước 1: Tạo Nhà Xe (Đối Tác)</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Vào trang Nhà xe & Tài xế</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Click menu <span class="highlight">🤝 Nhà xe & Tài xế</span> ở sidebar</div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Chọn tab <span class="highlight">🏢 Nhà xe</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">Click nút <span class="highlight">➕ Thêm nhà xe</span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Điền thông tin</h3>
+      <table class="table-demo">
+        <tr><th>Trường</th><th>Ví dụ</th></tr>
+        <tr><td>Tên nhà xe</td><td>Nhà xe Phương Trang</td></tr>
+        <tr><td>Người liên hệ</td><td>Nguyễn Văn A</td></tr>
+        <tr><td>Số điện thoại</td><td>0901-234-567</td></tr>
+        <tr><td>Số xe</td><td>5</td></tr>
+        <tr><td>Chiết khấu (%)</td><td>15</td></tr>
+        <tr><td>Tuyến đường</td><td>HCM - Đà Lạt</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="note">Nhà xe là đơn vị quản lý xe và tài xế. Mỗi nhà xe có mã riêng để phân biệt.</div>
+  <div class="slide-number">3 / 12</div>
+</div>
+
+<!-- Slide 4: Thêm Xe -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Bước 2: Thêm Xe Liên Tỉnh</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Vào trang Xe</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Từ menu <span class="highlight">🤝 Nhà xe & Tài xế</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Chọn tab <span class="highlight">🚐 Xe liên tỉnh</span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Thông tin xe cần nhập</h3>
+      <ul>
+        <li><span class="highlight">Biển số</span> - VD: 51F-12345</li>
+        <li><span class="highlight">Loại xe</span> - Ghế ngồi 45 chỗ, Giường nằm 36 chỗ, Limousine</li>
+        <li><span class="highlight">Nhà xe quản lý</span> - Chọn từ danh sách đã tạo</li>
+        <li><span class="highlight">Trạng thái</span> - Sẵn sàng / Đang chạy / Bảo dưỡng</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">Xe liên tỉnh không gán tài xế cố định - xe được phân công khi có chuyến.</div>
+
+  <table class="table-demo" style="margin-top:20px; font-size:16px;">
+    <tr><th>Biển số</th><th>Loại xe</th><th>Nhà xe</th><th>Trạng thái</th></tr>
+    <tr><td>51F-12345</td><td>Ghế ngồi 45 chỗ</td><td>Phương Trang</td><td><span class="badge badge-success">Sẵn sàng</span></td></tr>
+    <tr><td>51H-67890</td><td>Giường nằm 36 chỗ</td><td>Thành Bưởi</td><td><span class="badge badge-success">Sẵn sàng</span></td></tr>
+  </table>
+  <div class="slide-number">4 / 12</div>
+</div>
+
+<!-- Slide 5: Thêm Tài Xế -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Bước 3: Thêm Tài Xế Liên Tỉnh</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Vào trang Tài xế</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Từ menu <span class="highlight">🤝 Nhà xe & Tài xế</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Chọn tab <span class="highlight">🧑‍✈️ Tài xế liên tỉnh</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">Click nút <span class="highlight">➕ Thêm tài xế</span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Thông tin tài xế</h3>
+      <ul>
+        <li><span class="highlight">Họ tên</span> - Tên đầy đủ</li>
+        <li><span class="highlight">SĐT</span> - Số điện thoại liên lạc</li>
+        <li><span class="highlight">Loại xe</span> - Chọn <span class="badge badge-info">INTERCITY</span></li>
+        <li><span class="highlight">Nhà xe quản lý</span> - Chọn nhà xe phụ trách</li>
+        <li><span class="highlight">Hạng GPLX</span> - Hạng bằng lái (loại xe được phép lái)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note">Tài xế liên tỉnh cần có hạng GPLX phù hợp (hạng cao hơn xe thường) để lái xe khách.</div>
+  <div class="slide-number">5 / 12</div>
+</div>
+
+<!-- Slide 6: Tạo Tuyến Đường -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Bước 4: Tạo Tuyến Đường</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Vào trang Tuyến</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Click menu <span class="highlight">🗺️ Tuyến & Lịch chạy</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Chọn tab <span class="highlight">🗺️ Tuyến đường</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">Click <span class="highlight">➕ Thêm tuyến</span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Thông tin tuyến</h3>
+      <ul>
+        <li><span class="highlight">Tên tuyến</span> - VD: HCM → Đà Lạt</li>
+        <li><span class="highlight">Khoảng cách</span> - VD: 300 km</li>
+        <li><span class="highlight">Thời gian di chuyển</span> - VD: 8 tiếng</li>
+        <li><span class="highlight">Điểm dừng</span> - Các trạm nghỉ trên đường</li>
+        <li><span class="highlight">Nhà xe khai thác</span> - Chọn nhà xe chạy tuyến này</li>
+      </ul>
+    </div>
+  </div>
+
+  <table class="table-demo" style="margin-top:20px; font-size:16px;">
+    <tr><th>ID</th><th>Tuyến</th><th>Khoảng cách</th><th>Thời gian</th><th>Nhà xe</th><th>Trạng thái</th></tr>
+    <tr><td>R001</td><td>HCM - Đà Lạt</td><td>300 km</td><td>8 tiếng</td><td>Phương Trang</td><td><span class="badge badge-success">Hoạt động</span></td></tr>
+    <tr><td>R002</td><td>HCM - Cần Thơ</td><td>170 km</td><td>4 tiếng</td><td>Thành Bưởi</td><td><span class="badge badge-success">Hoạt động</span></td></tr>
+  </table>
+  <div class="slide-number">6 / 12</div>
+</div>
+
+<!-- Slide 7: Tạo Lịch Trình -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Bước 5: Tạo Lịch Trình (Lịch Chạy)</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Vào trang Lịch</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Từ menu <span class="highlight">🗺️ Tuyến & Lịch chạy</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Tab mặc định <span class="highlight">📅 Lịch chạy</span> (đã chọn sẵn)</div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">Click <span class="highlight">➕ Thêm lịch</span></div>
+      </div>
+    </div>
+    <div>
+      <h3>Các trường cần điền</h3>
+      <ul>
+        <li><span class="highlight">Tuyến đường</span> - Chọn tuyến đã tạo</li>
+        <li><span class="highlight">Nhà xe</span> - Chọn nhà xe khai thác</li>
+        <li><span class="highlight">Giờ khởi hành</span> - VD: 06:00</li>
+        <li><span class="highlight">Giờ đến dự kiến</span> - VD: 14:00</li>
+        <li><span class="highlight">Loại xe/ghế</span> - Ghế ngồi 45, Giường nằm 36...</li>
+        <li><span class="highlight">Ngày chạy</span> - Chọn các ngày trong tuần</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">Có thể chọn nhiều ngày trong tuần (thứ 2, thứ 3, thứ 4...) để lịch lặp lại hàng tuần.</div>
+  <div class="slide-number">7 / 12</div>
+</div>
+
+<!-- Slide 8: Màn hình tạo lịch -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Tạo Lịch - Màn Hình Chi Tiết</h2>
+
+  <div class="two-col">
+    <div>
+      <div style="background:#2c3e50; padding:20px; border-radius:12px; margin-bottom:15px;">
+        <p style="font-size:18px; margin-bottom:10px;"><span class="highlight">📅 Ngày chạy:</span> Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6</p>
+        <p style="font-size:18px; margin-bottom:10px;"><span class="highlight">⏰ Giờ đi:</span> 06:00</p>
+        <p style="font-size:18px; margin-bottom:10px;"><span class="highlight">⏰ Giờ đến:</span> 14:00</p>
+        <p style="font-size:18px; margin-bottom:10px;"><span class="highlight">🗺️ Tuyến:</span> HCM - Đà Lạt</p>
+        <p style="font-size:18px; margin-bottom:10px;"><span class="highlight">🏢 Nhà xe:</span> Phương Trang</p>
+        <p style="font-size:18px; margin-bottom:10px;"><span class="highlight">💺 Loại xe:</span> Ghế ngồi 45 chỗ</p>
+      </div>
+    </div>
+    <div>
+      <h3>Kết quả</h3>
+      <p>Lịch trình sẽ tự động tạo <span class="highlight">chuyến xe</span> cho mỗi ngày chạy đã chọn.</p>
+      <div style="background:#34495e; padding:15px; border-radius:8px; margin-top:10px;">
+        <p style="margin-bottom:8px;">📅 Thứ 2: 1 chuyến</p>
+        <p style="margin-bottom:8px;">📅 Thứ 3: 1 chuyến</p>
+        <p style="margin-bottom:8px;">📅 Thứ 4: 1 chuyến</p>
+        <p style="margin-bottom:8px;">📅 Thứ 5: 1 chuyến</p>
+        <p>📅 Thứ 6: 1 chuyến</p>
+      </div>
+    </div>
+  </div>
+  <div class="note">Hệ thống sẽ tự động tạo chuyến xe mỗi khi đến ngày chạy trong lịch.</div>
+  <div class="slide-number">8 / 12</div>
+</div>
+
+<!-- Slide 9: Xem danh sách chuyến -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Xem Lịch Sử Chuyến Đã Tạo</h2>
+
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-content">Vào menu <span class="highlight">🚌 Đặt vé</span> → chọn tab <span class="highlight">🚌 Đặt vé liên tỉnh</span></div>
+  </div>
+
+  <h3 style="margin-top:30px;">Tìm kiếm chuyến</h3>
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:15px; margin:20px 0;">
+    <div style="background:#2c3e50; padding:15px; border-radius:8px; text-align:center;">
+      <div style="font-size:30px; margin-bottom:10px;">📍</div>
+      <div style="font-size:14px; color:#888;">Điểm đi</div>
+      <div style="font-size:18px;">TP.HCM</div>
+    </div>
+    <div style="background:#2c3e50; padding:15px; border-radius:8px; text-align:center;">
+      <div style="font-size:30px; margin-bottom:10px;">📍</div>
+      <div style="font-size:14px; color:#888;">Điểm đến</div>
+      <div style="font-size:18px;">Đà Lạt</div>
+    </div>
+    <div style="background:#2c3e50; padding:15px; border-radius:8px; text-align:center;">
+      <div style="font-size:30px; margin-bottom:10px;">📅</div>
+      <div style="font-size:14px; color:#888;">Ngày đi</div>
+      <div style="font-size:18px;">2026-05-30</div>
+    </div>
+    <div style="background:#2c3e50; padding:15px; border-radius:8px; text-align:center;">
+      <div style="font-size:30px; margin-bottom:10px;">👥</div>
+      <div style="font-size:14px; color:#888;">Số khách</div>
+      <div style="font-size:18px;">1</div>
+    </div>
+  </div>
+
+  <table class="table-demo" style="font-size:16px;">
+    <tr><th>Mã chuyến</th><th>Tuyến</th><th>Ngày</th><th>Giờ đi</th><th>Giờ đến</th><th>Giá</th><th>Trạng thái</th></tr>
+    <tr><td>TR001</td><td>HCM - Đà Lạt</td><td>2026-05-30</td><td>06:00</td><td>14:00</td><td>280.000đ</td><td><span class="badge badge-success">Sẵn sàng</span></td></tr>
+    <tr><td>TR002</td><td>HCM - Đà Lạt</td><td>2026-05-30</td><td>08:00</td><td>16:00</td><td>280.000đ</td><td><span class="badge badge-success">Sẵn sàng</span></td></tr>
+    <tr><td>TR003</td><td>HCM - Cần Thơ</td><td>2026-05-30</td><td>07:00</td><td>11:00</td><td>150.000đ</td><td><span class="badge badge-warning">Còn ghế</span></td></tr>
+  </table>
+  <div class="slide-number">9 / 12</div>
+</div>
+
+<!-- Slide 10: Theo dõi & Quản lý -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Theo Dõi & Quản Lý Chuyến</h2>
+
+  <div class="two-col">
+    <div>
+      <h3>Từ trang Giám sát đơn hàng</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Vào menu <span class="highlight">📋 Giám sát đơn hàng</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Filter theo loại <span class="highlight">🚌 Liên tỉnh</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">Xem trạng thái từng chuyến</div>
+      </div>
+
+      <h3 style="margin-top:20px;">Các trạng thái chuyến</h3>
+      <ul>
+        <li><span class="badge badge-success">Sẵn sàng</span> - Chưa có người đặt</li>
+        <li><span class="badge badge-info">Đã đặt</span> - Có khách đặt chỗ</li>
+        <li><span class="badge badge-warning">Đã phân công</span> - Đã gán xe & tài xế</li>
+        <li><span class="badge badge-success">Hoàn thành</span> - Chuyến đã xong</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Từ trang Phân công</h3>
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-content">Vào menu <span class="highlight">📡 Nhiệm vụ phân công</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-content">Chọn tab <span class="highlight">🚌 Liên tỉnh</span></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-content">Gán xe + tài xế cho chuyến</div>
+      </div>
+
+      <div style="background:#2c3e50; padding:15px; border-radius:8px; margin-top:20px;">
+        <p style="font-size:16px; margin-bottom:10px;">📍 Chờ phân công: 3 chuyến</p>
+        <p style="font-size:16px; margin-bottom:10px;">🚐 Xe sẵn sàng: 5 xe</p>
+        <p style="font-size:16px;">🧑‍✈️ Tài xế online: 4 người</p>
+      </div>
+    </div>
+  </div>
+  <div class="slide-number">10 / 12</div>
+</div>
+
+<!-- Slide 11: Phân công xe & tài xế -->
+<div class="slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h2>Phân Công Xe & Tài Xế</h2>
+
+  <h3>Khi có chuyến cần phân công</h3>
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-content">Tại trang <span class="highlight">📡 Nhiệm vụ phân công</span> → tab <span class="highlight">🚌 Liên tỉnh</span></div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-content">Click <span class="highlight">Phân công</span> trên chuyến cần xử lý</div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-content">Chọn <span class="highlight">xe</span> phù hợp (theo nhà xe + loại xe)</div>
+  </div>
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-content">Chọn <span class="highlight">tài xế</span> đang online (hạng INTERCITY)</div>
+  </div>
+  <div class="step">
+    <div class="step-num">5</div>
+    <div class="step-content">Xác nhận phân công</div>
+  </div>
+
+  <div class="note">Xe và tài xế được chọn độc lập. Tài xế phải có hạng GPLX phù hợp với loại xe được gán.</div>
+  <div class="slide-number">11 / 12</div>
+</div>
+
+<!-- Slide 12: Tóm tắt -->
+<div class="slide end-slide">
+  <div class="logo">🚗 RideOps Dashboard</div>
+  <h1 style="color:#f39c12;">Hoàn Thành!</h1>
+  <p style="font-size:28px; margin-top:20px;">Bạn đã biết cách quản lý chuyến xe liên tỉnh</p>
+
+  <div style="display:flex; gap:30px; margin-top:50px; flex-wrap:wrap; justify-content:center;">
+    <div style="background:#2c3e50; padding:25px; border-radius:12px; text-align:center; min-width:150px;">
+      <div style="font-size:40px;">🏢</div>
+      <div style="margin-top:10px;">Tạo nhà xe</div>
+    </div>
+    <div style="background:#2c3e50; padding:25px; border-radius:12px; text-align:center; min-width:150px;">
+      <div style="font-size:40px;">🚐</div>
+      <div style="margin-top:10px;">Thêm xe</div>
+    </div>
+    <div style="background:#2c3e50; padding:25px; border-radius:12px; text-align:center; min-width:150px;">
+      <div style="font-size:40px;">🧑‍✈️</div>
+      <div style="margin-top:10px;">Thêm tài xế</div>
+    </div>
+    <div style="background:#2c3e50; padding:25px; border-radius:12px; text-align:center; min-width:150px;">
+      <div style="font-size:40px;">🗺️</div>
+      <div style="margin-top:10px;">Tạo tuyến</div>
+    </div>
+    <div style="background:#2c3e50; padding:25px; border-radius:12px; text-align:center; min-width:150px;">
+      <div style="font-size:40px;">📅</div>
+      <div style="margin-top:10px;">Lịch trình</div>
+    </div>
+    <div style="background:#2c3e50; padding:25px; border-radius:12px; text-align:center; min-width:150px;">
+      <div style="font-size:40px;">📋</div>
+      <div style="margin-top:10px;">Xem chuyến</div>
+    </div>
+  </div>
+
+  <p style="color:#888; margin-top:60px;">Mở file ride-ops-dashboard/index.html để thực hành</p>
+  <div class="slide-number">12 / 12</div>
+</div>
+
+<div class="nav">
+  <button class="prev" onclick="changeSlide(-1)" id="prevBtn">◀ Trước</button>
+  <button class="next" onclick="changeSlide(1)" id="nextBtn">Sau ▶</button>
+</div>
+
+<script>
+let currentSlide = 0;
+const slides = document.querySelectorAll('.slide');
+const totalSlides = slides.length;
+
+function showSlide(n) {
+  slides[currentSlide].classList.remove('active');
+  currentSlide = (n + totalSlides) % totalSlides;
+  slides[currentSlide].classList.add('active');
+
+  document.getElementById('prevBtn').disabled = currentSlide === 0;
+  document.getElementById('nextBtn').disabled = currentSlide === totalSlides - 1;
+}
+
+function changeSlide(direction) {
+  showSlide(currentSlide + direction);
+}
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') changeSlide(1);
+  if (e.key === 'ArrowLeft') changeSlide(-1);
+});
+
+showSlide(0);
+</script>
+
+</body>
+</html>
