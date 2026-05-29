@@ -465,6 +465,265 @@ const BOOKINGS = [
     maintenanceOrderId: 'MNT100',
     createdAt: '2026-05-26 20:30', updatedAt: '2026-05-27 09:00'
   },
+
+  // ===== VÉ ĐÃ ĐẶT THEO CHUYẾN (demo liên kết khi bấm vào chuyến) =====
+  // TRP001 — TP.HCM → Đà Lạt (Phương Trang 06:00)
+  {
+    id: 'BK200', bookingCode: 'RO-240319-200', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH001', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Lạt',
+    routeId: 'INT001', tripId: 'TRP001', scheduleId: null,
+    seatNumbers: ['A1','A2'],
+    passengerSnapshot: [{ name: 'Trịnh Hoàng Nam', phone: '0801234567' }, { name: 'Trịnh Bảo An', phone: '0801234500' }],
+    fareSnapshot: 640000, distance: 305, paymentMethod: 'wallet', paymentReference: 'PAY200',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 09:10', updatedAt: '2026-03-18 09:11'
+  },
+  {
+    id: 'BK201', bookingCode: 'RO-240319-201', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CASH', fulfillmentStatus: 'PENDING',
+    customerId: 'KH003', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Lạt',
+    routeId: 'INT001', tripId: 'TRP001', scheduleId: null,
+    seatNumbers: ['B3'],
+    passengerSnapshot: [{ name: 'Mai Xuân Phong', phone: '0823456789' }],
+    fareSnapshot: 320000, distance: 305, paymentMethod: 'cash', paymentReference: 'CASH-BK201',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 10:02', updatedAt: '2026-03-18 10:02'
+  },
+  {
+    id: 'BK202', bookingCode: 'RO-240319-202', bookingType: 'INTERCITY',
+    bookingStatus: 'PENDING_CONFIRMATION', paymentStatus: 'PENDING', fulfillmentStatus: null,
+    customerId: 'KH007', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Lạt',
+    routeId: 'INT001', tripId: 'TRP001', scheduleId: null,
+    seatNumbers: [],
+    passengerSnapshot: [{ name: 'Phan Thị Nga', phone: '0867890123' }],
+    fareSnapshot: 320000, distance: 305, paymentMethod: 'wallet', paymentReference: null,
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 11:20', updatedAt: '2026-03-18 11:20'
+  },
+  // TRP002 — TP.HCM → Đà Lạt (Thành Bưởi 20:00 giường nằm)
+  {
+    id: 'BK203', bookingCode: 'RO-240319-203', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH005', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Lạt',
+    routeId: 'INT001', tripId: 'TRP002', scheduleId: null,
+    seatNumbers: ['L5','L6'],
+    passengerSnapshot: [{ name: 'Hồ Quang Vinh', phone: '0845678901' }, { name: 'Hồ Gia Bảo', phone: '0845678900' }],
+    fareSnapshot: 560000, distance: 305, paymentMethod: 'momo', paymentReference: 'PAY203',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 12:00', updatedAt: '2026-03-18 12:01'
+  },
+  // TRP004 — TP.HCM → Đà Lạt (Limousine 22:00)
+  {
+    id: 'BK204', bookingCode: 'RO-240319-204', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH002', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Lạt',
+    routeId: 'INT001', tripId: 'TRP004', scheduleId: null,
+    seatNumbers: ['V1'],
+    passengerSnapshot: [{ name: 'Lý Thanh Trúc', phone: '0812345678' }],
+    fareSnapshot: 450000, distance: 305, paymentMethod: 'wallet', paymentReference: 'PAY204',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 13:15', updatedAt: '2026-03-18 13:16'
+  },
+  // TRP009 — TP.HCM → Nha Trang (Phương Trang 19:00 giường nằm)
+  {
+    id: 'BK205', bookingCode: 'RO-240319-205', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH004', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Nha Trang',
+    routeId: 'INT003', tripId: 'TRP009', scheduleId: null,
+    seatNumbers: ['A7','A8','A9'],
+    passengerSnapshot: [{ name: 'Cao Thị Linh', phone: '0834567890' }, { name: 'Cao Văn Tú', phone: '0834567800' }, { name: 'Cao Mỹ Duyên', phone: '0834567811' }],
+    fareSnapshot: 840000, distance: 430, paymentMethod: 'momo', paymentReference: 'PAY205',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 14:40', updatedAt: '2026-03-18 14:41'
+  },
+  {
+    id: 'BK206', bookingCode: 'RO-240319-206', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CASH', fulfillmentStatus: 'PENDING',
+    customerId: 'KH006', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Nha Trang',
+    routeId: 'INT003', tripId: 'TRP009', scheduleId: null,
+    seatNumbers: ['B2'],
+    passengerSnapshot: [{ name: 'Đặng Minh Hải', phone: '0856789012' }],
+    fareSnapshot: 280000, distance: 430, paymentMethod: 'cash', paymentReference: 'CASH-BK206',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 15:05', updatedAt: '2026-03-18 15:05'
+  },
+  // TRP015 — TP.HCM → Phan Thiết (Việt Thanh 07:00)
+  {
+    id: 'BK207', bookingCode: 'RO-240319-207', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH008', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Phan Thiết',
+    routeId: 'INT006', tripId: 'TRP015', scheduleId: null,
+    seatNumbers: ['C1','C2'],
+    passengerSnapshot: [{ name: 'Vương Đình Phúc', phone: '0878901234' }, { name: 'Vương Thảo My', phone: '0878901200' }],
+    fareSnapshot: 360000, distance: 200, paymentMethod: 'wallet', paymentReference: 'PAY207',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 15:30', updatedAt: '2026-03-18 15:31'
+  },
+  // TRP017 — TP.HCM → Đà Nẵng (Hoàng Long 16:00 giường nằm)
+  {
+    id: 'BK208', bookingCode: 'RO-240319-208', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH007', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Nẵng',
+    routeId: 'INT004', tripId: 'TRP017', scheduleId: null,
+    seatNumbers: ['A4'],
+    passengerSnapshot: [{ name: 'Phan Thị Nga', phone: '0867890123' }],
+    fareSnapshot: 450000, distance: 960, paymentMethod: 'momo', paymentReference: 'PAY208',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 16:10', updatedAt: '2026-03-18 16:11'
+  },
+  // TRP019 — TP.HCM → Hà Nội (Hoàng Long 15:00 giường nằm 40)
+  {
+    id: 'BK209', bookingCode: 'RO-240319-209', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH001', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Nước Ngầm, Hà Nội',
+    routeId: 'INT007', tripId: 'TRP019', scheduleId: null,
+    seatNumbers: ['L10','L11'],
+    passengerSnapshot: [{ name: 'Trịnh Hoàng Nam', phone: '0801234567' }, { name: 'Trịnh Thu Hà', phone: '0801234599' }],
+    fareSnapshot: 1700000, distance: 1700, paymentMethod: 'wallet', paymentReference: 'PAY209',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 16:45', updatedAt: '2026-03-18 16:46'
+  },
+  // TRP005 — TP.HCM → Đà Lạt (Thành Bưởi 08:00, ngày 20)
+  {
+    id: 'BK210', bookingCode: 'RO-240320-210', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH003', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Đà Lạt',
+    routeId: 'INT001', tripId: 'TRP005', scheduleId: null,
+    seatNumbers: ['A10','A11'],
+    passengerSnapshot: [{ name: 'Mai Xuân Phong', phone: '0823456789' }, { name: 'Mai Hồng Ân', phone: '0823456700' }],
+    fareSnapshot: 580000, distance: 305, paymentMethod: 'wallet', paymentReference: 'PAY210',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-19 08:10', updatedAt: '2026-03-19 08:11'
+  },
+  // TRP007 — TP.HCM → Cần Thơ (14:00)
+  {
+    id: 'BK211', bookingCode: 'RO-240319-211', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CASH', fulfillmentStatus: 'PENDING',
+    customerId: 'KH004', agentId: null, driverId: null,
+    pickup: 'BX Miền Tây, TP.HCM', dropoff: 'BX Cần Thơ',
+    routeId: 'INT002', tripId: 'TRP007', scheduleId: null,
+    seatNumbers: ['B7'],
+    passengerSnapshot: [{ name: 'Cao Thị Linh', phone: '0834567890' }],
+    fareSnapshot: 150000, distance: 170, paymentMethod: 'cash', paymentReference: 'CASH-BK211',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 09:40', updatedAt: '2026-03-18 09:40'
+  },
+  // TRP008 — TP.HCM → Cần Thơ (Limousine 05:30, ngày 20)
+  {
+    id: 'BK212', bookingCode: 'RO-240320-212', bookingType: 'INTERCITY',
+    bookingStatus: 'PENDING_CONFIRMATION', paymentStatus: 'PENDING', fulfillmentStatus: null,
+    customerId: 'KH007', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Tây, TP.HCM', dropoff: 'BX Cần Thơ',
+    routeId: 'INT002', tripId: 'TRP008', scheduleId: null,
+    seatNumbers: [],
+    passengerSnapshot: [{ name: 'Phan Thị Nga', phone: '0867890123' }],
+    fareSnapshot: 220000, distance: 170, paymentMethod: 'wallet', paymentReference: null,
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-19 18:20', updatedAt: '2026-03-19 18:20'
+  },
+  // TRP013 — TP.HCM → Vũng Tàu (10:00)
+  {
+    id: 'BK213', bookingCode: 'RO-240319-213', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH005', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông Mới', dropoff: 'BX Vũng Tàu',
+    routeId: 'INT005', tripId: 'TRP013', scheduleId: null,
+    seatNumbers: ['C5','C6','C7'],
+    passengerSnapshot: [{ name: 'Hồ Quang Vinh', phone: '0845678901' }, { name: 'Hồ Minh Khôi', phone: '0845678902' }, { name: 'Hồ Yến Nhi', phone: '0845678903' }],
+    fareSnapshot: 360000, distance: 120, paymentMethod: 'momo', paymentReference: 'PAY213',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 11:05', updatedAt: '2026-03-18 11:06'
+  },
+  // TRP016 — TP.HCM → Phan Thiết (13:00)
+  {
+    id: 'BK214', bookingCode: 'RO-240319-214', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH008', agentId: 'USR003', driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Phan Thiết',
+    routeId: 'INT006', tripId: 'TRP016', scheduleId: null,
+    seatNumbers: ['A2'],
+    passengerSnapshot: [{ name: 'Vương Đình Phúc', phone: '0878901234' }],
+    fareSnapshot: 180000, distance: 200, paymentMethod: 'wallet', paymentReference: 'PAY214',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 12:30', updatedAt: '2026-03-18 12:31'
+  },
+  // TRP019 — thêm 1 khách nữa cùng chuyến Hà Nội
+  {
+    id: 'BK215', bookingCode: 'RO-240319-215', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CASH', fulfillmentStatus: 'PENDING',
+    customerId: 'KH006', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Nước Ngầm, Hà Nội',
+    routeId: 'INT007', tripId: 'TRP019', scheduleId: null,
+    seatNumbers: ['L1'],
+    passengerSnapshot: [{ name: 'Đặng Minh Hải', phone: '0856789012' }],
+    fareSnapshot: 850000, distance: 1700, paymentMethod: 'cash', paymentReference: 'CASH-BK215',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 17:10', updatedAt: '2026-03-18 17:10'
+  },
+  // TRP021 — Hà Nội → Đà Nẵng (20:00)
+  {
+    id: 'BK216', bookingCode: 'RO-240319-216', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH002', agentId: 'USR003', driverId: null,
+    pickup: 'BX Nước Ngầm, Hà Nội', dropoff: 'BX Đà Nẵng',
+    routeId: 'INT008', tripId: 'TRP021', scheduleId: null,
+    seatNumbers: ['B3','B4'],
+    passengerSnapshot: [{ name: 'Lý Thanh Trúc', phone: '0812345678' }, { name: 'Lý Gia Hân', phone: '0812345600' }],
+    fareSnapshot: 760000, distance: 760, paymentMethod: 'wallet', paymentReference: 'PAY216',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 13:50', updatedAt: '2026-03-18 13:51'
+  },
+  // TRP023 — Hà Nội → Hải Phòng (07:00)
+  {
+    id: 'BK217', bookingCode: 'RO-240319-217', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH001', agentId: null, driverId: null,
+    pickup: 'BX Gia Lâm, Hà Nội', dropoff: 'BX Hải Phòng',
+    routeId: 'INT009', tripId: 'TRP023', scheduleId: null,
+    seatNumbers: ['A1'],
+    passengerSnapshot: [{ name: 'Trịnh Hoàng Nam', phone: '0801234567' }],
+    fareSnapshot: 150000, distance: 120, paymentMethod: 'momo', paymentReference: 'PAY217',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 07:20', updatedAt: '2026-03-18 07:21'
+  },
+  // TRP025 — Đà Nẵng → Hội An (08:00)
+  {
+    id: 'BK218', bookingCode: 'RO-240319-218', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CASH', fulfillmentStatus: 'PENDING',
+    customerId: 'KH004', agentId: 'USR003', driverId: null,
+    pickup: 'BX Đà Nẵng', dropoff: 'BX Hội An',
+    routeId: 'INT010', tripId: 'TRP025', scheduleId: null,
+    seatNumbers: ['A5','A6'],
+    passengerSnapshot: [{ name: 'Cao Thị Linh', phone: '0834567890' }, { name: 'Cao Văn Tú', phone: '0834567800' }],
+    fareSnapshot: 160000, distance: 30, paymentMethod: 'cash', paymentReference: 'CASH-BK218',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 08:05', updatedAt: '2026-03-18 08:05'
+  },
+  // TRP010 — TP.HCM → Nha Trang (Limousine 20:00)
+  {
+    id: 'BK219', bookingCode: 'RO-240319-219', bookingType: 'INTERCITY',
+    bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+    customerId: 'KH008', agentId: null, driverId: null,
+    pickup: 'BX Miền Đông, TP.HCM', dropoff: 'BX Nha Trang',
+    routeId: 'INT003', tripId: 'TRP010', scheduleId: null,
+    seatNumbers: ['V3','V4'],
+    passengerSnapshot: [{ name: 'Vương Đình Phúc', phone: '0878901234' }, { name: 'Vương Thảo My', phone: '0878901200' }],
+    fareSnapshot: 700000, distance: 430, paymentMethod: 'wallet', paymentReference: 'PAY219',
+    fulfillmentTaskId: null,
+    createdAt: '2026-03-18 14:00', updatedAt: '2026-03-18 14:01'
+  },
 ];
 
 // ---- FULFILLMENT TASKS ----
@@ -893,6 +1152,60 @@ const INTERCITY_TRIPS = [
   // TRP104: PTR001, 07:00-14:00 → OVERLAP MẠNH với TRP100
   { id: 'TRP104', routeId: 'INT011', operatorId: 'PTR002', operatorName: 'Nhà xe Thành Bưởi', departureTime: '07:00', arrivalTime: '14:00', vehicleType: 'Giường nằm 36 chỗ', price: 220000, seatsTotal: 36, seatsAvailable: 25, status: 'available', date: '2026-05-27' },
 ];
+
+// ---- AUTO-SEED VÉ ĐÃ ĐẶT ----
+// Sinh thêm booking giả lập cho mỗi chuyến để số vé đã đặt khớp với "đã bán" (sold = seatsTotal - seatsAvailable).
+// Nhờ vậy popup "👥 Vé đã đặt (33/45)" có đủ danh sách khách để xem.
+(function seedTripBookings() {
+  const FIRST = ['Nguyễn','Trần','Lê','Phạm','Hoàng','Huỳnh','Phan','Vũ','Võ','Đặng','Bùi','Đỗ','Hồ','Ngô','Dương','Lý','Đinh','Tô','Trương','Cao'];
+  const MID = ['Văn','Thị','Hữu','Đức','Minh','Quốc','Gia','Hoài','Thanh','Bảo','Tuấn','Khánh','Ngọc','Phương','Anh'];
+  const LAST = ['An','Bình','Chi','Dũng','Giang','Hà','Hải','Hùng','Khoa','Lan','Linh','Mai','Nam','Nga','Phúc','Quân','Sơn','Trang','Tú','Vy'];
+  let seed = 7919;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pick = arr => arr[Math.floor(rnd() * arr.length)];
+  const phone = () => '09' + String(Math.floor(rnd() * 100000000)).padStart(8, '0');
+  const pay = () => ['wallet', 'cash', 'momo'][Math.floor(rnd() * 3)];
+
+  let n = 500;
+  INTERCITY_TRIPS.forEach(trip => {
+    const sold = trip.seatsTotal - trip.seatsAvailable;
+    if (sold <= 0) return;
+    const route = INTERCITY_ROUTES.find(r => r.id === trip.routeId);
+    // Số khách đã có sẵn (booking thủ công) cho chuyến này
+    let already = BOOKINGS
+      .filter(b => b.bookingType === 'INTERCITY' && b.tripId === trip.id)
+      .reduce((s, b) => s + (b.passengerSnapshot?.length || 1), 0);
+    let remaining = sold - already;
+    while (remaining > 0) {
+      const pax = Math.min(remaining, 1 + Math.floor(rnd() * 2)); // 1-2 khách / đơn
+      const passengers = Array.from({ length: pax }, () => ({
+        name: `${pick(FIRST)} ${pick(MID)} ${pick(LAST)}`,
+        phone: phone()
+      }));
+      const method = pay();
+      BOOKINGS.push({
+        id: 'BK' + n,
+        bookingCode: 'RO-SEED-' + n,
+        bookingType: 'INTERCITY',
+        bookingStatus: rnd() > 0.15 ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
+        paymentStatus: method === 'cash' ? 'CASH' : (rnd() > 0.15 ? 'CONFIRMED' : 'PENDING'),
+        fulfillmentStatus: 'PENDING',
+        customerId: null, agentId: 'USR003', driverId: null,
+        pickup: route ? 'BX ' + route.origin : '', dropoff: route ? 'BX ' + route.destination : '',
+        routeId: trip.routeId, tripId: trip.id, scheduleId: null,
+        seatNumbers: [],
+        passengerSnapshot: passengers,
+        fareSnapshot: trip.price * pax,
+        distance: route?.distance || 0,
+        paymentMethod: method, paymentReference: method === 'cash' ? 'CASH-BK' + n : 'PAY' + n,
+        fulfillmentTaskId: null,
+        createdAt: trip.date + ' 08:00', updatedAt: trip.date + ' 08:00'
+      });
+      n++;
+      remaining -= pax;
+    }
+  });
+})();
 
 // ---- SEAT LAYOUTS ----
 const SEAT_MAPS = {

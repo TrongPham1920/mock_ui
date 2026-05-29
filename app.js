@@ -2781,6 +2781,54 @@ function createIntercityTrip() {
   alert('Tạo chuyến xe thành công!');
 }
 
+// Card chuyến xe dùng chung cho mọi danh sách (mặc định / tìm kiếm / xem tất cả)
+function intercityTripCardHTML(t) {
+  const route = INTERCITY_ROUTES.find(r => r.id === t.routeId);
+  const sold = t.seatsTotal - t.seatsAvailable;
+  const percent = Math.round((sold / t.seatsTotal) * 100);
+  const textColor = percent >= 90 ? 'var(--danger)' : percent >= 70 ? 'var(--warning)' : 'var(--success)';
+  const isFull = t.seatsAvailable <= 0;
+  return `
+    <div class="trip-card" onclick="showTripDetail('${t.id}')" style="padding:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px;color:var(--text-primary)">${route?.origin || '—'} → ${route?.destination || '—'}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${t.operatorName}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:700;font-size:15px;color:var(--success)">${fmt(t.price)}</div>
+          <div style="font-size:11px;color:var(--text-muted)">/khách</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div><div style="font-size:11px;color:var(--text-muted)">🕐 Giờ chạy</div><div style="font-weight:600;font-size:13px">${t.departureTime} - ${t.arrivalTime}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted)">📅 Ngày chạy</div><div style="font-weight:600;font-size:13px">${t.date}</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:12px;padding:2px 8px;background:var(--accent-glow);color:var(--accent);border-radius:4px">${t.vehicleType}</span>
+        <span style="font-size:12px;color:var(--text-muted)">${t.seatsAvailable} chỗ trống</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="flex:1;height:6px;background:var(--border-color);border-radius:3px">
+          <div style="height:100%;width:${percent}%;background:${textColor};border-radius:3px"></div>
+        </div>
+        <span style="font-size:11px;color:${textColor};font-weight:600">${sold}/${t.seatsTotal}</span>
+      </div>
+      ${isFull ? '<div style="color:var(--danger);font-weight:600;margin-top:8px;font-size:12px">⚠️ Hết vé</div>' : ''}
+    </div>
+  `;
+}
+
+function renderIntercityTripGrid(trips, emptyText) {
+  const el = document.getElementById('intercity-results');
+  if (!el) return;
+  if (!trips.length) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🚌</div><div class="empty-state-text">${emptyText}</div></div>`;
+    return;
+  }
+  el.innerHTML = '<div class="trip-grid">' + trips.map(intercityTripCardHTML).join('') + '</div>';
+}
+
 function renderIntercityBooking() {
   // Mặc định: hiển thị chuyến từ origin được chọn (hoặc HCM)
   const originId = document.getElementById('intercity-origin')?.value || 'HCM';
@@ -2789,60 +2837,7 @@ function renderIntercityBooking() {
     const route = INTERCITY_ROUTES.find(r => r.id === t.routeId);
     return route && route.originId === originId && t.status === 'available';
   });
-
-  if (trips.length > 0) {
-    document.getElementById('intercity-results').innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px">
-    ` + trips.map(t => {
-      const route = INTERCITY_ROUTES.find(r => r.id === t.routeId);
-      const sold = t.seatsTotal - t.seatsAvailable;
-      const percent = Math.round((sold / t.seatsTotal) * 100);
-      const textColor = percent >= 90 ? 'var(--danger)' : percent >= 70 ? 'var(--warning)' : 'var(--success)';
-
-      return `
-      <div class="trip-card" onclick="showTripDetail('${t.id}')" style="cursor:pointer;padding:16px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-          <div>
-            <div style="font-weight:600;font-size:14px;color:var(--text-primary)">${route?.origin || '—'} → ${route?.destination || '—'}</div>
-            <div style="font-size:12px;color:var(--text-muted)">${t.operatorName}</div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-weight:700;font-size:16px;color:var(--success)">${fmt(t.price)}</div>
-            <div style="font-size:11px;color:var(--text-muted)">/khách</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div>
-            <div style="font-size:11px;color:var(--text-muted)">🕐 Giờ chạy</div>
-            <div style="font-weight:600">${t.departureTime} - ${t.arrivalTime}</div>
-          </div>
-          <div>
-            <div style="font-size:11px;color:var(--text-muted)">📅 Ngày chạy</div>
-            <div style="font-weight:600">${t.date}</div>
-          </div>
-        </div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <div>
-            <span style="font-size:12px;padding:2px 8px;background:var(--accent-glow);color:var(--accent);border-radius:4px">${t.vehicleType}</span>
-          </div>
-          <div style="font-size:12px;color:var(--text-muted)">${t.seatsAvailable} chỗ trống</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="flex:1;height:6px;background:var(--border-color);border-radius:3px">
-            <div style="height:100%;width:${percent}%;background:${textColor};border-radius:3px"></div>
-          </div>
-          <span style="font-size:11px;color:${textColor};font-weight:500">${sold}/${t.seatsTotal}</span>
-        </div>
-      </div>
-    `}).join('') + `</div>`;
-  } else {
-    document.getElementById('intercity-results').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🚌</div>
-        <div class="empty-state-text">Chưa có chuyến nào từ ${originLoc ? locationLabel(originLoc) : originId}</div>
-      </div>
-    `;
-  }
+  renderIntercityTripGrid(trips, `Chưa có chuyến nào từ ${originLoc ? locationLabel(originLoc) : originId}`);
 }
 
 // ---- Tab Switching ----
@@ -2859,6 +2854,149 @@ function switchBookingTab(tab, btn) {
 }
 
 // ---- REGISTRATIONS ----
+let selectedRegId = null;
+let selectedMntId = null;
+
+const REG_SERVICE_LABELS = { normal: 'Đăng kiểm thường', express: 'Đăng kiểm nhanh', home: 'Đăng kiểm tại nhà' };
+const MNT_SERVICE_LABELS = { basic: 'Bảo dưỡng cơ bản', full: 'Bảo dưỡng toàn diện', oil_change: 'Thay nhớt', tire: 'Lốp & cân chỉnh' };
+const ORDER_ENGINE_LABELS = { gasoline: '⛽ Xăng', electric: '🔋 Điện', diesel: '🛢️ Dầu', hybrid: '⚡ Hybrid' };
+const ORDER_STATUS_LABELS = {
+  pending: { label: 'Chờ xác nhận', class: 'badge-pending' },
+  confirmed: { label: 'Đã xác nhận', class: 'badge-active' },
+  completed: { label: 'Hoàn thành', class: 'badge-success' },
+  cancelled: { label: 'Đã hủy', class: 'badge-cancelled' }
+};
+
+function orderDetailEmpty(icon, text) {
+  return `<div class="odp-empty"><div class="odp-empty-icon">${icon}</div>${text}</div>`;
+}
+
+// URL mã QR (dùng dịch vụ ảnh QR; data là chuỗi tra cứu đơn)
+function qrUrl(data, size = 120) {
+  return `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=0&data=${encodeURIComponent(data)}`;
+}
+
+function orderQrData(o, kind) {
+  const type = kind === 'reg' ? 'DANGKIEM' : 'BAODUONG';
+  return `HAHAGO|${type}|${o.id}|${o.plate}|${o.ownerName}|${o.bookingDate} ${o.bookingTime}|${o.price}`;
+}
+
+function orderDetailHTML(o, kind) {
+  const isReg = kind === 'reg';
+  const serviceLabel = (isReg ? REG_SERVICE_LABELS : MNT_SERVICE_LABELS)[o.service] || o.service;
+  const st = ORDER_STATUS_LABELS[o.status] || { label: o.status, class: '' };
+  const fn = isReg ? 'Registration' : 'Maintenance';
+  return `
+    <div class="odp-head">
+      <span class="odp-title">${isReg ? '📋' : '🔧'} ${o.id}</span>
+      <span class="badge ${st.class}">${st.label}</span>
+    </div>
+    <div class="odp-body">
+      <div class="odp-grid">
+        <div class="odp-cell"><div class="odp-label">Biển số</div><div class="odp-value">${o.plate}</div></div>
+        <div class="odp-cell"><div class="odp-label">Động cơ</div><div class="odp-value">${ORDER_ENGINE_LABELS[o.engineType] || '—'}</div></div>
+        <div class="odp-cell"><div class="odp-label">Chủ xe</div><div class="odp-value">${o.ownerName}</div></div>
+        <div class="odp-cell"><div class="odp-label">SĐT</div><div class="odp-value">${o.ownerPhone}</div></div>
+        <div class="odp-cell odp-span"><div class="odp-label">Địa chỉ nhận xe</div><div class="odp-value">${o.pickupAddress || o.centerName || '—'}</div></div>
+        <div class="odp-cell"><div class="odp-label">Lịch hẹn</div><div class="odp-value">${o.bookingDate} ${o.bookingTime}</div></div>
+        <div class="odp-cell"><div class="odp-label">Dịch vụ</div><div class="odp-value">${serviceLabel}</div></div>
+        <div class="odp-cell"><div class="odp-label">Giá</div><div class="odp-value text-success">${fmt(o.price)}</div></div>
+        ${o.bookingId ? `<div class="odp-cell"><div class="odp-label">Booking</div><div class="odp-value">${o.bookingId}</div></div>` : ''}
+      </div>
+      <div class="odp-qr">
+        <img src="${qrUrl(orderQrData(o, kind), 120)}" alt="QR ${o.id}" width="120" height="120" loading="lazy">
+        <div class="odp-qr-cap">Quét QR tra cứu đơn</div>
+      </div>
+    </div>
+    <div class="odp-actions">
+      ${o.status === 'pending' ? `<button class="btn btn-sm btn-primary" onclick="confirm${fn}('${o.id}')">✓ Xác nhận</button>` : ''}
+      <button class="btn btn-sm btn-outline" onclick="exportOrderTicket('${kind}','${o.id}', false)">🖨️ Xuất vé</button>
+      <button class="btn btn-sm btn-outline" onclick="exportOrderTicket('${kind}','${o.id}', true)">📥 Tải PDF</button>
+    </div>
+  `;
+}
+
+function renderRegistrationDetail(id) {
+  const pane = document.getElementById('registration-detail');
+  if (!pane) return;
+  const o = id ? REGISTRATIONS.find(x => x.id === id) : null;
+  pane.innerHTML = o ? orderDetailHTML(o, 'reg')
+    : orderDetailEmpty('📋', 'Chọn một đơn ở danh sách bên dưới để xem chi tiết');
+}
+
+function renderMaintenanceDetail(id) {
+  const pane = document.getElementById('maintenance-detail');
+  if (!pane) return;
+  const o = id ? MAINTENANCE.find(x => x.id === id) : null;
+  pane.innerHTML = o ? orderDetailHTML(o, 'mnt')
+    : orderDetailEmpty('🔧', 'Chọn một đơn ở danh sách bên dưới để xem chi tiết');
+}
+
+function selectRegistration(id) {
+  selectedRegId = id;
+  renderRegistrations();
+}
+
+function selectMaintenance(id) {
+  selectedMntId = id;
+  renderMaintenance();
+}
+
+function exportOrderTicket(kind, id, autoPrint) {
+  const isReg = kind === 'reg';
+  const o = (isReg ? REGISTRATIONS : MAINTENANCE).find(x => x.id === id);
+  if (!o) return;
+  const serviceLabel = (isReg ? REG_SERVICE_LABELS : MNT_SERVICE_LABELS)[o.service] || o.service;
+  const engineLabel = (ORDER_ENGINE_LABELS[o.engineType] || '—').replace(/[^\p{L} ]/gu, '').trim() || '—';
+  const title = isReg ? 'PHIẾU ĐĂNG KIỂM HỘ' : 'PHIẾU BẢO DƯỠNG HỘ';
+  const row = (l, v) => `<tr><td class="l">${l}</td><td class="v">${v}</td></tr>`;
+  const html = `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${o.id}</title>
+    <style>
+      *{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;box-sizing:border-box}
+      body{margin:0;padding:28px;color:#1a1a2e}
+      .ticket{max-width:520px;margin:0 auto;border:2px solid #2d2d44;border-radius:12px;padding:24px}
+      .brand{font-size:13px;letter-spacing:1px;color:#6b7280}
+      h1{font-size:18px;margin:4px 0 2px}
+      .code{font-size:13px;color:#6b7280;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse}
+      td{padding:7px 4px;border-bottom:1px dashed #e2e2ec;font-size:14px;vertical-align:top}
+      td.l{color:#6b7280;width:42%}
+      td.v{font-weight:600;text-align:right}
+      .total{margin-top:14px;display:flex;justify-content:space-between;font-size:16px;font-weight:700}
+      .qr{margin-top:18px;text-align:center}
+      .qr img{width:140px;height:140px}
+      .qr .cap{font-size:11px;color:#9ca3af;margin-top:6px}
+      .foot{margin-top:18px;font-size:11px;color:#9ca3af;text-align:center}
+    </style></head><body>
+    <div class="ticket">
+      <div class="brand">HAHAGO · DỊCH VỤ XE</div>
+      <h1>${title}</h1>
+      <div class="code">Mã đơn: ${o.id}${o.bookingId ? ' · Booking: ' + o.bookingId : ''}</div>
+      <table>
+        ${row('Biển số xe', o.plate)}
+        ${row('Chủ xe', o.ownerName)}
+        ${row('Số điện thoại', o.ownerPhone)}
+        ${row('Loại động cơ', engineLabel)}
+        ${row('Địa chỉ nhận xe', o.pickupAddress || o.centerName || '—')}
+        ${row('Lịch hẹn', o.bookingDate + ' ' + o.bookingTime)}
+        ${row('Dịch vụ', serviceLabel)}
+        ${row('Trạng thái', (ORDER_STATUS_LABELS[o.status]?.label) || o.status)}
+      </table>
+      <div class="total"><span>Tổng tiền</span><span>${fmt(o.price)}</span></div>
+      <div class="qr">
+        <img src="${qrUrl(orderQrData(o, kind), 140)}" alt="QR ${o.id}">
+        <div class="cap">Quét mã QR để tra cứu đơn ${o.id}</div>
+      </div>
+      <div class="foot">Phiếu in lúc ${nowStr()} · Cảm ơn quý khách</div>
+    </div>
+    ${autoPrint ? '<script>window.onload=function(){window.print()}<\/script>' : ''}
+    </body></html>`;
+  const w = window.open('', '_blank', 'width=560,height=720');
+  if (!w) { alert('Trình duyệt chặn cửa sổ. Vui lòng cho phép pop-up để xuất vé.'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 function openRegistrationCreate() {
   clearRegistrationForm();
   openModal('registration-create-modal');
@@ -2884,7 +3022,7 @@ function renderRegistrations() {
   const engineLabels = { gasoline: '⛽ Xăng', electric: '🔋 Điện', diesel: '🛢️ Dầu', hybrid: '⚡ Hybrid' };
 
   document.getElementById('registrations-table-body').innerHTML = regs.map(r => `
-    <tr>
+    <tr class="row-clickable ${selectedRegId === r.id ? 'row-selected' : ''}" onclick="selectRegistration('${r.id}')">
       <td><span class="text-accent fw-600">${r.id}</span></td>
       <td><span class="fw-600">${r.plate}</span></td>
       <td>${r.ownerName}</td>
@@ -2896,11 +3034,11 @@ function renderRegistrations() {
       <td class="fw-600 text-success">${fmt(r.price)}</td>
       <td><span class="badge ${statusMap[r.status]?.class || ''}">${statusMap[r.status]?.label || r.status}</span></td>
       <td>
-        <button class="btn btn-sm btn-outline" title="Xem chi tiết" onclick="viewRegistration('${r.id}')">👁️</button>
-        ${r.status === 'pending' ? `<button class="btn btn-sm btn-primary" title="Xác nhận" onclick="confirmRegistration('${r.id}')">✓</button>` : ''}
+        ${r.status === 'pending' ? `<button class="btn btn-sm btn-primary" title="Xác nhận" onclick="event.stopPropagation();confirmRegistration('${r.id}')">✓</button>` : ''}
       </td>
     </tr>
   `).join('') || `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">Không tìm thấy đơn đăng kiểm</div></div></td></tr>`;
+  renderRegistrationDetail(selectedRegId);
 }
 
 function createRegistrationOrder() {
@@ -2985,6 +3123,7 @@ function createRegistrationOrder() {
   }
 
   clearRegistrationForm();
+  selectedRegId = newReg.id;
   renderRegistrations();
   updateBadges();
   alert('Tạo đơn đăng kiểm thành công!\nMã đơn: ' + newReg.id + '\nBooking: ' + booking.bookingCode);
@@ -3070,7 +3209,7 @@ function renderMaintenance() {
   const body = document.getElementById('maintenance-table-body');
   if (!body) return;
   body.innerHTML = items.map(r => `
-    <tr>
+    <tr class="row-clickable ${selectedMntId === r.id ? 'row-selected' : ''}" onclick="selectMaintenance('${r.id}')">
       <td><span class="text-accent fw-600">${r.id}</span></td>
       <td><span class="fw-600">${r.plate}</span></td>
       <td>${r.ownerName}</td>
@@ -3082,11 +3221,11 @@ function renderMaintenance() {
       <td class="fw-600 text-success">${fmt(r.price)}</td>
       <td><span class="badge ${statusMap[r.status]?.class || ''}">${statusMap[r.status]?.label || r.status}</span></td>
       <td>
-        <button class="btn btn-sm btn-outline" title="Xem chi tiết" onclick="viewMaintenance('${r.id}')">👁️</button>
-        ${r.status === 'pending' ? `<button class="btn btn-sm btn-primary" title="Xác nhận" onclick="confirmMaintenance('${r.id}')">✓</button>` : ''}
+        ${r.status === 'pending' ? `<button class="btn btn-sm btn-primary" title="Xác nhận" onclick="event.stopPropagation();confirmMaintenance('${r.id}')">✓</button>` : ''}
       </td>
     </tr>
   `).join('') || `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">🔧</div><div class="empty-state-text">Không tìm thấy đơn bảo dưỡng</div></div></td></tr>`;
+  renderMaintenanceDetail(selectedMntId);
 }
 
 function createMaintenanceOrder() {
@@ -3170,6 +3309,7 @@ function createMaintenanceOrder() {
   }
 
   clearMaintenanceForm();
+  selectedMntId = newMnt.id;
   renderMaintenance();
   updateBadges();
   alert('Tạo đơn bảo dưỡng thành công!\nMã đơn: ' + newMnt.id + '\nBooking: ' + booking.bookingCode);
@@ -3375,85 +3515,102 @@ function searchIntercityTrips() {
     return t.status === 'available';
   });
 
-  if (trips.length === 0) {
-    document.getElementById('intercity-results').innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🔍</div>
-        <div class="empty-state-text">Không tìm thấy chuyến nào phù hợp</div>
+  renderIntercityTripGrid(trips, 'Không tìm thấy chuyến nào phù hợp');
+}
+
+function clearIntercityFilter() {
+  const dest = document.getElementById('intercity-destination');
+  const date = document.getElementById('intercity-date');
+  const pax = document.getElementById('intercity-passengers');
+  if (dest) dest.value = '';
+  if (date) date.value = '';
+  if (pax) pax.value = '1';
+  showAllIntercityTrips();
+}
+
+function showAllIntercityTrips() {
+  const trips = INTERCITY_TRIPS.filter(t => t.status === 'available');
+  renderIntercityTripGrid(trips, 'Chưa có chuyến nào');
+}
+
+function renderTripBookingList(tripId) {
+  const list = BOOKINGS.filter(b => b.bookingType === 'INTERCITY' && b.tripId === tripId)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const statusLabels = {
+    PENDING_CONFIRMATION: { t: 'Chờ xác nhận', c: 'badge-pending' },
+    CONFIRMED: { t: 'Đã xác nhận', c: 'badge-active' },
+    COMPLETED: { t: 'Hoàn thành', c: 'badge-success' },
+    CANCELLED: { t: 'Đã hủy', c: 'badge-cancelled' }
+  };
+  if (list.length === 0) {
+    return `<div class="odp-empty"><div class="odp-empty-icon">🎫</div>Chưa có vé nào cho chuyến này</div>`;
+  }
+  return list.map(b => {
+    const cust = CUSTOMERS.find(c => c.id === b.customerId);
+    const pax = b.passengerSnapshot?.length || 1;
+    const st = statusLabels[b.bookingStatus] || { t: b.bookingStatus, c: '' };
+    return `
+      <div class="tb-booking-item">
+        <div class="tb-bi-head">
+          <span>${cust?.name || b.passengerSnapshot?.[0]?.name || '—'}</span>
+          <span class="badge ${st.c}">${st.t}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;color:var(--text-muted)">
+          <span>📞 ${cust?.phone || b.passengerSnapshot?.[0]?.phone || '—'} · 👥 ${pax} vé</span>
+          <span class="text-success fw-600">${fmt(b.fareSnapshot)}</span>
+        </div>
+        <div style="color:var(--text-muted);margin-top:2px">${b.bookingCode}</div>
       </div>
     `;
-    return;
-  }
-
-  document.getElementById('intercity-results').innerHTML = trips.map(t => {
-    const sold = t.seatsTotal - t.seatsAvailable;
-    const percent = Math.round((sold / t.seatsTotal) * 100);
-    const isFull = t.seatsAvailable === 0;
-    const bgColor = percent >= 90 ? 'var(--danger-bg)' : percent >= 70 ? 'var(--warning-bg)' : 'var(--success-bg)';
-    const textColor = percent >= 90 ? 'var(--danger)' : percent >= 70 ? 'var(--warning)' : 'var(--success)';
-
-    return `
-    <div class="trip-card" onclick="showTripDetail('${t.id}')">
-      <div class="trip-header">
-        <span class="trip-operator">${t.operatorName}</span>
-        <span class="trip-price">${fmt(t.price)}</span>
-      </div>
-      <div class="trip-times">
-        <span class="trip-time">${t.departureTime}</span>
-        <span class="trip-duration">${t.duration}</span>
-        <span class="trip-time">${t.arrivalTime}</span>
-      </div>
-      <div class="trip-info" style="margin-top:12px">
-        <span>${t.vehicleType}</span>
-        <span style="padding:4px 8px;border-radius:4px;background:${bgColor};color:${textColor};font-weight:600">
-          ${sold} / ${t.seatsTotal} vé đã bán (${percent}%)
-        </span>
-      </div>
-      ${isFull ? '<div style="color:var(--danger);font-weight:600;margin-top:8px">⚠️ Hết vé</div>' : ''}
-    </div>
-  `}).join('');
+  }).join('');
 }
 
 function showTripDetail(tripId) {
   const trip = INTERCITY_TRIPS.find(t => t.id === tripId);
   if (!trip) return;
 
-  const passengers = document.getElementById('intercity-passengers').value;
+  const passengers = document.getElementById('intercity-passengers')?.value || '1';
+  const route = INTERCITY_ROUTES.find(r => r.id === trip.routeId);
   const sold = trip.seatsTotal - trip.seatsAvailable;
   const total = trip.price * parseInt(passengers);
 
-  document.getElementById('intercity-results').innerHTML = `
-    <div class="trip-card selected">
-      <div class="trip-header">
-        <span class="trip-operator">${trip.operatorName}</span>
-        <span class="trip-price">${fmt(trip.price)}</span>
+  document.getElementById('trip-book-title').textContent =
+    `🎫 ${route ? route.origin + ' → ' + route.destination : 'Đặt vé'} · ${trip.operatorName}`;
+
+  document.getElementById('trip-book-body').innerHTML = `
+    <div class="trip-book-grid">
+      <div>
+        <div class="trip-card selected" style="cursor:default">
+          <div class="trip-header">
+            <span class="trip-operator">${trip.operatorName}</span>
+            <span class="trip-price">${fmt(trip.price)}</span>
+          </div>
+          <div class="trip-times">
+            <span class="trip-time">${trip.departureTime}</span>
+            <span class="trip-duration">${trip.duration}</span>
+            <span class="trip-time">${trip.arrivalTime}</span>
+          </div>
+          <div class="trip-info" style="margin-top:12px">
+            <span>${trip.vehicleType}</span>
+            <span>📅 ${trip.date} · ${trip.seatsAvailable} chỗ trống</span>
+          </div>
+        </div>
+        <div class="form-grid" style="margin-top:16px">
+          <div class="input-group"><label>Số khách</label><input type="number" class="input" id="booking-passengers" value="${passengers}" min="1" max="${trip.seatsAvailable}" onchange="updateBookingTotal('${trip.id}', this.value)"></div>
+          <div class="input-group"><label>Tổng tiền</label><div style="font-size:22px;font-weight:700;color:var(--success);padding:6px 0" id="booking-total">${fmt(total)}</div></div>
+          <div class="input-group full-width"><label>Họ tên khách</label><input type="text" class="input" id="customer-name" placeholder="Nguyễn Văn A"></div>
+          <div class="input-group full-width"><label>Số điện thoại</label><input type="text" class="input" id="customer-phone" placeholder="090xxxxxxx"></div>
+          <div class="input-group full-width"><label>Thanh toán</label><select class="input" id="booking-payment-method"><option value="wallet">Ví khách hàng</option><option value="cash">Tiền mặt</option></select></div>
+        </div>
+        <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="createIntercityBooking('${trip.id}')">🎫 Tạo đơn vé</button>
       </div>
-      <div class="trip-times">
-        <span class="trip-time">${trip.departureTime}</span>
-        <span class="trip-duration">${trip.duration}</span>
-        <span class="trip-time">${trip.arrivalTime}</span>
+      <div>
+        <div class="inline-form-card-header" style="margin-bottom:12px"><span class="inline-form-card-title">👥 Vé đã đặt (${sold}/${trip.seatsTotal})</span></div>
+        <div class="tb-booking-list" id="trip-book-list">${renderTripBookingList(trip.id)}</div>
       </div>
-      <div class="trip-info" style="margin-top:12px">
-        <span>${trip.vehicleType}</span>
-        <span>${sold}/${trip.seatsTotal} vé đã bán</span>
-      </div>
-    </div>
-    <div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:var(--radius-lg);padding:20px;margin-top:16px">
-      <h4 style="margin-bottom:16px">Đặt vé</h4>
-      <div class="form-grid">
-        <div class="input-group"><label>Số khách</label><input type="number" id="booking-passengers" value="${passengers}" min="1" max="${trip.seatsAvailable}" onchange="updateBookingTotal('${trip.id}', this.value)"></div>
-        <div class="input-group"><label>Tổng tiền</label><div style="font-size:24px;font-weight:700;color:var(--success);padding:8px 0" id="booking-total">${fmt(total)}</div></div>
-        <div class="input-group full-width"><label>Họ tên khách</label><input type="text" id="customer-name" placeholder="Nguyễn Văn A"></div>
-        <div class="input-group full-width"><label>Số điện thoại</label><input type="text" id="customer-phone" placeholder="090xxxxxxx"></div>
-      </div>
-      <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="createIntercityBooking('${trip.id}')">Tạo đơn vé</button>
-      <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="backToTripList()">Quay lại</button>
     </div>
   `;
-}
-
-function backToTripList() {
-  renderIntercityBooking();
+  openModal('trip-book-modal');
 }
 
 function updateBookingTotal(tripId, passengers) {
@@ -3551,5 +3708,18 @@ function createIntercityBooking(tripId) {
   updateBadges();
   alert('Tạo đơn vé thành công! Mã booking: ' + newBooking.bookingCode +
         (pay.success ? '' : '\n⚠️ Thanh toán thất bại - đơn ở trạng thái chờ xác nhận'));
-  searchIntercityTrips();
+
+  // Cập nhật danh sách vé đã đặt trong popup + reset form khách
+  const listEl = document.getElementById('trip-book-list');
+  if (listEl) {
+    listEl.innerHTML = renderTripBookingList(trip.id);
+    const nameEl = document.getElementById('customer-name');
+    const phoneEl = document.getElementById('customer-phone');
+    if (nameEl) nameEl.value = '';
+    if (phoneEl) phoneEl.value = '';
+    if (trip.seatsAvailable <= 0) closeModal('trip-book-modal');
+  }
+  // Làm mới kết quả tìm chuyến phía dưới (cập nhật số vé/chỗ trống)
+  const destSel = document.getElementById('intercity-destination');
+  if (destSel && destSel.value) { searchIntercityTrips(); } else { renderIntercityBooking(); }
 }

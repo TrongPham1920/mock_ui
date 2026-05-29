@@ -408,34 +408,39 @@
               <div class="bsb-field"><label>Ngày đi</label><input type="date" class="input" id="intercity-date"></div>
               <div class="bsb-field"><label>Số khách</label><select class="input" id="intercity-passengers"><option value="1">1 khách</option><option value="2">2 khách</option><option value="3">3 khách</option><option value="4">4 khách</option><option value="5">5 khách</option></select></div>
               <button class="btn btn-primary bsb-submit" onclick="searchIntercityTrips()">🔍 Tìm chuyến</button>
+              <button class="btn btn-outline bsb-submit" onclick="clearIntercityFilter()" title="Bỏ lọc, xem tất cả chuyến">↺ Xem tất cả</button>
             </div>
             <div class="search-results" id="intercity-results"></div>
           </div>
 
           <!-- REGISTRATION TAB -->
           <div id="booking-tab-registration" style="display:none">
-            <div class="inline-form-card">
-              <div class="inline-form-card-header"><span class="inline-form-card-title">📋 Tạo đơn đăng kiểm hộ</span></div>
-              <div class="form-grid-3">
-                <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="reg-plate" placeholder="51A-123.45"></div>
-                <div class="input-group"><label>Loại xe *</label><select class="input" id="reg-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
-                <div class="input-group"><label>⛽ Loại động cơ *</label><select class="input" id="reg-engine-type"><option value="gasoline">⛽ Xăng</option><option value="electric">🔋 Điện</option><option value="diesel">🛢️ Dầu</option><option value="hybrid">⚡ Hybrid</option></select></div>
-                <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="reg-owner-name" placeholder="Nguyễn Văn A"></div>
-                <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="reg-owner-phone" placeholder="0901234567"></div>
-                <div class="input-group"><label>Ngày hết hạn đăng kiểm</label><input type="date" class="input" id="reg-expire-date"></div>
-                <div class="input-group" style="grid-column:span 2"><label>📍 Địa chỉ nhận xe *</label><input type="text" class="input" id="reg-pickup-address" placeholder="VD: 12 Hai Bà Trưng, Q.1, TP.HCM"></div>
-                <div class="input-group"><label>Dịch vụ đăng kiểm</label><select class="input" id="reg-service"><option value="normal">Đăng kiểm thường (350.000đ)</option><option value="express">Đăng kiểm nhanh (500.000đ)</option><option value="home">Đăng kiểm tại nhà (700.000đ)</option></select></div>
-                <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="reg-booking-date"></div>
-                <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="reg-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option></select></div>
-                <div class="input-group" style="grid-column:span 3"><label>Ghi chú</label><input type="text" class="input" id="reg-notes" placeholder="Yêu cầu thêm..."></div>
+            <div class="booking-split">
+              <div class="booking-panel">
+              <div class="inline-form-card">
+                <div class="inline-form-card-header"><span class="inline-form-card-title">📋 Tạo đơn đăng kiểm hộ</span></div>
+                <div class="booking-form-grid">
+                  <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="reg-plate" placeholder="51A-123.45"></div>
+                  <div class="input-group"><label>Loại xe *</label><select class="input" id="reg-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
+                  <div class="input-group"><label>⛽ Loại động cơ *</label><select class="input" id="reg-engine-type"><option value="gasoline">⛽ Xăng</option><option value="electric">🔋 Điện</option><option value="diesel">🛢️ Dầu</option><option value="hybrid">⚡ Hybrid</option></select></div>
+                  <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="reg-owner-name" placeholder="Nguyễn Văn A"></div>
+                  <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="reg-owner-phone" placeholder="0901234567"></div>
+                  <div class="input-group"><label>Ngày hết hạn ĐK</label><input type="date" class="input" id="reg-expire-date"></div>
+                  <div class="input-group span-3"><label>📍 Địa chỉ nhận xe *</label><input type="text" class="input" id="reg-pickup-address" placeholder="VD: 12 Hai Bà Trưng, Q.1, TP.HCM"></div>
+                  <div class="input-group"><label>Dịch vụ đăng kiểm</label><select class="input" id="reg-service"><option value="normal">Thường (350.000đ)</option><option value="express">Nhanh (500.000đ)</option><option value="home">Tại nhà (700.000đ)</option></select></div>
+                  <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="reg-booking-date"></div>
+                  <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="reg-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option></select></div>
+                  <div class="input-group span-3"><label>Ghi chú</label><input type="text" class="input" id="reg-notes" placeholder="Yêu cầu thêm..."></div>
+                </div>
+                <div class="inline-form-actions">
+                  <button class="btn btn-outline" onclick="clearRegistrationForm()">Xóa</button>
+                  <button class="btn btn-primary" onclick="createRegistrationOrder()">📋 Tạo đơn</button>
+                </div>
               </div>
-              <div class="inline-form-actions">
-                <button class="btn btn-outline" onclick="clearRegistrationForm()">Xóa</button>
-                <button class="btn btn-primary" onclick="createRegistrationOrder()">📋 Tạo đơn</button>
+              <div class="order-detail-pane" id="registration-detail"></div>
               </div>
-            </div>
 
-            <div class="table-container">
+              <div class="table-container">
               <div class="table-header">
                 <span class="table-title">Danh sách đơn đăng kiểm</span>
                 <div class="table-actions">
@@ -453,33 +458,38 @@
                 <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>📍 Địa chỉ nhận xe</th><th>⛽ Động cơ</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody id="registrations-table-body"></tbody></table>
               </div>
+              </div>
             </div>
           </div>
 
           <!-- MAINTENANCE TAB -->
           <div id="booking-tab-maintenance" style="display:none">
-            <div class="inline-form-card">
-              <div class="inline-form-card-header"><span class="inline-form-card-title">🔧 Tạo đơn bảo dưỡng hộ</span></div>
-              <div class="form-grid-3">
-                <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="mnt-plate" placeholder="51A-123.45"></div>
-                <div class="input-group"><label>Loại xe *</label><select class="input" id="mnt-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
-                <div class="input-group"><label>⛽ Loại động cơ *</label><select class="input" id="mnt-engine-type"><option value="gasoline">⛽ Xăng</option><option value="electric">🔋 Điện</option><option value="diesel">🛢️ Dầu</option><option value="hybrid">⚡ Hybrid</option></select></div>
-                <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="mnt-owner-name" placeholder="Nguyễn Văn A"></div>
-                <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="mnt-owner-phone" placeholder="0901234567"></div>
-                <div class="input-group"><label>Số km hiện tại</label><input type="number" class="input" id="mnt-mileage" placeholder="50000"></div>
-                <div class="input-group" style="grid-column:span 2"><label>📍 Địa chỉ nhận xe *</label><input type="text" class="input" id="mnt-pickup-address" placeholder="VD: 12 Hai Bà Trưng, Q.1, TP.HCM"></div>
-                <div class="input-group"><label>Dịch vụ bảo dưỡng</label><select class="input" id="mnt-service"><option value="basic">Bảo dưỡng cơ bản (400.000đ)</option><option value="full">Bảo dưỡng toàn diện (1.200.000đ)</option><option value="oil_change">Thay nhớt (250.000đ)</option><option value="tire">Lốp + cân chỉnh (800.000đ)</option></select></div>
-                <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="mnt-booking-date"></div>
-                <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="mnt-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option><option value="15:00">15:00</option></select></div>
-                <div class="input-group" style="grid-column:span 3"><label>Ghi chú</label><input type="text" class="input" id="mnt-notes" placeholder="Yêu cầu thêm..."></div>
+            <div class="booking-split">
+              <div class="booking-panel">
+              <div class="inline-form-card">
+                <div class="inline-form-card-header"><span class="inline-form-card-title">🔧 Tạo đơn bảo dưỡng hộ</span></div>
+                <div class="booking-form-grid">
+                  <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="mnt-plate" placeholder="51A-123.45"></div>
+                  <div class="input-group"><label>Loại xe *</label><select class="input" id="mnt-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
+                  <div class="input-group"><label>⛽ Loại động cơ *</label><select class="input" id="mnt-engine-type"><option value="gasoline">⛽ Xăng</option><option value="electric">🔋 Điện</option><option value="diesel">🛢️ Dầu</option><option value="hybrid">⚡ Hybrid</option></select></div>
+                  <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="mnt-owner-name" placeholder="Nguyễn Văn A"></div>
+                  <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="mnt-owner-phone" placeholder="0901234567"></div>
+                  <div class="input-group"><label>Số km hiện tại</label><input type="number" class="input" id="mnt-mileage" placeholder="50000"></div>
+                  <div class="input-group span-3"><label>📍 Địa chỉ nhận xe *</label><input type="text" class="input" id="mnt-pickup-address" placeholder="VD: 12 Hai Bà Trưng, Q.1, TP.HCM"></div>
+                  <div class="input-group"><label>Dịch vụ bảo dưỡng</label><select class="input" id="mnt-service"><option value="basic">Cơ bản (400.000đ)</option><option value="full">Toàn diện (1.200.000đ)</option><option value="oil_change">Thay nhớt (250.000đ)</option><option value="tire">Lốp + cân chỉnh (800.000đ)</option></select></div>
+                  <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="mnt-booking-date"></div>
+                  <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="mnt-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option><option value="15:00">15:00</option></select></div>
+                  <div class="input-group span-3"><label>Ghi chú</label><input type="text" class="input" id="mnt-notes" placeholder="Yêu cầu thêm..."></div>
+                </div>
+                <div class="inline-form-actions">
+                  <button class="btn btn-outline" onclick="clearMaintenanceForm()">Xóa</button>
+                  <button class="btn btn-primary" onclick="createMaintenanceOrder()">🔧 Tạo đơn</button>
+                </div>
               </div>
-              <div class="inline-form-actions">
-                <button class="btn btn-outline" onclick="clearMaintenanceForm()">Xóa</button>
-                <button class="btn btn-primary" onclick="createMaintenanceOrder()">🔧 Tạo đơn</button>
+              <div class="order-detail-pane" id="maintenance-detail"></div>
               </div>
-            </div>
 
-            <div class="table-container">
+              <div class="table-container">
               <div class="table-header">
                 <span class="table-title">Danh sách đơn bảo dưỡng</span>
                 <div class="table-actions">
@@ -496,6 +506,7 @@
               <div class="table-wrapper">
                 <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>📍 Địa chỉ nhận xe</th><th>⛽ Động cơ</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody id="maintenance-table-body"></tbody></table>
+              </div>
               </div>
             </div>
           </div>
@@ -764,6 +775,14 @@
         <button class="btn btn-outline" onclick="closeModal('trip-create-modal')">Hủy</button>
         <button class="btn btn-primary" onclick="createIntercityTrip()">Tạo chuyến</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== ĐẶT VÉ LIÊN TỈNH (popup) ===== -->
+  <div class="modal-overlay" id="trip-book-modal">
+    <div class="modal modal-lg">
+      <div class="modal-header"><span class="modal-title" id="trip-book-title">🎫 Đặt vé liên tỉnh</span><button class="modal-close" onclick="closeModal('trip-book-modal')">✕</button></div>
+      <div class="modal-body" id="trip-book-body"></div>
     </div>
   </div>
 
