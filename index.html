@@ -75,7 +75,7 @@
           <span class="nav-item-icon">🎫</span> Mã ưu đãi
         </div>
         <div class="nav-item" data-page="commissions" data-roles="ADMIN,FINANCE" data-perm="commission.view,commission.manage" onclick="navigateTo('commissions')">
-          <span class="nav-item-icon">📈</span> Chiết khấu
+          <span class="nav-item-icon">📈</span> Chiết khấu & Giá tiền
         </div>
 
         <div class="nav-section-title" data-perm="notification.view">Hệ thống</div>
@@ -176,14 +176,15 @@
           <div class="tabs" style="margin-bottom:20px">
             <button class="tab-btn active" data-tab="schedules" onclick="switchRouteTab('schedules', this)">📅 Lịch chạy</button>
             <button class="tab-btn" data-tab="routes" onclick="switchRouteTab('routes', this)">🗺️ Tuyến đường</button>
-            <button class="tab-btn" data-tab="seats" onclick="switchRouteTab('seats', this)">💺 Ghế</button>
+            <button class="tab-btn" data-tab="vehicle-models" onclick="switchRouteTab('vehicle-models', this)">🚐 Loại xe</button>
+            <button class="tab-btn" data-tab="stops" onclick="switchRouteTab('stops', this)">📍 Điểm dừng</button>
           </div>
 
           <!-- Schedules Tab (Default) -->
           <div id="routes-tab-schedules">
             <div class="table-container">
               <div class="table-header"><span class="table-title">Lịch chạy</span>
-                <div class="table-actions"><button class="btn btn-sm btn-primary" onclick="openModal('schedule-create-modal')">➕ Thêm lịch</button></div>
+                <div class="table-actions"><button class="btn btn-sm btn-primary" onclick="openScheduleCreate()">➕ Thêm lịch</button></div>
               </div>
               <div class="table-wrapper">
                 <table><thead><tr><th>ID</th><th>Tuyến</th><th>Nhà xe</th><th>Giờ đi</th><th>Giờ đến</th><th>Loại xe</th><th>Ngày chạy</th><th>Thao tác</th></tr></thead>
@@ -196,24 +197,37 @@
           <div id="routes-tab-routes" style="display:none">
             <div class="table-container">
               <div class="table-header"><span class="table-title">Tuyến đường</span>
-                <div class="table-actions"><button class="btn btn-primary">➕ Thêm tuyến</button></div>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openRouteCreate()">➕ Thêm tuyến</button></div>
               </div>
               <div class="table-wrapper">
-                <table><thead><tr><th>ID</th><th>Tuyến</th><th>Khoảng cách</th><th>Thời gian</th><th>Điểm dừng</th><th>Nhà xe</th><th>Trạng thái</th></tr></thead>
+                <table><thead><tr><th>ID</th><th>Tuyến</th><th>Khoảng cách</th><th>Thời gian</th><th>Điểm đi</th><th>Điểm đến</th><th>Điểm dừng</th><th>Trạng thái</th></tr></thead>
                 <tbody id="routes-table-body"></tbody></table>
               </div>
             </div>
           </div>
 
-          <!-- Seats Tab -->
-          <div id="routes-tab-seats" style="display:none">
+          <!-- Vehicle Models Tab -->
+          <div id="routes-tab-vehicle-models" style="display:none">
             <div class="table-container">
-              <div class="table-header"><span class="table-title">Sơ đồ ghế</span>
-                <div class="table-actions"><button class="btn btn-primary">➕ Thêm ghế</button></div>
+              <div class="table-header"><span class="table-title">Loại xe (thay cho Ghế)</span>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openVehicleModelCreate()">➕ Thêm loại xe</button></div>
               </div>
               <div class="table-wrapper">
-                <table><thead><tr><th>ID</th><th>Tên</th><th>Loại</th><th>Tổng ghế</th></tr></thead>
-                <tbody id="seats-table-body"></tbody></table>
+                <table><thead><tr><th>ID</th><th>Tên</th><th>Dịch vụ</th><th>Phân loại</th><th>Số ghế</th><th>Hành lý</th><th>Mô tả</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="vehicle-models-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stops Tab -->
+          <div id="routes-tab-stops" style="display:none">
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Điểm dừng</span>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openStopCreate()">➕ Thêm điểm dừng</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Tên điểm dừng</th><th>Địa chỉ</th><th>Quận/Huyện</th><th>Tỉnh/Thành</th><th>Thao tác</th></tr></thead>
+                <tbody id="stops-table-body"></tbody></table>
               </div>
             </div>
           </div>
@@ -387,75 +401,56 @@
 
           <!-- INTERCITY TAB -->
           <div id="booking-tab-intercity">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-              <h3 style="margin:0">Danh sách chuyến xe</h3>
-                          </div>
-            <div class="intercity-search">
-              <div class="search-route">
-                <div class="route-input">
-                  <label>Điểm đi</label>
-                  <select class="input" id="intercity-origin"></select>
-                </div>
-                <button class="route-swap" onclick="swapRoute()">⇄</button>
-                <div class="route-input">
-                  <label>Điểm đến</label>
-                  <select class="input" id="intercity-destination"></select>
-                </div>
-              </div>
-              <div class="search-date-time">
-                <div class="input-group">
-                  <label>Ngày đi</label>
-                  <input type="date" class="input" id="intercity-date">
-                </div>
-                <div class="input-group">
-                  <label>Số khách</label>
-                  <select class="input" id="intercity-passengers">
-                    <option value="1">1 khách</option>
-                    <option value="2">2 khách</option>
-                    <option value="3">3 khách</option>
-                    <option value="4">4 khách</option>
-                    <option value="5">5 khách</option>
-                  </select>
-                </div>
-              </div>
-              <button class="btn btn-primary" style="width:100%;margin-top:16px" onclick="searchIntercityTrips()">🔍 Tìm chuyến</button>
+            <div class="booking-search-bar">
+              <div class="bsb-field"><label>Điểm đi</label><select class="input" id="intercity-origin"></select></div>
+              <button class="route-swap" onclick="swapRoute()" title="Đổi chiều">⇄</button>
+              <div class="bsb-field"><label>Điểm đến</label><select class="input" id="intercity-destination"></select></div>
+              <div class="bsb-field"><label>Ngày đi</label><input type="date" class="input" id="intercity-date"></div>
+              <div class="bsb-field"><label>Số khách</label><select class="input" id="intercity-passengers"><option value="1">1 khách</option><option value="2">2 khách</option><option value="3">3 khách</option><option value="4">4 khách</option><option value="5">5 khách</option></select></div>
+              <button class="btn btn-primary bsb-submit" onclick="searchIntercityTrips()">🔍 Tìm chuyến</button>
             </div>
             <div class="search-results" id="intercity-results"></div>
           </div>
 
           <!-- REGISTRATION TAB -->
           <div id="booking-tab-registration" style="display:none">
-            <div class="registration-form" style="max-width:800px">
-              <div class="form-header" style="margin-bottom:20px">
-                <h3 style="margin:0">📋 Tạo đơn đăng kiểm hộ</h3>
-              </div>
-              <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="inline-form-card">
+              <div class="inline-form-card-header"><span class="inline-form-card-title">📋 Tạo đơn đăng kiểm hộ</span></div>
+              <div class="form-grid-3">
                 <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="reg-plate" placeholder="51A-123.45"></div>
                 <div class="input-group"><label>Loại xe *</label><select class="input" id="reg-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
+                <div class="input-group"><label>⛽ Loại động cơ *</label><select class="input" id="reg-engine-type"><option value="gasoline">⛽ Xăng</option><option value="electric">🔋 Điện</option><option value="diesel">🛢️ Dầu</option><option value="hybrid">⚡ Hybrid</option></select></div>
                 <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="reg-owner-name" placeholder="Nguyễn Văn A"></div>
                 <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="reg-owner-phone" placeholder="0901234567"></div>
-                <div class="input-group"><label>Địa chỉ đăng ký *</label><input type="text" class="input" id="reg-address" placeholder="123 Lê Lợi, Q.1, TP.HCM"></div>
                 <div class="input-group"><label>Ngày hết hạn đăng kiểm</label><input type="date" class="input" id="reg-expire-date"></div>
-                <div class="input-group"><label>Trung tâm đăng kiểm *</label><select class="input" id="reg-center"><option value="">Chọn trung tâm</option><option value="50-05V">TTĐK 50-05V (Q.3, TP.HCM)</option><option value="50-06V">TTĐK 50-06V (Q.6, TP.HCM)</option><option value="50-07V">TTĐK 50-07V (Thủ Đức)</option><option value="50-08V">TTĐK 50-08V (Bình Thạnh)</option></select></div>
+                <div class="input-group" style="grid-column:span 2"><label>📍 Địa chỉ nhận xe *</label><input type="text" class="input" id="reg-pickup-address" placeholder="VD: 12 Hai Bà Trưng, Q.1, TP.HCM"></div>
+                <div class="input-group"><label>Dịch vụ đăng kiểm</label><select class="input" id="reg-service"><option value="normal">Đăng kiểm thường (350.000đ)</option><option value="express">Đăng kiểm nhanh (500.000đ)</option><option value="home">Đăng kiểm tại nhà (700.000đ)</option></select></div>
                 <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="reg-booking-date"></div>
                 <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="reg-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option></select></div>
-                <div class="input-group"><label>Dịch vụ đăng kiểm</label><select class="input" id="reg-service"><option value="normal">Đăng kiểm thường (350.000đ)</option><option value="express">Đăng kiểm nhanh (500.000đ)</option><option value="home">Đăng kiểm tại nhà (700.000đ)</option></select></div>
-                <div class="input-group full-width"><label>Ghi chú</label><textarea class="input" id="reg-notes" rows="2" placeholder="Yêu cầu thêm..."></textarea></div>
+                <div class="input-group" style="grid-column:span 3"><label>Ghi chú</label><input type="text" class="input" id="reg-notes" placeholder="Yêu cầu thêm..."></div>
               </div>
-              <div style="margin-top:20px;display:flex;gap:12px;justify-content:flex-end">
+              <div class="inline-form-actions">
                 <button class="btn btn-outline" onclick="clearRegistrationForm()">Xóa</button>
                 <button class="btn btn-primary" onclick="createRegistrationOrder()">📋 Tạo đơn</button>
               </div>
             </div>
 
-            <div class="table-container" style="margin-top:30px">
-              <div class="table-header"><span class="table-title">Danh sách đăng kiểm hộ</span>
+            <div class="table-container">
+              <div class="table-header">
+                <span class="table-title">Danh sách đơn đăng kiểm</span>
                 <div class="table-actions">
-                  <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="registration-search" oninput="renderRegistrations()"></div>
+                  <select class="input" id="registration-status-filter" onchange="renderRegistrations()" style="height:36px;padding:0 10px">
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="pending">⏳ Chờ xác nhận</option>
+                    <option value="confirmed">✅ Đã xác nhận</option>
+                    <option value="completed">🏁 Hoàn thành</option>
+                    <option value="cancelled">❌ Đã hủy</option>
+                  </select>
+                  <div class="search-box"><input type="search" placeholder="🔍 Biển số / Chủ xe / SĐT..." id="registration-search" oninput="renderRegistrations()"></div>
                 </div>
               </div>
               <div class="table-wrapper">
-                <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>Trung tâm</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>📍 Địa chỉ nhận xe</th><th>⛽ Động cơ</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody id="registrations-table-body"></tbody></table>
               </div>
             </div>
@@ -463,37 +458,43 @@
 
           <!-- MAINTENANCE TAB -->
           <div id="booking-tab-maintenance" style="display:none">
-            <div class="registration-form" style="max-width:800px">
-              <div class="form-header" style="margin-bottom:20px">
-                <h3 style="margin:0">🔧 Tạo đơn bảo dưỡng</h3>
-              </div>
-              <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="inline-form-card">
+              <div class="inline-form-card-header"><span class="inline-form-card-title">🔧 Tạo đơn bảo dưỡng hộ</span></div>
+              <div class="form-grid-3">
                 <div class="input-group"><label>Biển số xe *</label><input type="text" class="input" id="mnt-plate" placeholder="51A-123.45"></div>
                 <div class="input-group"><label>Loại xe *</label><select class="input" id="mnt-vehicle-type"><option value="car">Ô tô con</option><option value="truck">Ô tô tải</option><option value="bus">Ô tô khách</option></select></div>
+                <div class="input-group"><label>⛽ Loại động cơ *</label><select class="input" id="mnt-engine-type"><option value="gasoline">⛽ Xăng</option><option value="electric">🔋 Điện</option><option value="diesel">🛢️ Dầu</option><option value="hybrid">⚡ Hybrid</option></select></div>
                 <div class="input-group"><label>Họ tên chủ xe *</label><input type="text" class="input" id="mnt-owner-name" placeholder="Nguyễn Văn A"></div>
                 <div class="input-group"><label>Số điện thoại *</label><input type="tel" class="input" id="mnt-owner-phone" placeholder="0901234567"></div>
-                <div class="input-group"><label>Địa chỉ *</label><input type="text" class="input" id="mnt-address" placeholder="123 Lê Lợi, Q.1, TP.HCM"></div>
                 <div class="input-group"><label>Số km hiện tại</label><input type="number" class="input" id="mnt-mileage" placeholder="50000"></div>
-                <div class="input-group"><label>Gara/Trung tâm *</label><select class="input" id="mnt-center"><option value="">Chọn gara</option><option value="GARA-A1">Gara A1 (Q.1)</option><option value="GARA-B2">Gara B2 (Q.3)</option><option value="GARA-C3">Gara C3 (Tân Bình)</option><option value="GARA-D4">Gara D4 (Q.7)</option><option value="GARA-E5">Gara E5 (Phú Nhuận)</option></select></div>
+                <div class="input-group" style="grid-column:span 2"><label>📍 Địa chỉ nhận xe *</label><input type="text" class="input" id="mnt-pickup-address" placeholder="VD: 12 Hai Bà Trưng, Q.1, TP.HCM"></div>
+                <div class="input-group"><label>Dịch vụ bảo dưỡng</label><select class="input" id="mnt-service"><option value="basic">Bảo dưỡng cơ bản (400.000đ)</option><option value="full">Bảo dưỡng toàn diện (1.200.000đ)</option><option value="oil_change">Thay nhớt (250.000đ)</option><option value="tire">Lốp + cân chỉnh (800.000đ)</option></select></div>
                 <div class="input-group"><label>Ngày đặt lịch *</label><input type="date" class="input" id="mnt-booking-date"></div>
                 <div class="input-group"><label>Giờ đặt lịch *</label><select class="input" id="mnt-booking-time"><option value="07:00">07:00</option><option value="08:00">08:00</option><option value="09:00">09:00</option><option value="10:00">10:00</option><option value="13:00">13:00</option><option value="14:00">14:00</option><option value="15:00">15:00</option></select></div>
-                <div class="input-group"><label>Dịch vụ bảo dưỡng</label><select class="input" id="mnt-service"><option value="basic">Bảo dưỡng cơ bản (400.000đ)</option><option value="full">Bảo dưỡng toàn diện (1.200.000đ)</option><option value="oil_change">Thay nhớt (250.000đ)</option><option value="tire">Lốp + cân chỉnh (800.000đ)</option></select></div>
-                <div class="input-group full-width"><label>Ghi chú</label><textarea class="input" id="mnt-notes" rows="2" placeholder="Yêu cầu thêm..."></textarea></div>
+                <div class="input-group" style="grid-column:span 3"><label>Ghi chú</label><input type="text" class="input" id="mnt-notes" placeholder="Yêu cầu thêm..."></div>
               </div>
-              <div style="margin-top:20px;display:flex;gap:12px;justify-content:flex-end">
+              <div class="inline-form-actions">
                 <button class="btn btn-outline" onclick="clearMaintenanceForm()">Xóa</button>
                 <button class="btn btn-primary" onclick="createMaintenanceOrder()">🔧 Tạo đơn</button>
               </div>
             </div>
 
-            <div class="table-container" style="margin-top:30px">
-              <div class="table-header"><span class="table-title">Danh sách bảo dưỡng</span>
+            <div class="table-container">
+              <div class="table-header">
+                <span class="table-title">Danh sách đơn bảo dưỡng</span>
                 <div class="table-actions">
-                  <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="maintenance-search" oninput="renderMaintenance()"></div>
+                  <select class="input" id="maintenance-status-filter" onchange="renderMaintenance()" style="height:36px;padding:0 10px">
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="pending">⏳ Chờ xác nhận</option>
+                    <option value="confirmed">✅ Đã xác nhận</option>
+                    <option value="completed">🏁 Hoàn thành</option>
+                    <option value="cancelled">❌ Đã hủy</option>
+                  </select>
+                  <div class="search-box"><input type="search" placeholder="🔍 Biển số / Chủ xe / SĐT..." id="maintenance-search" oninput="renderMaintenance()"></div>
                 </div>
               </div>
               <div class="table-wrapper">
-                <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>Gara</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <table><thead><tr><th>Mã đơn</th><th>Biển số</th><th>Chủ xe</th><th>SĐT</th><th>📍 Địa chỉ nhận xe</th><th>⛽ Động cơ</th><th>Ngày đặt</th><th>Dịch vụ</th><th>Giá</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody id="maintenance-table-body"></tbody></table>
               </div>
             </div>
@@ -552,13 +553,33 @@
 
         <!-- ===== COMMISSIONS ===== -->
         <div class="page" id="page-commissions">
-          <div class="commission-cards" id="commission-config"></div>
-          <div class="table-container">
-            <div class="table-header"><span class="table-title">Lịch sử chiết khấu</span></div>
-            <div class="table-wrapper">
-              <table><thead><tr><th>ID</th><th>Booking</th><th>Tài xế</th><th>Loại xe</th><th>Giá chuyến</th><th>Tỉ lệ</th><th>Chiết khấu</th><th>Thời gian</th></tr></thead>
-              <tbody id="commission-history-body"></tbody></table>
+          <div class="tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-tab="commission" onclick="switchCommissionTab('commission', this)">📈 Chiết khấu (phí dịch vụ)</button>
+            <button class="tab-btn" data-tab="pricing" onclick="switchCommissionTab('pricing', this)">💵 Giá tiền</button>
+          </div>
+
+          <!-- Tab: Chiết khấu -->
+          <div id="commissions-tab-commission" class="commissions-tab-panel is-active">
+            <div class="commission-cards" id="commission-config"></div>
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Lịch sử chiết khấu</span></div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Booking</th><th>Tài xế</th><th>Loại xe</th><th>Tổng tiền</th><th>💸 Tài xế nhận (chiết khấu)</th><th>🏢 Phí dịch vụ</th><th>Thời gian</th></tr></thead>
+                <tbody id="commission-history-body"></tbody></table>
+              </div>
             </div>
+          </div>
+
+          <!-- Tab: Giá tiền -->
+          <div id="commissions-tab-pricing" class="commissions-tab-panel">
+            <div class="tabs" style="margin-bottom:20px" id="pricing-sub-tabs">
+              <button class="tab-btn active" data-ptab="BIKE" onclick="switchPricingTab('BIKE', this)">🏍️ Xe máy</button>
+              <button class="tab-btn" data-ptab="CAR" onclick="switchPricingTab('CAR', this)">🚗 Xe hơi</button>
+              <button class="tab-btn" data-ptab="INTERCITY" onclick="switchPricingTab('INTERCITY', this)">🚌 Liên tỉnh</button>
+              <button class="tab-btn" data-ptab="SERVICE_ORDER" onclick="switchPricingTab('SERVICE_ORDER', this)">📋 Đăng kiểm hộ</button>
+              <button class="tab-btn" data-ptab="MAINTENANCE_ORDER" onclick="switchPricingTab('MAINTENANCE_ORDER', this)">🔧 Bảo dưỡng hộ</button>
+            </div>
+            <div id="pricing-panel"></div>
           </div>
         </div>
 
@@ -756,7 +777,7 @@
           <div class="input-group"><label>Nhà xe *</label><select class="input" id="schedule-operator"><option value="">Chọn nhà xe</option></select></div>
           <div class="input-group"><label>Giờ khởi hành *</label><input type="time" class="input" id="schedule-departure"></div>
           <div class="input-group"><label>Giờ đến (dự kiến) *</label><input type="time" class="input" id="schedule-arrival"></div>
-          <div class="input-group"><label>Loại xe/ghế *</label><select class="input" id="schedule-seat-layout"><option value="SL001">Ghế ngồi 45 chỗ</option><option value="SL002">Giường nằm 36 chỗ</option><option value="SL003">Limousine 22 chỗ</option></select></div>
+          <div class="input-group"><label>🚐 Loại xe *</label><select class="input" id="schedule-vehicle-model"><option value="">Chọn loại xe</option></select><div class="text-muted" style="font-size:11px;margin-top:4px" id="schedule-vehicle-info"></div></div>
           <div class="input-group"><label>Ngày chạy *</label><select class="input" id="schedule-days" multiple style="height:80px"><option value="Mon">Thứ 2</option><option value="Tue">Thứ 3</option><option value="Wed">Thứ 4</option><option value="Thu">Thứ 5</option><option value="Fri">Thứ 6</option><option value="Sat">Thứ 7</option><option value="Sun">Chủ nhật</option></select></div>
           <div class="input-group full-width"><label>Trạng thái</label><select class="input" id="schedule-status"><option value="active">Hoạt động</option><option value="inactive">Tạm dừng</option></select></div>
         </div>
@@ -827,6 +848,133 @@
       <div class="modal-header"><span class="modal-title">Chi tiết Booking</span><button class="modal-close" onclick="closeModal('booking-detail-modal')">✕</button></div>
       <div class="modal-body" id="booking-detail-content"></div>
       <div class="modal-footer" id="booking-detail-actions"></div>
+    </div>
+  </div>
+
+  <!-- Commission Edit Modal -->
+  <div class="modal-overlay" id="commission-edit-modal">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span class="modal-title">✏️ Chỉnh sửa chiết khấu</span>
+        <button class="modal-close" onclick="closeModal('commission-edit-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="ce-id">
+        <div class="input-group mb-20">
+          <label>Loại dịch vụ</label>
+          <div id="ce-service" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-weight:600"></div>
+        </div>
+        <div class="input-group mb-20">
+          <label>Mô tả</label>
+          <input type="text" id="ce-desc" placeholder="Mô tả chiết khấu">
+        </div>
+        <div class="input-group mb-20">
+          <label>💸 Tài xế nhận (chiết khấu) — %</label>
+          <input type="number" id="ce-driver-rate" min="0" max="100" step="1" oninput="syncCommissionEdit('driver')">
+        </div>
+        <div class="input-group mb-20">
+          <label>🏢 Phí dịch vụ — %</label>
+          <input type="number" id="ce-fee-rate" min="0" max="100" step="1" oninput="syncCommissionEdit('fee')">
+        </div>
+        <div style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-size:13px;color:var(--text-muted)">
+          <div>Tổng phải bằng <b>100%</b>. Khi sửa 1 ô, ô còn lại tự cập nhật.</div>
+          <div style="margin-top:8px">Ví dụ chuyến <b>100.000đ</b>: TX nhận <b class="text-success" id="ce-preview-driver">—</b> · phí <b class="text-warning" id="ce-preview-fee">—</b></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('commission-edit-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="saveCommissionEdit()">💾 Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Vehicle Model Create Modal -->
+  <div class="modal-overlay" id="vehicle-model-modal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><span class="modal-title">🚐 Thêm loại xe</span><button class="modal-close" onclick="closeModal('vehicle-model-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="input-group"><label>Tên *</label><input type="text" class="input" id="vm-name" placeholder="VD: Limousine 22 chỗ"></div>
+          <div class="input-group"><label>Loại dịch vụ *</label><select class="input" id="vm-service-type"><option value="BIKE">🏍️ Xe máy</option><option value="CAR">🚗 Xe hơi</option><option value="INTERCITY" selected>🚌 Liên tỉnh</option></select></div>
+          <div class="input-group"><label>Phân loại *</label><select class="input" id="vm-category"><option value="seat">💺 Ghế ngồi</option><option value="sleeper">🛏️ Giường nằm</option><option value="limo_seat">🚐 Limousine ngồi</option><option value="limo_sleeper">🛌 Limousine nằm</option><option value="other">🚗 Khác</option></select></div>
+          <div class="input-group"><label>Số ghế *</label><input type="number" class="input" id="vm-seats" min="1" placeholder="22"></div>
+          <div class="input-group"><label>Trạng thái *</label><select class="input" id="vm-status"><option value="active">Hoạt động</option><option value="inactive">Tạm ngừng</option></select></div>
+          <div class="input-group"><label>Sức chứa hành lý</label><input type="text" class="input" id="vm-luggage" placeholder="VD: 20kg/khách"></div>
+          <div class="input-group full-width" style="grid-column:1/-1"><label>Mô tả</label><textarea class="input" id="vm-description" rows="2" placeholder="Mô tả thêm..."></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('vehicle-model-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createVehicleModel()">💾 Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stop Create Modal -->
+  <div class="modal-overlay" id="stop-modal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header"><span class="modal-title">📍 Thêm điểm dừng</span><button class="modal-close" onclick="closeModal('stop-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="input-group mb-20"><label>Tên điểm dừng *</label><input type="text" class="input" id="stop-name" placeholder="VD: BX Miền Đông"></div>
+        <div class="input-group mb-20"><label>Địa chỉ cụ thể *</label><input type="text" class="input" id="stop-address" placeholder="VD: 292 Đinh Bộ Lĩnh, P.26"></div>
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="input-group"><label>Quận/Huyện *</label><input type="text" class="input" id="stop-district" placeholder="VD: Bình Thạnh"></div>
+          <div class="input-group"><label>Tỉnh/Thành *</label><input type="text" class="input" id="stop-province" placeholder="VD: TP.HCM"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('stop-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createStop()">💾 Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Route Create Modal -->
+  <div class="modal-overlay" id="route-modal">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-header"><span class="modal-title">🗺️ Thêm tuyến đường</span><button class="modal-close" onclick="closeModal('route-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="input-group full-width" style="grid-column:1/-1"><label>Tên tuyến đường *</label><input type="text" class="input" id="route-name" placeholder="VD: HCM - Đà Lạt"></div>
+          <div class="input-group"><label>Khoảng cách (km) *</label><input type="number" class="input" id="route-distance" min="1" placeholder="305"></div>
+          <div class="input-group"><label>Thời gian *</label><input type="text" class="input" id="route-duration" placeholder="VD: 7h"></div>
+          <div class="input-group"><label>Điểm đi - Quận/Huyện *</label><input type="text" class="input" id="route-origin-district" placeholder="VD: Bình Thạnh" oninput="filterRouteStops()"></div>
+          <div class="input-group"><label>Điểm đi - Tỉnh/Thành *</label><input type="text" class="input" id="route-origin-province" placeholder="VD: TP.HCM"></div>
+          <div class="input-group"><label>Điểm đến - Quận/Huyện *</label><input type="text" class="input" id="route-dest-district" placeholder="VD: TP.Đà Lạt" oninput="filterRouteStops()"></div>
+          <div class="input-group"><label>Điểm đến - Tỉnh/Thành *</label><input type="text" class="input" id="route-dest-province" placeholder="VD: Lâm Đồng"></div>
+          <div class="input-group full-width" style="grid-column:1/-1">
+            <label>📍 Điểm đón & điểm dừng (lọc theo quận của Điểm đi → Điểm đến)</label>
+            <div id="route-stops-picker" style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:8px;background:var(--bg-input)">
+              <div class="text-muted" style="font-size:12px">Nhập quận của Điểm đi & Điểm đến để hiển thị điểm dừng phù hợp.</div>
+            </div>
+          </div>
+          <div class="input-group"><label>Trạng thái</label><select class="input" id="route-status"><option value="active">Hoạt động</option><option value="inactive">Tạm ngừng</option></select></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('route-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="createRoute()">💾 Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pricing Add/Edit Modal -->
+  <div class="modal-overlay" id="pricing-form-modal">
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <span class="modal-title" id="pf-title">Thêm</span>
+        <button class="modal-close" onclick="closeModal('pricing-form-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="pf-type-input">
+        <input type="hidden" id="pf-kind-input">
+        <input type="hidden" id="pf-id-input">
+        <div id="pf-body"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('pricing-form-modal')">Hủy</button>
+        <button class="btn btn-primary" onclick="savePricingForm()">💾 Lưu</button>
+      </div>
     </div>
   </div>
 

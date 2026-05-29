@@ -94,27 +94,63 @@ const PORTAL_USERS = [
 ];
 
 // ---- TRANSPORT MASTER DATA ----
+// ---- VEHICLE_CATEGORIES — phân loại xe (chung cho mọi serviceType) ----
+const VEHICLE_CATEGORIES = {
+  seat:          { label: 'Ghế ngồi',     icon: '💺' },
+  sleeper:       { label: 'Giường nằm',   icon: '🛏️' },
+  limo_seat:     { label: 'Limousine ngồi', icon: '🚐' },
+  limo_sleeper:  { label: 'Limousine nằm',  icon: '🛌' },
+  other:         { label: 'Khác',         icon: '🚗' },
+};
+
+// ---- VEHICLE_MODELS (Loại xe) — thay thế Ghế cũ, đi chung với SCHEDULE ----
+// Lưu ý: giữ ID SL001/SL002/SL003 để tương thích dữ liệu cũ.
+const VEHICLE_MODELS = [
+  { id: 'SL001', name: 'Ghế ngồi 45 chỗ',    serviceType: 'INTERCITY', category: 'seat',         seats: 45, status: 'active', luggage: '20kg/khách', description: 'Xe khách 45 chỗ tiêu chuẩn', rows: 11, cols: 4 },
+  { id: 'SL002', name: 'Giường nằm 36 chỗ',  serviceType: 'INTERCITY', category: 'sleeper',      seats: 36, status: 'active', luggage: '25kg/khách', description: 'Giường nằm 2 tầng', rows: 12, cols: 3 },
+  { id: 'SL003', name: 'Limousine 22 chỗ',   serviceType: 'INTERCITY', category: 'limo_seat',    seats: 22, status: 'active', luggage: '15kg/khách', description: 'Limousine cao cấp', rows: 6, cols: 4 },
+  { id: 'VM004', name: 'Limousine nằm 18 chỗ', serviceType: 'INTERCITY', category: 'limo_sleeper', seats: 18, status: 'active', luggage: '20kg/khách', description: 'Limousine giường nằm cao cấp', rows: 6, cols: 3 },
+  { id: 'VM005', name: 'Xe máy phổ thông',   serviceType: 'BIKE',      category: 'other',        seats: 1,  status: 'active', luggage: '', description: 'Xe máy 2 bánh chở 1 khách' },
+  { id: 'VM006', name: 'Xe hơi 4 chỗ',       serviceType: 'CAR',       category: 'seat',         seats: 4,  status: 'active', luggage: '2 vali', description: 'Sedan 4 chỗ' },
+  { id: 'VM007', name: 'Xe hơi 7 chỗ',       serviceType: 'CAR',       category: 'seat',         seats: 7,  status: 'active', luggage: '3 vali', description: 'SUV/MPV 7 chỗ' },
+];
+// Backward compat alias
+const SEAT_LAYOUTS = VEHICLE_MODELS.map(v => ({ id: v.id, name: v.name, type: v.category === 'seat' ? 'seat' : (v.category === 'sleeper' ? 'sleeper' : 'vip'), totalSeats: v.seats, rows: v.rows, cols: v.cols }));
+
+// ---- STOPS (Điểm dừng) — phụ trợ cho ROUTE ----
+const STOPS = [
+  { id: 'ST001', name: 'BX Miền Đông',    address: '292 Đinh Bộ Lĩnh, P.26, Q.Bình Thạnh, TP.HCM', district: 'Bình Thạnh',  province: 'TP.HCM' },
+  { id: 'ST002', name: 'BX Miền Tây',     address: '395 Kinh Dương Vương, P.An Lạc, Q.Bình Tân, TP.HCM', district: 'Bình Tân', province: 'TP.HCM' },
+  { id: 'ST003', name: 'BX Đà Lạt',       address: '01 Tô Hiến Thành, P.3, TP.Đà Lạt, Lâm Đồng', district: 'TP.Đà Lạt', province: 'Lâm Đồng' },
+  { id: 'ST004', name: 'BX Cần Thơ',      address: '36 Nguyễn Văn Linh, Q.Hưng Lợi, TP.Cần Thơ', district: 'Hưng Lợi', province: 'Cần Thơ' },
+  { id: 'ST005', name: 'BX Nha Trang',    address: '58 Đường 23/10, P.Phương Sài, TP.Nha Trang, Khánh Hoà', district: 'TP.Nha Trang', province: 'Khánh Hoà' },
+  { id: 'ST006', name: 'BX Vũng Tàu',     address: '192 Nam Kỳ Khởi Nghĩa, P.3, TP.Vũng Tàu, BR-VT', district: 'TP.Vũng Tàu', province: 'BR-VT' },
+  { id: 'ST007', name: 'BX Đà Nẵng',      address: '201 Tôn Đức Thắng, P.Hoà Minh, Q.Liên Chiểu, TP.Đà Nẵng', district: 'Liên Chiểu', province: 'Đà Nẵng' },
+  { id: 'ST008', name: 'BX Phan Thiết',   address: 'Tôn Đức Thắng, P.Phú Thuỷ, TP.Phan Thiết, Bình Thuận', district: 'TP.Phan Thiết', province: 'Bình Thuận' },
+  { id: 'ST009', name: 'Trạm Dầu Giây',   address: 'QL1A, TT.Dầu Giây, H.Thống Nhất, Đồng Nai', district: 'Thống Nhất', province: 'Đồng Nai' },
+  { id: 'ST010', name: 'Trạm Bảo Lộc',    address: 'QL20, P.Lộc Sơn, TP.Bảo Lộc, Lâm Đồng', district: 'TP.Bảo Lộc', province: 'Lâm Đồng' },
+  { id: 'ST011', name: 'Trạm Mỹ Thuận',   address: 'QL1A, H.Cái Bè, Tiền Giang', district: 'Cái Bè', province: 'Tiền Giang' },
+  { id: 'ST012', name: 'Trạm Phan Rang',  address: 'QL1A, TP.Phan Rang-Tháp Chàm, Ninh Thuận', district: 'TP.Phan Rang', province: 'Ninh Thuận' },
+  { id: 'ST013', name: 'Trạm Long Thành', address: 'QL51, H.Long Thành, Đồng Nai', district: 'Long Thành', province: 'Đồng Nai' },
+  { id: 'ST014', name: 'Trạm Quy Nhơn',   address: 'QL1A, TP.Quy Nhơn, Bình Định', district: 'TP.Quy Nhơn', province: 'Bình Định' },
+];
+
+// ---- ROUTES (Tuyến đường) — KHÔNG còn nhà xe; có origin/dest theo quận-tỉnh ----
 const ROUTES = [
-  { id: 'RT001', name: 'HCM - Đà Lạt', origin: 'TP.HCM', destination: 'Đà Lạt', distance: 305, duration: '7h', stops: ['BX Miền Đông', 'Dầu Giây', 'Bảo Lộc', 'BX Đà Lạt'], status: 'active', operators: ['PTR001', 'PTR002'] },
-  { id: 'RT002', name: 'HCM - Cần Thơ', origin: 'TP.HCM', destination: 'Cần Thơ', distance: 170, duration: '3h30', stops: ['BX Miền Tây', 'Mỹ Thuận', 'BX Cần Thơ'], status: 'active', operators: ['PTR001'] },
-  { id: 'RT003', name: 'HCM - Nha Trang', origin: 'TP.HCM', destination: 'Nha Trang', distance: 430, duration: '8h', stops: ['BX Miền Đông', 'Phan Rang', 'BX Nha Trang'], status: 'active', operators: ['PTR001', 'PTR003'] },
-  { id: 'RT004', name: 'HCM - Vũng Tàu', origin: 'TP.HCM', destination: 'Vũng Tàu', distance: 120, duration: '2h30', stops: ['BX Miền Đông', 'Long Thành', 'BX Vũng Tàu'], status: 'active', operators: ['PTR005'] },
-  { id: 'RT005', name: 'HCM - Đà Nẵng', origin: 'TP.HCM', destination: 'Đà Nẵng', distance: 960, duration: '18h', stops: ['BX Miền Đông', 'Nha Trang', 'Quy Nhơn', 'BX Đà Nẵng'], status: 'active', operators: ['PTR003'] },
-  { id: 'RT006', name: 'HCM - Phan Thiết', origin: 'TP.HCM', destination: 'Phan Thiết', distance: 200, duration: '4h', stops: ['BX Miền Đông', 'BX Phan Thiết'], status: 'active', operators: ['PTR005'] },
+  { id: 'RT001', name: 'HCM - Đà Lạt',   distance: 305, duration: '7h',   originDistrict: 'Bình Thạnh',  originProvince: 'TP.HCM', destDistrict: 'TP.Đà Lạt',     destProvince: 'Lâm Đồng',     stopIds: ['ST001','ST009','ST010','ST003'], status: 'active' },
+  { id: 'RT002', name: 'HCM - Cần Thơ',  distance: 170, duration: '3h30', originDistrict: 'Bình Tân',    originProvince: 'TP.HCM', destDistrict: 'Hưng Lợi',      destProvince: 'Cần Thơ',      stopIds: ['ST002','ST011','ST004'], status: 'active' },
+  { id: 'RT003', name: 'HCM - Nha Trang',distance: 430, duration: '8h',   originDistrict: 'Bình Thạnh',  originProvince: 'TP.HCM', destDistrict: 'TP.Nha Trang',  destProvince: 'Khánh Hoà',    stopIds: ['ST001','ST012','ST005'], status: 'active' },
+  { id: 'RT004', name: 'HCM - Vũng Tàu', distance: 120, duration: '2h30', originDistrict: 'Bình Thạnh',  originProvince: 'TP.HCM', destDistrict: 'TP.Vũng Tàu',   destProvince: 'BR-VT',        stopIds: ['ST001','ST013','ST006'], status: 'active' },
+  { id: 'RT005', name: 'HCM - Đà Nẵng',  distance: 960, duration: '18h',  originDistrict: 'Bình Thạnh',  originProvince: 'TP.HCM', destDistrict: 'Liên Chiểu',    destProvince: 'Đà Nẵng',      stopIds: ['ST001','ST005','ST014','ST007'], status: 'active' },
+  { id: 'RT006', name: 'HCM - Phan Thiết',distance: 200, duration: '4h',  originDistrict: 'Bình Thạnh',  originProvince: 'TP.HCM', destDistrict: 'TP.Phan Thiết', destProvince: 'Bình Thuận',   stopIds: ['ST001','ST008'], status: 'active' },
 ];
 
 const SCHEDULES = [
-  { id: 'SCH001', routeId: 'RT001', operatorId: 'PTR001', departureTime: '06:00', arrivalTime: '13:00', seatLayoutId: 'SL001', status: 'active', daysOfWeek: ['Mon', 'Wed', 'Fri', 'Sun'] },
-  { id: 'SCH002', routeId: 'RT001', operatorId: 'PTR002', departureTime: '20:00', arrivalTime: '03:00', seatLayoutId: 'SL002', status: 'active', daysOfWeek: ['Tue', 'Thu', 'Sat'] },
-  { id: 'SCH003', routeId: 'RT002', operatorId: 'PTR001', departureTime: '07:00', arrivalTime: '10:30', seatLayoutId: 'SL001', status: 'active', daysOfWeek: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
-  { id: 'SCH004', routeId: 'RT003', operatorId: 'PTR003', departureTime: '19:00', arrivalTime: '03:00', seatLayoutId: 'SL003', status: 'active', daysOfWeek: ['Mon', 'Wed', 'Fri'] },
-  { id: 'SCH005', routeId: 'RT004', operatorId: 'PTR005', departureTime: '08:00', arrivalTime: '10:30', seatLayoutId: 'SL001', status: 'active', daysOfWeek: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
-];
-
-const SEAT_LAYOUTS = [
-  { id: 'SL001', name: 'Ghế ngồi 45 chỗ', type: 'seat', totalSeats: 45, rows: 11, cols: 4 },
-  { id: 'SL002', name: 'Giường nằm 36 chỗ', type: 'sleeper', totalSeats: 36, rows: 12, cols: 3 },
-  { id: 'SL003', name: 'Limousine 22 chỗ', type: 'vip', totalSeats: 22, rows: 6, cols: 4 },
+  { id: 'SCH001', routeId: 'RT001', operatorId: 'PTR001', departureTime: '06:00', arrivalTime: '13:00', vehicleModelId: 'SL001', seatLayoutId: 'SL001', status: 'active', daysOfWeek: ['Mon', 'Wed', 'Fri', 'Sun'] },
+  { id: 'SCH002', routeId: 'RT001', operatorId: 'PTR002', departureTime: '20:00', arrivalTime: '03:00', vehicleModelId: 'SL002', seatLayoutId: 'SL002', status: 'active', daysOfWeek: ['Tue', 'Thu', 'Sat'] },
+  { id: 'SCH003', routeId: 'RT002', operatorId: 'PTR001', departureTime: '07:00', arrivalTime: '10:30', vehicleModelId: 'SL001', seatLayoutId: 'SL001', status: 'active', daysOfWeek: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+  { id: 'SCH004', routeId: 'RT003', operatorId: 'PTR003', departureTime: '19:00', arrivalTime: '03:00', vehicleModelId: 'SL003', seatLayoutId: 'SL003', status: 'active', daysOfWeek: ['Mon', 'Wed', 'Fri'] },
+  { id: 'SCH005', routeId: 'RT004', operatorId: 'PTR005', departureTime: '08:00', arrivalTime: '10:30', vehicleModelId: 'SL001', seatLayoutId: 'SL001', status: 'active', daysOfWeek: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
 ];
 
 // ---- DRIVERS (Bike & Car) ----
@@ -558,35 +594,120 @@ const COMMISSIONS = [
   { id: 'CM005', vehicleType: 'MAINTENANCE_ORDER', rate: 12, description: 'Chiết khấu dịch vụ bảo dưỡng' },
 ];
 
-// ---- MAINTENANCE (Bảo dưỡng hộ) — song song với REGISTRATIONS, mock data riêng ----
+// ---- PRICING (Giá tiền / Phí dịch vụ) ----
+// Cấu trúc:
+// - km[]: khung cây số áp dụng giá/km (km0 = giá mở cửa cho 1km đầu)
+// - timeSlot[]: phụ phí theo khung giờ trong ngày (HH:MM)
+// - period[]: phụ phí theo thời điểm/ngày đặc biệt (lễ, cuối tuần, ngày cụ thể)
+// - basePrice: giá gốc dịch vụ (cho REGISTRATION/MAINTENANCE theo từng loại service)
+const PRICING = {
+  BIKE: {
+    label: 'Xe máy', icon: '🏍️', mode: 'km',
+    km: [
+      { id: 'KM-B0', fromKm: 0, toKm: 1, pricePerKm: 12000, note: 'Giá mở cửa (1km đầu)' },
+      { id: 'KM-B1', fromKm: 1, toKm: 10, pricePerKm: 4500, note: 'Từ km 1 → km 10' },
+      { id: 'KM-B2', fromKm: 10, toKm: null, pricePerKm: 4000, note: 'Trên 10 km' },
+    ],
+    timeSlot: [
+      { id: 'TS-B1', from: '06:00', to: '09:00', surcharge: 5000, note: 'Cao điểm sáng' },
+      { id: 'TS-B2', from: '17:00', to: '19:30', surcharge: 5000, note: 'Cao điểm chiều' },
+      { id: 'TS-B3', from: '22:00', to: '05:00', surcharge: 10000, note: 'Đêm khuya' },
+    ],
+    period: [
+      { id: 'PR-B1', name: 'Cuối tuần', type: 'weekend', surcharge: 3000 },
+      { id: 'PR-B2', name: 'Tết Nguyên Đán', type: 'date_range', from: '2026-02-15', to: '2026-02-22', surcharge: 20000 },
+    ],
+  },
+  CAR: {
+    label: 'Xe hơi', icon: '🚗', mode: 'km',
+    km: [
+      { id: 'KM-C0', fromKm: 0, toKm: 1, pricePerKm: 25000, note: 'Giá mở cửa (1km đầu)' },
+      { id: 'KM-C1', fromKm: 1, toKm: 20, pricePerKm: 14000, note: 'Từ km 1 → km 20' },
+      { id: 'KM-C2', fromKm: 20, toKm: null, pricePerKm: 12000, note: 'Trên 20 km' },
+    ],
+    timeSlot: [
+      { id: 'TS-C1', from: '06:30', to: '09:00', surcharge: 10000, note: 'Cao điểm sáng' },
+      { id: 'TS-C2', from: '17:00', to: '20:00', surcharge: 10000, note: 'Cao điểm chiều' },
+      { id: 'TS-C3', from: '23:00', to: '05:00', surcharge: 20000, note: 'Đêm khuya' },
+    ],
+    period: [
+      { id: 'PR-C1', name: 'Cuối tuần', type: 'weekend', surcharge: 5000 },
+      { id: 'PR-C2', name: 'Lễ 30/4 - 1/5', type: 'date_range', from: '2026-04-30', to: '2026-05-01', surcharge: 30000 },
+    ],
+  },
+  INTERCITY: {
+    label: 'Xe khách liên tỉnh', icon: '🚌', mode: 'ticket',
+    timeSlot: [
+      { id: 'TS-I1', from: '05:00', to: '07:00', surcharge: 20000, note: 'Chuyến sớm' },
+      { id: 'TS-I2', from: '22:00', to: '04:00', surcharge: 30000, note: 'Chuyến đêm' },
+    ],
+    period: [
+      { id: 'PR-I1', name: 'Cuối tuần', type: 'weekend', surcharge: 20000 },
+      { id: 'PR-I2', name: 'Tết Nguyên Đán', type: 'date_range', from: '2026-02-15', to: '2026-02-22', surcharge: 100000 },
+      { id: 'PR-I3', name: 'Lễ 2/9', type: 'date_range', from: '2026-09-01', to: '2026-09-03', surcharge: 50000 },
+    ],
+  },
+  SERVICE_ORDER: {
+    label: 'Đăng kiểm hộ', icon: '📋', mode: 'service',
+    services: [
+      { id: 'SV-R1', code: 'normal', name: 'Đăng kiểm thường', price: 350000 },
+      { id: 'SV-R2', code: 'express', name: 'Đăng kiểm nhanh', price: 550000 },
+      { id: 'SV-R3', code: 'truck', name: 'Đăng kiểm xe tải', price: 700000 },
+    ],
+    timeSlot: [
+      { id: 'TS-R1', from: '07:00', to: '09:00', surcharge: 30000, note: 'Khung sớm' },
+      { id: 'TS-R2', from: '17:00', to: '19:00', surcharge: 50000, note: 'Ngoài giờ' },
+    ],
+    period: [
+      { id: 'PR-R1', name: 'Cuối tuần', type: 'weekend', surcharge: 50000 },
+      { id: 'PR-R2', name: 'Lễ Tết', type: 'date_range', from: '2026-02-15', to: '2026-02-22', surcharge: 100000 },
+    ],
+  },
+  MAINTENANCE_ORDER: {
+    label: 'Bảo dưỡng hộ', icon: '🔧', mode: 'service',
+    services: [
+      { id: 'SV-M1', code: 'basic', name: 'Bảo dưỡng cơ bản', price: 400000 },
+      { id: 'SV-M2', code: 'full', name: 'Bảo dưỡng toàn diện', price: 1200000 },
+      { id: 'SV-M3', code: 'oil_change', name: 'Thay nhớt', price: 250000 },
+      { id: 'SV-M4', code: 'tire', name: 'Thay lốp', price: 800000 },
+    ],
+    timeSlot: [
+      { id: 'TS-M1', from: '07:00', to: '09:00', surcharge: 30000, note: 'Khung sớm' },
+      { id: 'TS-M2', from: '18:00', to: '21:00', surcharge: 80000, note: 'Ngoài giờ' },
+    ],
+    period: [
+      { id: 'PR-M1', name: 'Cuối tuần', type: 'weekend', surcharge: 60000 },
+      { id: 'PR-M2', name: 'Lễ Tết', type: 'date_range', from: '2026-02-15', to: '2026-02-22', surcharge: 120000 },
+    ],
+  },
+};
+
+// ---- MAINTENANCE (Bảo dưỡng hộ) — pickupAddress = địa chỉ cá nhân của khách, kèm engineType ----
 const MAINTENANCE = [
-  { id: 'MNT001', plate: '51A-456.78', ownerName: 'Phạm Trung Hiếu', ownerPhone: '0911223344', vehicleType: 'car', address: '12 Hai Bà Trưng, Q.1, TP.HCM', center: 'GARA-A1', centerName: 'Gara A1 (Q.1)', bookingDate: '2026-03-22', bookingTime: '09:00', service: 'basic', price: 400000, status: 'pending', createdAt: '2026-03-18 12:00' },
-  { id: 'MNT002', plate: '51B-987.65', ownerName: 'Đinh Khánh Linh', ownerPhone: '0922334455', vehicleType: 'car', address: '88 Cách Mạng Tháng 8, Q.3', center: 'GARA-B2', centerName: 'Gara B2 (Q.3)', bookingDate: '2026-03-20', bookingTime: '10:00', service: 'full', price: 1200000, status: 'confirmed', createdAt: '2026-03-18 13:30' },
-  { id: 'MNT003', plate: '52C-321.45', ownerName: 'Trương Văn Đức', ownerPhone: '0933445566', vehicleType: 'truck', address: '45 Trường Chinh, Tân Bình', center: 'GARA-C3', centerName: 'Gara C3 (Tân Bình)', bookingDate: '2026-03-23', bookingTime: '07:00', service: 'oil_change', price: 250000, status: 'pending', createdAt: '2026-03-18 15:00' },
-  { id: 'MNT004', plate: '60D-789.12', ownerName: 'Lý Thị Hồng', ownerPhone: '0944556677', vehicleType: 'car', address: '202 Nguyễn Văn Linh, Q.7', center: 'GARA-D4', centerName: 'Gara D4 (Q.7)', bookingDate: '2026-03-19', bookingTime: '14:00', service: 'tire', price: 800000, status: 'completed', createdAt: '2026-03-17 11:00' },
-  { id: 'MNT005', plate: '65E-234.56', ownerName: 'Nguyễn Quốc Khánh', ownerPhone: '0955667788', vehicleType: 'car', address: '99 Phan Đăng Lưu, Phú Nhuận', center: 'GARA-E5', centerName: 'Gara E5 (Phú Nhuận)', bookingDate: '2026-03-24', bookingTime: '13:00', service: 'basic', price: 400000, status: 'pending', createdAt: '2026-03-18 10:15' },
-  { id: 'MNT006', plate: '43F-555.99', ownerName: 'Vũ Thanh Hà', ownerPhone: '0966778899', vehicleType: 'bus', address: '150 Lý Tự Trọng, Q.1', center: 'GARA-A1', centerName: 'Gara A1 (Q.1)', bookingDate: '2026-03-21', bookingTime: '15:00', service: 'full', price: 1500000, status: 'cancelled', createdAt: '2026-03-16 09:30' },
-  { id: 'MNT007', plate: '51M-456.78', ownerName: 'Bùi Quốc Việt', ownerPhone: '0933110011', vehicleType: 'car', address: '12 Bà Triệu, Tân Bình', center: 'GARA-B2', centerName: 'Gara B2 (Q.3)', bookingDate: '2026-03-22', bookingTime: '11:00', service: 'basic', price: 400000, status: 'confirmed', createdAt: '2026-03-18 14:20' },
-  { id: 'MNT008', plate: '51N-789.12', ownerName: 'Nguyễn Thị Quỳnh', ownerPhone: '0944220022', vehicleType: 'car', address: '76 Lê Lai, Q.1', center: 'GARA-E5', centerName: 'Gara E5 (Phú Nhuận)', bookingDate: '2026-03-23', bookingTime: '15:00', service: 'tire', price: 800000, status: 'confirmed', createdAt: '2026-03-18 16:00' },
+  { id: 'MNT001', plate: '51A-456.78', ownerName: 'Phạm Trung Hiếu', ownerPhone: '0911223344', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '12 Hai Bà Trưng, P.Bến Nghé, Q.1, TP.HCM', bookingDate: '2026-03-22', bookingTime: '09:00', service: 'basic', price: 400000, status: 'pending', createdAt: '2026-03-18 12:00' },
+  { id: 'MNT002', plate: '51B-987.65', ownerName: 'Đinh Khánh Linh', ownerPhone: '0922334455', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '88 Cách Mạng Tháng 8, P.6, Q.3, TP.HCM', bookingDate: '2026-03-20', bookingTime: '10:00', service: 'full', price: 1200000, status: 'confirmed', createdAt: '2026-03-18 13:30' },
+  { id: 'MNT003', plate: '52C-321.45', ownerName: 'Trương Văn Đức', ownerPhone: '0933445566', vehicleType: 'truck', engineType: 'diesel', pickupAddress: '45 Trường Chinh, P.13, Q.Tân Bình, TP.HCM', bookingDate: '2026-03-23', bookingTime: '07:00', service: 'oil_change', price: 250000, status: 'pending', createdAt: '2026-03-18 15:00' },
+  { id: 'MNT004', plate: '60D-789.12', ownerName: 'Lý Thị Hồng', ownerPhone: '0944556677', vehicleType: 'car', engineType: 'electric', pickupAddress: '202 Nguyễn Văn Linh, P.Tân Phong, Q.7, TP.HCM', bookingDate: '2026-03-19', bookingTime: '14:00', service: 'tire', price: 800000, status: 'completed', createdAt: '2026-03-17 11:00' },
+  { id: 'MNT005', plate: '65E-234.56', ownerName: 'Nguyễn Quốc Khánh', ownerPhone: '0955667788', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '99 Phan Đăng Lưu, P.7, Q.Phú Nhuận, TP.HCM', bookingDate: '2026-03-24', bookingTime: '13:00', service: 'basic', price: 400000, status: 'pending', createdAt: '2026-03-18 10:15' },
+  { id: 'MNT006', plate: '43F-555.99', ownerName: 'Vũ Thanh Hà', ownerPhone: '0966778899', vehicleType: 'bus', engineType: 'diesel', pickupAddress: '150 Lý Tự Trọng, P.Bến Thành, Q.1, TP.HCM', bookingDate: '2026-03-21', bookingTime: '15:00', service: 'full', price: 1500000, status: 'cancelled', createdAt: '2026-03-16 09:30' },
+  { id: 'MNT007', plate: '51M-456.78', ownerName: 'Bùi Quốc Việt', ownerPhone: '0933110011', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '12 Bà Triệu, P.7, Q.Tân Bình, TP.HCM', bookingDate: '2026-03-22', bookingTime: '11:00', service: 'basic', price: 400000, status: 'confirmed', createdAt: '2026-03-18 14:20' },
+  { id: 'MNT008', plate: '51N-789.12', ownerName: 'Nguyễn Thị Quỳnh', ownerPhone: '0944220022', vehicleType: 'car', engineType: 'electric', pickupAddress: '76 Lê Lai, P.Bến Thành, Q.1, TP.HCM', bookingDate: '2026-03-23', bookingTime: '15:00', service: 'tire', price: 800000, status: 'confirmed', createdAt: '2026-03-18 16:00' },
   // ===== HÔM NAY 2026-05-27 — TEST TIME-CONFLICT cho dịch vụ =====
-  // MNT100: ĐANG LÀM (IDR002 đang phục vụ 09:00-13:00 — `full` service = 4h buffer)
-  { id: 'MNT100', plate: '51X-100.10', ownerName: 'Khách Hiện Tại', ownerPhone: '0900100100', vehicleType: 'car', address: '5 Test Ave', center: 'GARA-A1', centerName: 'Gara A1 (Q.1)', bookingDate: '2026-05-27', bookingTime: '09:00', service: 'full', price: 1200000, status: 'confirmed', createdAt: '2026-05-26 20:00', bookingId: 'BK-MNT-LIVE' },
-  // MNT101: CHỜ PHÂN CÔNG, 10:00 → OVERLAP với MNT100. IDR002 KHÔNG xuất hiện
-  { id: 'MNT101', plate: '51X-100.20', ownerName: 'Khách Chờ Sớm', ownerPhone: '0900200200', vehicleType: 'car', address: '20 Test St', center: 'GARA-B2', centerName: 'Gara B2 (Q.3)', bookingDate: '2026-05-27', bookingTime: '10:00', service: 'basic', price: 400000, status: 'confirmed', createdAt: '2026-05-27 07:00' },
-  // MNT102: CHỜ PHÂN CÔNG, 16:00 → KHÔNG overlap. IDR002 xuất hiện với hint "đang bận 27/05 09:00-13:00"
-  { id: 'MNT102', plate: '51X-100.30', ownerName: 'Khách Chờ Chiều', ownerPhone: '0900300300', vehicleType: 'car', address: '30 Test Blvd', center: 'GARA-D4', centerName: 'Gara D4 (Q.7)', bookingDate: '2026-05-27', bookingTime: '16:00', service: 'oil_change', price: 250000, status: 'confirmed', createdAt: '2026-05-27 07:30' },
+  { id: 'MNT100', plate: '51X-100.10', ownerName: 'Khách Hiện Tại', ownerPhone: '0900100100', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '5 Nguyễn Huệ, P.Bến Nghé, Q.1, TP.HCM', bookingDate: '2026-05-27', bookingTime: '09:00', service: 'full', price: 1200000, status: 'confirmed', createdAt: '2026-05-26 20:00', bookingId: 'BK-MNT-LIVE' },
+  { id: 'MNT101', plate: '51X-100.20', ownerName: 'Khách Chờ Sớm', ownerPhone: '0900200200', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '20 Nguyễn Thị Minh Khai, P.Đa Kao, Q.1, TP.HCM', bookingDate: '2026-05-27', bookingTime: '10:00', service: 'basic', price: 400000, status: 'confirmed', createdAt: '2026-05-27 07:00' },
+  { id: 'MNT102', plate: '51X-100.30', ownerName: 'Khách Chờ Chiều', ownerPhone: '0900300300', vehicleType: 'car', engineType: 'electric', pickupAddress: '30 Trần Hưng Đạo, P.Cô Giang, Q.1, TP.HCM', bookingDate: '2026-05-27', bookingTime: '16:00', service: 'oil_change', price: 250000, status: 'confirmed', createdAt: '2026-05-27 07:30' },
 ];
 
-// ---- REGISTRATIONS (Đăng kiểm hộ) ----
+// ---- REGISTRATIONS (Đăng kiểm hộ) — pickupAddress = địa chỉ cá nhân của khách, kèm engineType ----
 const REGISTRATIONS = [
-  { id: 'REG001', plate: '51A-123.45', ownerName: 'Nguyễn Văn Minh', ownerPhone: '0901234567', vehicleType: 'car', address: '123 Lê Lợi, Q.1, TP.HCM', center: '50-05V', centerName: 'TTĐK 50-05V (Q.3)', bookingDate: '2026-03-20', bookingTime: '08:00', service: 'normal', price: 350000, status: 'pending', createdAt: '2026-03-18 10:30' },
-  { id: 'REG002', plate: '51B-678.90', ownerName: 'Trần Thị Hương', ownerPhone: '0912345678', vehicleType: 'car', address: '456 Nguyễn Trãi, Q.5, TP.HCM', center: '50-06V', centerName: 'TTĐK 50-06V (Q.6)', bookingDate: '2026-03-19', bookingTime: '09:00', service: 'express', price: 500000, status: 'confirmed', createdAt: '2026-03-18 11:00' },
-  { id: 'REG003', plate: '52C-111.22', ownerName: 'Lê Hoàng Nam', ownerPhone: '0923456789', vehicleType: 'car', address: '789 Pasteur, Q.1, TP.HCM', center: '50-07V', centerName: 'TTĐK 50-07V (Thủ Đức)', bookingDate: '2026-03-21', bookingTime: '10:00', service: 'normal', price: 350000, status: 'pending', createdAt: '2026-03-18 14:15' },
-  { id: 'REG004', plate: '60D-333.44', ownerName: 'Phạm Thị Mai', ownerPhone: '0934567890', vehicleType: 'truck', address: '321 Quang Trung, Q.Gò Vấp', center: '50-08V', centerName: 'TTĐK 50-08V (Bình Thạnh)', bookingDate: '2026-03-19', bookingTime: '07:00', service: 'home', price: 700000, status: 'completed', createdAt: '2026-03-17 16:00' },
-  { id: 'REG005', plate: '65E-555.66', ownerName: 'Võ Văn Hùng', ownerPhone: '0945678901', vehicleType: 'car', address: '555 Lý Thường Kiệt, Q.Tân Bình', center: '50-05V', centerName: 'TTĐK 50-05V (Q.3)', bookingDate: '2026-03-22', bookingTime: '13:00', service: 'express', price: 500000, status: 'pending', createdAt: '2026-03-18 09:45' },
-  { id: 'REG006', plate: '43F-777.88', ownerName: 'Ngô Thị Lan', ownerPhone: '0956789012', vehicleType: 'bus', address: '100 Điện Biên Phủ, Q.Bình Thạnh', center: '50-06V', centerName: 'TTĐK 50-06V (Q.6)', bookingDate: '2026-03-20', bookingTime: '14:00', service: 'normal', price: 350000, status: 'cancelled', createdAt: '2026-03-16 11:30' },
-  { id: 'REG007', plate: '51K-888.11', ownerName: 'Đào Văn Quân', ownerPhone: '0921110011', vehicleType: 'car', address: '88 Trần Hưng Đạo, Q.1', center: '50-07V', centerName: 'TTĐK 50-07V (Thủ Đức)', bookingDate: '2026-03-21', bookingTime: '08:00', service: 'express', price: 500000, status: 'confirmed', createdAt: '2026-03-18 14:00' },
-  { id: 'REG008', plate: '51L-222.33', ownerName: 'Tô Mỹ Linh', ownerPhone: '0922220022', vehicleType: 'car', address: '55 Võ Văn Tần, Q.3', center: '50-05V', centerName: 'TTĐK 50-05V (Q.3)', bookingDate: '2026-03-22', bookingTime: '09:00', service: 'home', price: 700000, status: 'confirmed', createdAt: '2026-03-18 15:30' },
+  { id: 'REG001', plate: '51A-123.45', ownerName: 'Nguyễn Văn Minh', ownerPhone: '0901234567', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '123 Lê Lợi, P.Bến Thành, Q.1, TP.HCM', bookingDate: '2026-03-20', bookingTime: '08:00', service: 'normal', price: 350000, status: 'pending', createdAt: '2026-03-18 10:30' },
+  { id: 'REG002', plate: '51B-678.90', ownerName: 'Trần Thị Hương', ownerPhone: '0912345678', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '456 Nguyễn Trãi, P.8, Q.5, TP.HCM', bookingDate: '2026-03-19', bookingTime: '09:00', service: 'express', price: 500000, status: 'confirmed', createdAt: '2026-03-18 11:00' },
+  { id: 'REG003', plate: '52C-111.22', ownerName: 'Lê Hoàng Nam', ownerPhone: '0923456789', vehicleType: 'car', engineType: 'electric', pickupAddress: '789 Pasteur, P.Võ Thị Sáu, Q.3, TP.HCM', bookingDate: '2026-03-21', bookingTime: '10:00', service: 'normal', price: 350000, status: 'pending', createdAt: '2026-03-18 14:15' },
+  { id: 'REG004', plate: '60D-333.44', ownerName: 'Phạm Thị Mai', ownerPhone: '0934567890', vehicleType: 'truck', engineType: 'diesel', pickupAddress: '321 Quang Trung, P.10, Q.Gò Vấp, TP.HCM', bookingDate: '2026-03-19', bookingTime: '07:00', service: 'home', price: 700000, status: 'completed', createdAt: '2026-03-17 16:00' },
+  { id: 'REG005', plate: '65E-555.66', ownerName: 'Võ Văn Hùng', ownerPhone: '0945678901', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '555 Lý Thường Kiệt, P.7, Q.Tân Bình, TP.HCM', bookingDate: '2026-03-22', bookingTime: '13:00', service: 'express', price: 500000, status: 'pending', createdAt: '2026-03-18 09:45' },
+  { id: 'REG006', plate: '43F-777.88', ownerName: 'Ngô Thị Lan', ownerPhone: '0956789012', vehicleType: 'bus', engineType: 'diesel', pickupAddress: '100 Điện Biên Phủ, P.15, Q.Bình Thạnh, TP.HCM', bookingDate: '2026-03-20', bookingTime: '14:00', service: 'normal', price: 350000, status: 'cancelled', createdAt: '2026-03-16 11:30' },
+  { id: 'REG007', plate: '51K-888.11', ownerName: 'Đào Văn Quân', ownerPhone: '0921110011', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '88 Trần Hưng Đạo, P.Cô Giang, Q.1, TP.HCM', bookingDate: '2026-03-21', bookingTime: '08:00', service: 'express', price: 500000, status: 'confirmed', createdAt: '2026-03-18 14:00' },
+  { id: 'REG008', plate: '51L-222.33', ownerName: 'Tô Mỹ Linh', ownerPhone: '0922220022', vehicleType: 'car', engineType: 'electric', pickupAddress: '55 Võ Văn Tần, P.Võ Thị Sáu, Q.3, TP.HCM', bookingDate: '2026-03-22', bookingTime: '09:00', service: 'home', price: 700000, status: 'confirmed', createdAt: '2026-03-18 15:30' },
 ];
 
 const COMMISSION_HISTORY = [

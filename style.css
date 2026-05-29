@@ -1111,6 +1111,9 @@ select {
   margin-bottom: 24px;
 }
 
+.commissions-tab-panel { display: none; }
+.commissions-tab-panel.is-active { display: block; }
+
 .commission-card {
   background: var(--bg-card);
   border: 1px solid var(--border-color);
@@ -1164,6 +1167,61 @@ select {
   font-size: 16px;
   color: var(--text-muted);
   font-weight: 500;
+}
+
+/* ---- Commission Split (Tài xế nhận / Phí dịch vụ) ---- */
+.commission-split {
+  margin: 14px 0 16px;
+  padding: 14px;
+  background: var(--bg-input);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+}
+.commission-split-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+}
+.commission-split-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.commission-split-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.commission-split-value {
+  font-size: 20px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.commission-split-row.driver .commission-split-value { color: var(--success, #16a34a); }
+.commission-split-row.fee .commission-split-value { color: var(--warning, #f59e0b); }
+.commission-split-bar {
+  height: 8px;
+  background: rgba(245, 158, 11, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.commission-split-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #16a34a, #22c55e);
+  border-radius: 999px;
+  transition: width var(--transition-normal);
+}
+.commission-split-example {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border-color);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
 /* ---- Wallet Summary ---- */
@@ -1352,6 +1410,97 @@ select {
   border-radius: var(--radius-lg);
   padding: 20px;
   margin-bottom: 24px;
+}
+
+/* ---- Inline Form Card (đăng kiểm / bảo dưỡng) ---- */
+.inline-form-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+.inline-form-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+.inline-form-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.form-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px 16px;
+}
+.form-grid-3 .input-group label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.form-grid-3 .input { height: 36px; }
+.inline-form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border-color);
+}
+@media (max-width: 900px) {
+  .form-grid-3 { grid-template-columns: repeat(2, 1fr); }
+  .form-grid-3 .input-group[style*="span 3"],
+  .form-grid-3 .input-group[style*="span 2"] { grid-column: span 2 !important; }
+}
+
+/* ---- Booking Search Bar (gọn 1 hàng) ---- */
+.booking-search-bar {
+  display: grid;
+  grid-template-columns: 1.3fr auto 1.3fr 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 20px;
+}
+.booking-search-bar .bsb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.booking-search-bar .bsb-field label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.booking-search-bar .input {
+  height: 38px;
+}
+.booking-search-bar .route-swap {
+  margin-bottom: 0;
+  align-self: end;
+  height: 38px;
+  width: 38px;
+}
+.booking-search-bar .bsb-submit {
+  height: 38px;
+  white-space: nowrap;
+  padding: 0 18px;
+}
+@media (max-width: 1100px) {
+  .booking-search-bar { grid-template-columns: 1fr 1fr; }
+  .booking-search-bar .route-swap { grid-column: span 2; justify-self: center; }
+  .booking-search-bar .bsb-submit { grid-column: span 2; }
 }
 
 .search-route {

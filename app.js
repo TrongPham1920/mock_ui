@@ -668,7 +668,7 @@ function healData() {
       bookingType: 'SERVICE_ORDER',
       bookingStatus: sm.booking, paymentStatus: sm.payment, fulfillmentStatus: sm.fulfillment,
       customerId: cust.id, agentId: null, driverId: null,
-      pickup: reg.address, dropoff: reg.centerName,
+      pickup: reg.pickupAddress, dropoff: reg.pickupAddress,
       fareSnapshot: reg.price, distance: 0,
       paymentMethod: 'cash',
       paymentReference: reg.status === 'pending' ? null : 'PAY-' + reg.id,
@@ -741,7 +741,7 @@ function healData() {
       bookingType: 'MAINTENANCE_ORDER',
       bookingStatus: sm.booking, paymentStatus: sm.payment, fulfillmentStatus: sm.fulfillment,
       customerId: cust.id, agentId: null, driverId: null,
-      pickup: mnt.address, dropoff: mnt.centerName,
+      pickup: mnt.pickupAddress, dropoff: mnt.pickupAddress,
       fareSnapshot: mnt.price, distance: 0,
       paymentMethod: 'cash',
       paymentReference: mnt.status === 'pending' ? null : 'PAY-' + mnt.id,
@@ -857,11 +857,12 @@ function switchPartnerTab(tab, btn) {
 }
 
 function switchRouteTab(tab, btn) {
-  document.querySelectorAll('#page-routes .tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#page-routes > .tabs .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('routes-tab-schedules').style.display = tab === 'schedules' ? 'block' : 'none';
-  document.getElementById('routes-tab-routes').style.display = tab === 'routes' ? 'block' : 'none';
-  document.getElementById('routes-tab-seats').style.display = tab === 'seats' ? 'block' : 'none';
+  ['schedules','routes','vehicle-models','stops'].forEach(t => {
+    const el = document.getElementById('routes-tab-' + t);
+    if (el) el.style.display = (t === tab) ? 'block' : 'none';
+  });
 }
 
 function createUser() {
@@ -947,23 +948,33 @@ function renderUsers() {
 // ============================================
 function populateScheduleOptions() {
   const routeSelect = document.getElementById('schedule-route');
-  if (routeSelect && routeSelect.options.length <= 1) {
-    ROUTES.forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.id;
-      opt.textContent = r.name;
-      routeSelect.appendChild(opt);
-    });
+  if (routeSelect) {
+    routeSelect.innerHTML = '<option value="">Chọn tuyến</option>' +
+      ROUTES.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
   }
   const opSelect = document.getElementById('schedule-operator');
-  if (opSelect && opSelect.options.length <= 1) {
-    PARTNERS.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.name;
-      opSelect.appendChild(opt);
-    });
+  if (opSelect) {
+    opSelect.innerHTML = '<option value="">Chọn nhà xe</option>' +
+      PARTNERS.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
   }
+  const vmSelect = document.getElementById('schedule-vehicle-model');
+  if (vmSelect) {
+    vmSelect.innerHTML = '<option value="">Chọn loại xe</option>' +
+      VEHICLE_MODELS.filter(v => v.status === 'active').map(v => {
+        const cat = VEHICLE_CATEGORIES[v.category]?.label || v.category;
+        return `<option value="${v.id}">${v.name} — ${cat} (${v.seats} chỗ)</option>`;
+      }).join('');
+    vmSelect.onchange = () => {
+      const v = VEHICLE_MODELS.find(x => x.id === vmSelect.value);
+      const info = document.getElementById('schedule-vehicle-info');
+      if (info) info.textContent = v ? `${VEHICLE_CATEGORIES[v.category]?.icon||''} ${VEHICLE_CATEGORIES[v.category]?.label||''} · ${v.seats} chỗ${v.luggage?' · Hành lý: '+v.luggage:''}` : '';
+    };
+  }
+}
+
+function openScheduleCreate() {
+  populateScheduleOptions();
+  openModal('schedule-create-modal');
 }
 
 function createSchedule() {
@@ -971,13 +982,13 @@ function createSchedule() {
   const operatorId = document.getElementById('schedule-operator').value;
   const departure = document.getElementById('schedule-departure').value;
   const arrival = document.getElementById('schedule-arrival').value;
-  const seatLayoutId = document.getElementById('schedule-seat-layout').value;
+  const vehicleModelId = document.getElementById('schedule-vehicle-model').value;
   const daySelect = document.getElementById('schedule-days');
   const selectedDays = Array.from(daySelect.selectedOptions).map(o => o.value);
   const status = document.getElementById('schedule-status').value;
 
-  if (!routeId || !operatorId || !departure || !arrival || selectedDays.length === 0) {
-    alert('Vui lòng điền đầy đủ thông tin bắt buộc');
+  if (!routeId || !operatorId || !departure || !arrival || !vehicleModelId || selectedDays.length === 0) {
+    alert('Vui lòng điền đầy đủ thông tin bắt buộc (gồm Loại xe)');
     return;
   }
 
@@ -985,7 +996,8 @@ function createSchedule() {
     id: genId('SCH', SCHEDULES),
     routeId, operatorId,
     departureTime: departure, arrivalTime: arrival,
-    seatLayoutId, status,
+    vehicleModelId, seatLayoutId: vehicleModelId, // backward compat
+    status,
     daysOfWeek: selectedDays
   };
   SCHEDULES.unshift(newSchedule);
@@ -1006,32 +1018,196 @@ function createSchedule() {
 
 function renderRoutes() {
   populateScheduleOptions();
-  document.getElementById('routes-table-body').innerHTML = ROUTES.map(r => `<tr>
-    <td><span class="text-accent fw-600">${r.id}</span></td><td class="fw-600">${r.name}</td>
-    <td>${r.distance} km</td><td>${r.duration}</td>
-    <td><div style="display:flex;flex-wrap:wrap;gap:3px">${r.stops.map(s=>`<span class="route-tag" style="font-size:10px">${s}</span>`).join('')}</div></td>
-    <td>${r.operators.map(op=>getPartnerName(op)).join(', ')}</td>
-    <td><span class="badge badge-active">Active</span></td>
-  </tr>`).join('');
+  document.getElementById('routes-table-body').innerHTML = ROUTES.map(r => {
+    const stopIds = r.stopIds || [];
+    const stops = stopIds.map(id => STOPS.find(s => s.id === id)?.name || id);
+    return `<tr>
+      <td><span class="text-accent fw-600">${r.id}</span></td>
+      <td class="fw-600">${r.name}</td>
+      <td>${r.distance} km</td>
+      <td>${r.duration}</td>
+      <td><div class="fw-600">${r.originDistrict || '—'}</div><div class="text-muted" style="font-size:11px">${r.originProvince || ''}</div></td>
+      <td><div class="fw-600">${r.destDistrict || '—'}</div><div class="text-muted" style="font-size:11px">${r.destProvince || ''}</div></td>
+      <td><div style="display:flex;flex-wrap:wrap;gap:3px">${stops.map(s=>`<span class="route-tag" style="font-size:10px">${s}</span>`).join('')}</div></td>
+      <td><span class="badge badge-${r.status==='active'?'active':'expired'}">${r.status==='active'?'Hoạt động':'Tạm ngừng'}</span></td>
+    </tr>`;
+  }).join('');
 
   document.getElementById('schedules-table-body').innerHTML = SCHEDULES.map(s => {
-    const layout = SEAT_LAYOUTS.find(l => l.id === s.seatLayoutId);
+    const vm = VEHICLE_MODELS.find(v => v.id === (s.vehicleModelId || s.seatLayoutId));
+    const cat = vm ? (VEHICLE_CATEGORIES[vm.category]?.label || vm.category) : '';
     return `<tr>
       <td><span class="text-accent fw-600">${s.id}</span></td>
       <td>${getRouteName(s.routeId)}</td>
       <td>${getPartnerName(s.operatorId)}</td>
       <td class="fw-600">${s.departureTime}</td>
       <td>${s.arrivalTime}</td>
-      <td>${layout ? layout.name + ' (' + layout.totalSeats + ' chỗ)' : s.seatLayoutId}</td>
+      <td>${vm ? `<div class="fw-600">${vm.name}</div><div class="text-muted" style="font-size:11px">${cat} · ${vm.seats} chỗ</div>` : (s.vehicleModelId || s.seatLayoutId)}</td>
       <td><div style="display:flex;flex-wrap:wrap;gap:2px">${s.daysOfWeek.map(d=>`<span style="padding:1px 5px;background:var(--accent-glow);color:var(--accent);border-radius:4px;font-size:10px">${d}</span>`).join('')}</div></td>
       <td><button class="btn btn-sm btn-outline">✏️</button></td>
     </tr>`;
   }).join('');
 
-  document.getElementById('seats-table-body').innerHTML = SEAT_LAYOUTS.map(s => `<tr>
-    <td><span class="text-accent fw-600">${s.id}</span></td><td class="fw-600">${s.name}</td>
-    <td><span class="badge badge-accepted">${s.type}</span></td><td class="fw-600">${s.totalSeats}</td>
+  renderVehicleModels();
+  renderStops();
+}
+
+function renderVehicleModels() {
+  const body = document.getElementById('vehicle-models-table-body');
+  if (!body) return;
+  const serviceLabels = { BIKE: '🏍️ Xe máy', CAR: '🚗 Xe hơi', INTERCITY: '🚌 Liên tỉnh' };
+  body.innerHTML = VEHICLE_MODELS.map(v => {
+    const cat = VEHICLE_CATEGORIES[v.category] || { label: v.category, icon: '' };
+    return `<tr>
+      <td><span class="text-accent fw-600">${v.id}</span></td>
+      <td class="fw-600">${v.name}</td>
+      <td>${serviceLabels[v.serviceType] || v.serviceType}</td>
+      <td>${cat.icon} ${cat.label}</td>
+      <td class="fw-600">${v.seats}</td>
+      <td class="text-muted">${v.luggage || '—'}</td>
+      <td class="text-muted">${v.description || '—'}</td>
+      <td><span class="badge badge-${v.status==='active'?'active':'expired'}">${v.status==='active'?'Hoạt động':'Tạm ngừng'}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick="deleteVehicleModel('${v.id}')">🗑️</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderStops() {
+  const body = document.getElementById('stops-table-body');
+  if (!body) return;
+  body.innerHTML = STOPS.map(s => `<tr>
+    <td><span class="text-accent fw-600">${s.id}</span></td>
+    <td class="fw-600">${s.name}</td>
+    <td>${s.address}</td>
+    <td>${s.district}</td>
+    <td>${s.province}</td>
+    <td><button class="btn btn-sm btn-outline" onclick="deleteStop('${s.id}')">🗑️</button></td>
   </tr>`).join('');
+}
+
+// ===== Vehicle Model CRUD =====
+function openVehicleModelCreate() {
+  ['vm-name','vm-seats','vm-luggage','vm-description'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('vm-service-type').value = 'INTERCITY';
+  document.getElementById('vm-category').value = 'seat';
+  document.getElementById('vm-status').value = 'active';
+  openModal('vehicle-model-modal');
+}
+
+function createVehicleModel() {
+  const name = document.getElementById('vm-name').value.trim();
+  const serviceType = document.getElementById('vm-service-type').value;
+  const category = document.getElementById('vm-category').value;
+  const seats = parseInt(document.getElementById('vm-seats').value, 10);
+  const status = document.getElementById('vm-status').value;
+  const luggage = document.getElementById('vm-luggage').value.trim();
+  const description = document.getElementById('vm-description').value.trim();
+  if (!name || !serviceType || !category || isNaN(seats) || seats < 1) {
+    return alert('Vui lòng nhập đủ Tên, Loại dịch vụ, Phân loại và Số ghế.');
+  }
+  const id = genId('VM', VEHICLE_MODELS);
+  VEHICLE_MODELS.push({ id, name, serviceType, category, seats, status, luggage, description });
+  createAuditLog({ action: 'vehicle_model.create', target: id, before: null, after: { name, serviceType, category, seats } });
+  closeModal('vehicle-model-modal');
+  renderVehicleModels();
+  populateScheduleOptions();
+}
+
+function deleteVehicleModel(id) {
+  if (!confirm('Xoá loại xe ' + id + '?')) return;
+  const idx = VEHICLE_MODELS.findIndex(v => v.id === id);
+  if (idx < 0) return;
+  VEHICLE_MODELS.splice(idx, 1);
+  renderVehicleModels();
+  populateScheduleOptions();
+}
+
+// ===== Stop CRUD =====
+function openStopCreate() {
+  ['stop-name','stop-address','stop-district','stop-province'].forEach(i => document.getElementById(i).value = '');
+  openModal('stop-modal');
+}
+
+function createStop() {
+  const name = document.getElementById('stop-name').value.trim();
+  const address = document.getElementById('stop-address').value.trim();
+  const district = document.getElementById('stop-district').value.trim();
+  const province = document.getElementById('stop-province').value.trim();
+  if (!name || !address || !district || !province) return alert('Vui lòng nhập đủ Tên, Địa chỉ, Quận/Huyện, Tỉnh/Thành.');
+  const id = genId('ST', STOPS);
+  STOPS.push({ id, name, address, district, province });
+  createAuditLog({ action: 'stop.create', target: id, before: null, after: { name, district, province } });
+  closeModal('stop-modal');
+  renderStops();
+}
+
+function deleteStop(id) {
+  if (!confirm('Xoá điểm dừng ' + id + '?')) return;
+  const idx = STOPS.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  STOPS.splice(idx, 1);
+  renderStops();
+}
+
+// ===== Route CRUD =====
+function openRouteCreate() {
+  ['route-name','route-distance','route-duration','route-origin-district','route-origin-province','route-dest-district','route-dest-province'].forEach(i => document.getElementById(i).value = '');
+  document.getElementById('route-status').value = 'active';
+  filterRouteStops();
+  openModal('route-modal');
+}
+
+function filterRouteStops() {
+  const origin = document.getElementById('route-origin-district').value.trim().toLowerCase();
+  const dest = document.getElementById('route-dest-district').value.trim().toLowerCase();
+  const picker = document.getElementById('route-stops-picker');
+  if (!picker) return;
+  if (!origin && !dest) {
+    picker.innerHTML = '<div class="text-muted" style="font-size:12px">Nhập quận của Điểm đi & Điểm đến để hiển thị điểm dừng phù hợp.</div>';
+    return;
+  }
+  const matched = STOPS.filter(s => {
+    const d = s.district.toLowerCase();
+    return (origin && d.includes(origin)) || (dest && d.includes(dest));
+  });
+  // Sắp xếp: origin → others → dest (tuần tự)
+  matched.sort((a, b) => {
+    const ao = a.district.toLowerCase().includes(origin) ? 0 : (a.district.toLowerCase().includes(dest) ? 2 : 1);
+    const bo = b.district.toLowerCase().includes(origin) ? 0 : (b.district.toLowerCase().includes(dest) ? 2 : 1);
+    return ao - bo;
+  });
+  if (!matched.length) {
+    picker.innerHTML = '<div class="text-muted" style="font-size:12px">Không có điểm dừng nào trong các quận đã nhập. (Thêm Điểm dừng ở tab "Điểm dừng" trước.)</div>';
+    return;
+  }
+  picker.innerHTML = matched.map(s => `
+    <label style="display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px;cursor:pointer">
+      <input type="checkbox" class="route-stop-cb" value="${s.id}">
+      <div style="flex:1">
+        <div class="fw-600">${s.name} <span class="text-muted" style="font-weight:400">— ${s.district}, ${s.province}</span></div>
+        <div class="text-muted" style="font-size:11px">${s.address}</div>
+      </div>
+    </label>`).join('');
+}
+
+function createRoute() {
+  const name = document.getElementById('route-name').value.trim();
+  const distance = parseInt(document.getElementById('route-distance').value, 10);
+  const duration = document.getElementById('route-duration').value.trim();
+  const originDistrict = document.getElementById('route-origin-district').value.trim();
+  const originProvince = document.getElementById('route-origin-province').value.trim();
+  const destDistrict = document.getElementById('route-dest-district').value.trim();
+  const destProvince = document.getElementById('route-dest-province').value.trim();
+  const status = document.getElementById('route-status').value;
+  const stopIds = Array.from(document.querySelectorAll('.route-stop-cb:checked')).map(cb => cb.value);
+  if (!name || isNaN(distance) || !duration || !originDistrict || !originProvince || !destDistrict || !destProvince) {
+    return alert('Vui lòng điền đủ các trường bắt buộc.');
+  }
+  const id = genId('RT', ROUTES);
+  ROUTES.push({ id, name, distance, duration, originDistrict, originProvince, destDistrict, destProvince, stopIds, status });
+  createAuditLog({ action: 'route.create', target: id, before: null, after: { name, distance, duration, stopIds: stopIds.length } });
+  closeModal('route-modal');
+  renderRoutes();
 }
 
 // ============================================
@@ -1877,16 +2053,364 @@ function renderPromos() {
 function renderCommissions() {
   document.getElementById('commission-config').innerHTML = COMMISSIONS.map(c => {
     const vt = VEHICLE_TYPES[c.vehicleType];
-    return `<div class="commission-card"><div class="commission-card-header"><span class="commission-card-icon">${vt?.icon||'🚗'}</span><div><div class="commission-card-title">${vt?.label||c.vehicleType}</div><div class="commission-card-subtitle">${c.description}</div></div></div>
-    <div class="commission-rate"><span class="commission-rate-value">${c.rate}</span><span class="commission-rate-unit">%</span></div>
-    <button class="btn btn-outline btn-sm" style="width:100%">✏️ Chỉnh sửa</button></div>`;
+    const feeRate = c.rate;            // % phí dịch vụ (platform giữ)
+    const driverRate = 100 - feeRate;  // % tài xế thực nhận = chiết khấu
+    return `<div class="commission-card">
+      <div class="commission-card-header">
+        <span class="commission-card-icon">${vt?.icon||'🚗'}</span>
+        <div>
+          <div class="commission-card-title">${vt?.label||c.vehicleType}</div>
+          <div class="commission-card-subtitle">${c.description}</div>
+        </div>
+      </div>
+      <div class="commission-split">
+        <div class="commission-split-row driver">
+          <div class="commission-split-label">💸 Tài xế nhận<span class="commission-split-hint">(chiết khấu)</span></div>
+          <div class="commission-split-value">${driverRate}%</div>
+        </div>
+        <div class="commission-split-bar"><div class="commission-split-bar-fill" style="width:${driverRate}%"></div></div>
+        <div class="commission-split-row fee">
+          <div class="commission-split-label">🏢 Phí dịch vụ<span class="commission-split-hint">(hệ thống giữ)</span></div>
+          <div class="commission-split-value">${feeRate}%</div>
+        </div>
+        <div class="commission-split-example">Ví dụ chuyến 100.000đ → TX nhận <b class="text-success">${fmt(1000*driverRate)}</b>, phí <b class="text-warning">${fmt(1000*feeRate)}</b></div>
+      </div>
+      <button class="btn btn-outline btn-sm" style="width:100%" onclick="openCommissionEdit('${c.id}')">✏️ Chỉnh sửa</button>
+    </div>`;
   }).join('');
 
   document.getElementById('commission-history-body').innerHTML = COMMISSION_HISTORY.map(ch => {
     const vt = VEHICLE_TYPES[ch.vehicleType];
     const b = BOOKINGS.find(x => x.id === ch.bookingId);
-    return `<tr><td class="text-muted">${ch.id}</td><td><span class="text-accent fw-600">${b?b.bookingCode:ch.bookingId}</span></td><td class="fw-600">${getDriverName(ch.driverId)}</td><td>${vt?.icon||''} ${vt?.label||ch.vehicleType}</td><td>${fmt(ch.tripPrice)}</td><td class="fw-600">${ch.rate}%</td><td class="fw-700 text-warning">${fmt(ch.amount)}</td><td class="text-muted">${ch.createdAt}</td></tr>`;
+    const feeRate = ch.rate;
+    const driverRate = 100 - feeRate;
+    const driverAmount = ch.tripPrice - ch.amount; // tài xế nhận = tổng - phí
+    return `<tr>
+      <td class="text-muted">${ch.id}</td>
+      <td><span class="text-accent fw-600">${b?b.bookingCode:ch.bookingId}</span></td>
+      <td class="fw-600">${getDriverName(ch.driverId)}</td>
+      <td>${vt?.icon||''} ${vt?.label||ch.vehicleType}</td>
+      <td class="fw-600">${fmt(ch.tripPrice)}</td>
+      <td class="fw-700 text-success">${fmt(driverAmount)} <span class="text-muted" style="font-weight:400">(${driverRate}%)</span></td>
+      <td class="fw-700 text-warning">${fmt(ch.amount)} <span class="text-muted" style="font-weight:400">(${feeRate}%)</span></td>
+      <td class="text-muted">${ch.createdAt}</td>
+    </tr>`;
   }).join('');
+
+  // Mặc định render tab pricing cho BIKE
+  renderPricingPanel('BIKE');
+}
+
+function openCommissionEdit(id) {
+  const c = COMMISSIONS.find(x => x.id === id);
+  if (!c) return;
+  const vt = VEHICLE_TYPES[c.vehicleType];
+  document.getElementById('ce-id').value = c.id;
+  document.getElementById('ce-service').innerHTML = `${vt?.icon||''} ${vt?.label||c.vehicleType}`;
+  document.getElementById('ce-desc').value = c.description || '';
+  const feeRate = c.rate;
+  const driverRate = 100 - feeRate;
+  document.getElementById('ce-driver-rate').value = driverRate;
+  document.getElementById('ce-fee-rate').value = feeRate;
+  updateCommissionPreview(driverRate, feeRate);
+  openModal('commission-edit-modal');
+}
+
+function syncCommissionEdit(source) {
+  const driverEl = document.getElementById('ce-driver-rate');
+  const feeEl = document.getElementById('ce-fee-rate');
+  let driver = parseInt(driverEl.value, 10);
+  let fee = parseInt(feeEl.value, 10);
+  if (source === 'driver') {
+    if (isNaN(driver)) return;
+    driver = Math.max(0, Math.min(100, driver));
+    fee = 100 - driver;
+    feeEl.value = fee;
+  } else {
+    if (isNaN(fee)) return;
+    fee = Math.max(0, Math.min(100, fee));
+    driver = 100 - fee;
+    driverEl.value = driver;
+  }
+  updateCommissionPreview(driver, fee);
+}
+
+function updateCommissionPreview(driverRate, feeRate) {
+  document.getElementById('ce-preview-driver').textContent = fmt(1000 * driverRate);
+  document.getElementById('ce-preview-fee').textContent = fmt(1000 * feeRate);
+}
+
+function saveCommissionEdit() {
+  const id = document.getElementById('ce-id').value;
+  const c = COMMISSIONS.find(x => x.id === id);
+  if (!c) return;
+  const fee = parseInt(document.getElementById('ce-fee-rate').value, 10);
+  const driver = parseInt(document.getElementById('ce-driver-rate').value, 10);
+  if (isNaN(fee) || isNaN(driver) || fee + driver !== 100 || fee < 0 || fee > 100) {
+    alert('Tỉ lệ không hợp lệ. Tổng "Tài xế nhận" + "Phí dịch vụ" phải bằng 100%.');
+    return;
+  }
+  const desc = document.getElementById('ce-desc').value.trim();
+  const before = { rate: c.rate, description: c.description };
+  c.rate = fee;
+  if (desc) c.description = desc;
+  if (typeof createAuditLog === 'function') {
+    createAuditLog({
+      action: 'commission.update', target: c.id,
+      before, after: { rate: c.rate, description: c.description }
+    });
+  }
+  closeModal('commission-edit-modal');
+  renderCommissions();
+}
+
+function switchCommissionTab(tab, btn) {
+  document.querySelectorAll('#page-commissions > .tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  document.querySelectorAll('#page-commissions .commissions-tab-panel').forEach(el => el.classList.remove('is-active'));
+  const target = document.getElementById('commissions-tab-' + tab);
+  if (target) target.classList.add('is-active');
+  if (tab === 'pricing') {
+    const activeSub = document.querySelector('#pricing-sub-tabs .tab-btn.active');
+    renderPricingPanel(activeSub ? activeSub.dataset.ptab : 'BIKE');
+  }
+}
+
+function switchPricingTab(type, btn) {
+  document.querySelectorAll('#pricing-sub-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPricingPanel(type);
+}
+
+function renderPricingPanel(type) {
+  const p = PRICING[type];
+  if (!p) return;
+  const panel = document.getElementById('pricing-panel');
+  let html = '';
+
+  const rowActions = (kind, id) => `
+    <button class="btn btn-outline btn-sm" onclick="openPricingForm('${type}','${kind}','${id}')">✏️</button>
+    <button class="btn btn-outline btn-sm" onclick="deletePricingRow('${type}','${kind}','${id}')">🗑️</button>`;
+
+  // 1) Giá gốc theo dịch vụ (chỉ với SERVICE/MAINTENANCE)
+  if (p.mode === 'service') {
+    html += `<div class="table-container" style="margin-bottom:20px">
+      <div class="table-header">
+        <span class="table-title">💰 Giá mỗi dịch vụ</span>
+        <div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${type}','services')">➕ Thêm dịch vụ</button></div>
+      </div>
+      <div class="table-wrapper">
+        <table><thead><tr><th>Mã</th><th>Tên dịch vụ</th><th>Giá (đ)</th><th>Thao tác</th></tr></thead>
+        <tbody>${p.services.map(s => `<tr>
+          <td class="text-muted">${s.code}</td>
+          <td class="fw-600">${s.name}</td>
+          <td class="fw-700 text-success">${fmt(s.price)}</td>
+          <td>${rowActions('services', s.id)}</td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    </div>`;
+  }
+
+  // 2) Khung KM (chỉ với BIKE/CAR)
+  if (p.mode === 'km') {
+    html += `<div class="table-container" style="margin-bottom:20px">
+      <div class="table-header">
+        <span class="table-title">📏 Giá theo cây số (mở cửa + khung km tiếp theo)</span>
+        <div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${type}','km')">➕ Thêm khung km</button></div>
+      </div>
+      <div class="table-wrapper">
+        <table><thead><tr><th>Từ km</th><th>Đến km</th><th>Giá / km (đ)</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+        <tbody>${p.km.map(k => `<tr>
+          <td class="fw-600">${k.fromKm}</td>
+          <td class="fw-600">${k.toKm === null ? '∞' : k.toKm}</td>
+          <td class="fw-700 text-success">${fmt(k.pricePerKm)}</td>
+          <td class="text-muted">${k.note || ''}</td>
+          <td>${rowActions('km', k.id)}</td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    </div>`;
+  }
+
+  // 3) Khung giờ
+  const slotTarget = p.mode === 'ticket' ? 'giá vé' : (p.mode === 'service' ? 'giá dịch vụ' : 'giá/km');
+  html += `<div class="table-container" style="margin-bottom:20px">
+    <div class="table-header">
+      <span class="table-title">⏰ Phụ phí theo khung giờ (cộng vào ${slotTarget})</span>
+      <div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${type}','timeSlot')">➕ Thêm khung giờ</button></div>
+    </div>
+    <div class="table-wrapper">
+      <table><thead><tr><th>Từ</th><th>Đến</th><th>Phụ phí (đ)</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+      <tbody>${p.timeSlot.map(t => `<tr>
+        <td class="fw-600">${t.from}</td>
+        <td class="fw-600">${t.to}</td>
+        <td class="fw-700 text-warning">+ ${fmt(t.surcharge)}</td>
+        <td class="text-muted">${t.note || ''}</td>
+        <td>${rowActions('timeSlot', t.id)}</td>
+      </tr>`).join('')}</tbody></table>
+    </div>
+  </div>`;
+
+  // 4) Thời điểm (ngày đặc biệt / cuối tuần / lễ)
+  html += `<div class="table-container">
+    <div class="table-header">
+      <span class="table-title">📅 Phụ phí theo thời điểm (cộng vào ${slotTarget})</span>
+      <div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${type}','period')">➕ Thêm thời điểm</button></div>
+    </div>
+    <div class="table-wrapper">
+      <table><thead><tr><th>Tên</th><th>Loại</th><th>Khoảng thời gian</th><th>Phụ phí (đ)</th><th>Thao tác</th></tr></thead>
+      <tbody>${p.period.map(pe => `<tr>
+        <td class="fw-600">${pe.name}</td>
+        <td>${pe.type === 'weekend' ? '🗓️ Cuối tuần' : (pe.type === 'date_range' ? '📌 Khoảng ngày' : pe.type)}</td>
+        <td class="text-muted">${pe.type === 'date_range' ? (pe.from + ' → ' + pe.to) : '—'}</td>
+        <td class="fw-700 text-warning">+ ${fmt(pe.surcharge)}</td>
+        <td>${rowActions('period', pe.id)}</td>
+      </tr>`).join('')}</tbody></table>
+    </div>
+  </div>`;
+
+  panel.innerHTML = html;
+}
+
+// ===== Pricing form (Add / Edit) =====
+const PRICING_KIND_META = {
+  services: { title: 'dịch vụ', icon: '💰', prefix: 'SV' },
+  km: { title: 'khung km', icon: '📏', prefix: 'KM' },
+  timeSlot: { title: 'khung giờ', icon: '⏰', prefix: 'TS' },
+  period: { title: 'thời điểm', icon: '📅', prefix: 'PR' },
+};
+
+function genPricingId(type, kind) {
+  const prefix = PRICING_KIND_META[kind].prefix;
+  const tcode = type.charAt(0); // B/C/I/S/M
+  let n = 1;
+  const arr = PRICING[type][kind] || [];
+  const used = new Set(arr.map(x => x.id));
+  while (used.has(`${prefix}-${tcode}${n}`)) n++;
+  return `${prefix}-${tcode}${n}`;
+}
+
+function buildPricingFormBody(kind, item) {
+  const v = item || {};
+  if (kind === 'services') {
+    return `
+      <div class="input-group mb-20"><label>Mã code</label><input type="text" id="pf-code" placeholder="basic" value="${v.code||''}"></div>
+      <div class="input-group mb-20"><label>Tên dịch vụ</label><input type="text" id="pf-name" placeholder="Bảo dưỡng cơ bản" value="${v.name||''}"></div>
+      <div class="input-group mb-20"><label>Giá (đ)</label><input type="number" id="pf-price" min="0" step="1000" placeholder="400000" value="${v.price||''}"></div>`;
+  }
+  if (kind === 'km') {
+    return `
+      <div class="input-group mb-20"><label>Từ km</label><input type="number" id="pf-fromKm" min="0" step="0.5" placeholder="0" value="${v.fromKm??''}"></div>
+      <div class="input-group mb-20"><label>Đến km (để trống = ∞)</label><input type="number" id="pf-toKm" min="0" step="0.5" placeholder="10" value="${v.toKm??''}"></div>
+      <div class="input-group mb-20"><label>Giá / km (đ)</label><input type="number" id="pf-pricePerKm" min="0" step="500" placeholder="4500" value="${v.pricePerKm||''}"></div>
+      <div class="input-group mb-20"><label>Ghi chú</label><input type="text" id="pf-note" placeholder="Giá mở cửa / Từ km X..." value="${v.note||''}"></div>`;
+  }
+  if (kind === 'timeSlot') {
+    return `
+      <div class="input-group mb-20"><label>Từ giờ (HH:MM)</label><input type="time" id="pf-from" value="${v.from||''}"></div>
+      <div class="input-group mb-20"><label>Đến giờ (HH:MM)</label><input type="time" id="pf-to" value="${v.to||''}"></div>
+      <div class="input-group mb-20"><label>Phụ phí (đ)</label><input type="number" id="pf-surcharge" min="0" step="1000" placeholder="5000" value="${v.surcharge||''}"></div>
+      <div class="input-group mb-20"><label>Ghi chú</label><input type="text" id="pf-note" placeholder="Cao điểm sáng..." value="${v.note||''}"></div>`;
+  }
+  if (kind === 'period') {
+    const isRange = v.type === 'date_range' || !v.type;
+    return `
+      <div class="input-group mb-20"><label>Tên</label><input type="text" id="pf-name" placeholder="Tết Nguyên Đán" value="${v.name||''}"></div>
+      <div class="input-group mb-20"><label>Loại</label>
+        <select id="pf-type" onchange="togglePricingPeriodRange()">
+          <option value="date_range" ${v.type==='date_range'?'selected':''}>📌 Khoảng ngày</option>
+          <option value="weekend" ${v.type==='weekend'?'selected':''}>🗓️ Cuối tuần</option>
+        </select>
+      </div>
+      <div class="input-group mb-20" id="pf-range-from-wrap" style="${isRange?'':'display:none'}"><label>Từ ngày</label><input type="date" id="pf-from" value="${v.from||''}"></div>
+      <div class="input-group mb-20" id="pf-range-to-wrap" style="${isRange?'':'display:none'}"><label>Đến ngày</label><input type="date" id="pf-to" value="${v.to||''}"></div>
+      <div class="input-group mb-20"><label>Phụ phí (đ)</label><input type="number" id="pf-surcharge" min="0" step="1000" placeholder="20000" value="${v.surcharge||''}"></div>`;
+  }
+  return '';
+}
+
+function togglePricingPeriodRange() {
+  const isRange = document.getElementById('pf-type').value === 'date_range';
+  document.getElementById('pf-range-from-wrap').style.display = isRange ? '' : 'none';
+  document.getElementById('pf-range-to-wrap').style.display = isRange ? '' : 'none';
+}
+
+function openPricingForm(type, kind, id) {
+  const meta = PRICING_KIND_META[kind];
+  const item = id ? PRICING[type][kind].find(x => x.id === id) : null;
+  document.getElementById('pf-type-input').value = type;
+  document.getElementById('pf-kind-input').value = kind;
+  document.getElementById('pf-id-input').value = id || '';
+  document.getElementById('pf-title').textContent = `${meta.icon} ${id ? 'Sửa' : 'Thêm'} ${meta.title} — ${PRICING[type].label}`;
+  document.getElementById('pf-body').innerHTML = buildPricingFormBody(kind, item);
+  openModal('pricing-form-modal');
+}
+
+function savePricingForm() {
+  const type = document.getElementById('pf-type-input').value;
+  const kind = document.getElementById('pf-kind-input').value;
+  const id = document.getElementById('pf-id-input').value;
+  const arr = PRICING[type][kind];
+  const get = (k) => document.getElementById('pf-' + k);
+  let payload = {};
+  if (kind === 'services') {
+    const code = get('code').value.trim();
+    const name = get('name').value.trim();
+    const price = parseInt(get('price').value, 10);
+    if (!code || !name || isNaN(price) || price < 0) return alert('Nhập đủ Mã, Tên và Giá hợp lệ.');
+    payload = { code, name, price };
+  } else if (kind === 'km') {
+    const fromKm = parseFloat(get('fromKm').value);
+    const toKmRaw = get('toKm').value;
+    const toKm = toKmRaw === '' ? null : parseFloat(toKmRaw);
+    const pricePerKm = parseInt(get('pricePerKm').value, 10);
+    if (isNaN(fromKm) || isNaN(pricePerKm) || pricePerKm < 0) return alert('Nhập đủ Từ km và Giá/km.');
+    if (toKm !== null && toKm <= fromKm) return alert('Đến km phải > Từ km (hoặc để trống = ∞).');
+    payload = { fromKm, toKm, pricePerKm, note: get('note').value.trim() };
+  } else if (kind === 'timeSlot') {
+    const from = get('from').value;
+    const to = get('to').value;
+    const surcharge = parseInt(get('surcharge').value, 10);
+    if (!from || !to || isNaN(surcharge) || surcharge < 0) return alert('Nhập đủ Từ giờ, Đến giờ và Phụ phí.');
+    payload = { from, to, surcharge, note: get('note').value.trim() };
+  } else if (kind === 'period') {
+    const name = get('name').value.trim();
+    const ptype = get('type').value;
+    const surcharge = parseInt(get('surcharge').value, 10);
+    if (!name || isNaN(surcharge) || surcharge < 0) return alert('Nhập đủ Tên và Phụ phí.');
+    payload = { name, type: ptype, surcharge };
+    if (ptype === 'date_range') {
+      const from = get('from').value;
+      const to = get('to').value;
+      if (!from || !to) return alert('Nhập đủ Từ ngày và Đến ngày.');
+      payload.from = from; payload.to = to;
+    }
+  }
+
+  if (id) {
+    const idx = arr.findIndex(x => x.id === id);
+    if (idx >= 0) arr[idx] = { ...arr[idx], ...payload };
+  } else {
+    arr.push({ id: genPricingId(type, kind), ...payload });
+  }
+  if (typeof createAuditLog === 'function') {
+    createAuditLog({ action: 'pricing.' + (id ? 'update' : 'create'), target: `${type}.${kind}.${id || '(new)'}`, before: null, after: payload });
+  }
+  closeModal('pricing-form-modal');
+  renderPricingPanel(type);
+}
+
+function deletePricingRow(type, kind, id) {
+  const arr = PRICING[type][kind];
+  const idx = arr.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const item = arr[idx];
+  const label = item.name || item.code || item.note || id;
+  if (!confirm(`Xoá "${label}" khỏi ${PRICING_KIND_META[kind].title} của ${PRICING[type].label}?`)) return;
+  arr.splice(idx, 1);
+  if (typeof createAuditLog === 'function') {
+    createAuditLog({ action: 'pricing.delete', target: `${type}.${kind}.${id}`, before: item, after: null });
+  }
+  renderPricingPanel(type);
 }
 
 // ============================================
@@ -2335,12 +2859,19 @@ function switchBookingTab(tab, btn) {
 }
 
 // ---- REGISTRATIONS ----
+function openRegistrationCreate() {
+  clearRegistrationForm();
+  openModal('registration-create-modal');
+}
+
 function renderRegistrations() {
   const search = document.getElementById('registration-search')?.value?.toLowerCase() || '';
+  const statusFilter = document.getElementById('registration-status-filter')?.value || '';
   let regs = REGISTRATIONS.filter(r =>
-    r.plate.toLowerCase().includes(search) ||
-    r.ownerName.toLowerCase().includes(search) ||
-    r.ownerPhone.includes(search)
+    (r.plate.toLowerCase().includes(search) ||
+     r.ownerName.toLowerCase().includes(search) ||
+     r.ownerPhone.includes(search)) &&
+    (statusFilter ? r.status === statusFilter : true)
   );
 
   const statusMap = {
@@ -2350,6 +2881,7 @@ function renderRegistrations() {
     cancelled: { label: 'Đã hủy', class: 'badge-cancelled' }
   };
   const serviceLabels = { normal: 'Thường', express: 'Nhanh', home: 'Tại nhà' };
+  const engineLabels = { gasoline: '⛽ Xăng', electric: '🔋 Điện', diesel: '🛢️ Dầu', hybrid: '⚡ Hybrid' };
 
   document.getElementById('registrations-table-body').innerHTML = regs.map(r => `
     <tr>
@@ -2357,7 +2889,8 @@ function renderRegistrations() {
       <td><span class="fw-600">${r.plate}</span></td>
       <td>${r.ownerName}</td>
       <td>${r.ownerPhone}</td>
-      <td>${r.centerName}</td>
+      <td>${r.pickupAddress || r.centerName || '—'}</td>
+      <td>${engineLabels[r.engineType] || '—'}</td>
       <td>${r.bookingDate} ${r.bookingTime}</td>
       <td>${serviceLabels[r.service]}</td>
       <td class="fw-600 text-success">${fmt(r.price)}</td>
@@ -2367,33 +2900,33 @@ function renderRegistrations() {
         ${r.status === 'pending' ? `<button class="btn btn-sm btn-primary" title="Xác nhận" onclick="confirmRegistration('${r.id}')">✓</button>` : ''}
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">Không tìm thấy đơn đăng kiểm</div></div></td></tr>`;
+  `).join('') || `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">Không tìm thấy đơn đăng kiểm</div></div></td></tr>`;
 }
 
 function createRegistrationOrder() {
   const plate = document.getElementById('reg-plate').value.trim();
   const ownerName = document.getElementById('reg-owner-name').value.trim();
   const ownerPhone = document.getElementById('reg-owner-phone').value.trim();
-  const address = document.getElementById('reg-address').value.trim();
-  const center = document.getElementById('reg-center').value;
+  const pickupAddress = document.getElementById('reg-pickup-address').value.trim();
+  const engineType = document.getElementById('reg-engine-type').value;
   const bookingDate = document.getElementById('reg-booking-date').value;
   const bookingTime = document.getElementById('reg-booking-time').value;
   const service = document.getElementById('reg-service').value;
 
-  if (!plate || !ownerName || !ownerPhone || !address || !center || !bookingDate || !bookingTime) {
-    alert('Vui lòng điền đầy đủ thông tin bắt buộc');
+  if (!plate || !ownerName || !ownerPhone || !pickupAddress || !engineType || !bookingDate || !bookingTime) {
+    alert('Vui lòng điền đầy đủ thông tin bắt buộc (gồm Địa chỉ nhận xe và Loại động cơ)');
     return;
   }
 
   const servicePrices = { normal: 350000, express: 500000, home: 700000 };
-  const centerNames = { '50-05V': 'TTĐK 50-05V (Q.3)', '50-06V': 'TTĐK 50-06V (Q.6)', '50-07V': 'TTĐK 50-07V (Thủ Đức)', '50-08V': 'TTĐK 50-08V (Bình Thạnh)' };
 
   const traceId = newTraceId();
   const newReg = {
     id: genId('REG', REGISTRATIONS),
     plate, ownerName, ownerPhone,
     vehicleType: document.getElementById('reg-vehicle-type').value,
-    address, center, centerName: centerNames[center],
+    engineType,
+    pickupAddress,
     bookingDate, bookingTime, service,
     price: servicePrices[service],
     status: 'pending',
@@ -2424,7 +2957,7 @@ function createRegistrationOrder() {
     fulfillmentStatus: null,
     customerId: cust.id, agentId: currentUser?.id || null,
     driverId: null,
-    pickup: address, dropoff: centerNames[center],
+    pickup: pickupAddress, dropoff: pickupAddress,
     fareSnapshot: servicePrices[service], distance: 0,
     paymentMethod: 'cash',  // đăng kiểm thường thu khi hoàn tất
     paymentReference: null,
@@ -2441,7 +2974,7 @@ function createRegistrationOrder() {
   });
   createNotification({
     type: 'booking_created', recipient: cust.id,
-    content: `Đơn đăng kiểm ${newReg.id} đã tạo, lịch hẹn ${bookingDate} ${bookingTime} tại ${centerNames[center]}`
+    content: `Đơn đăng kiểm ${newReg.id} đã tạo, lịch hẹn ${bookingDate} ${bookingTime} — nhận xe tại ${pickupAddress}`
   });
 
   // Cash → auto CONFIRMED
@@ -2461,8 +2994,8 @@ function clearRegistrationForm() {
   document.getElementById('reg-plate').value = '';
   document.getElementById('reg-owner-name').value = '';
   document.getElementById('reg-owner-phone').value = '';
-  document.getElementById('reg-address').value = '';
-  document.getElementById('reg-center').value = '';
+  document.getElementById('reg-pickup-address').value = '';
+  document.getElementById('reg-engine-type').value = 'gasoline';
   document.getElementById('reg-booking-date').value = '';
   document.getElementById('reg-notes').value = '';
 }
@@ -2470,7 +3003,8 @@ function clearRegistrationForm() {
 function viewRegistration(id) {
   const r = REGISTRATIONS.find(x => x.id === id);
   if (!r) return;
-  alert(`Chi tiết đơn ${id}\nBiển số: ${r.plate}\nChủ xe: ${r.ownerName}\nSĐT: ${r.ownerPhone}\nTrung tâm: ${r.centerName}\nNgày: ${r.bookingDate} ${r.bookingTime}\nGiá: ${fmt(r.price)}\nTrạng thái: ${r.status}`);
+  const engineLabels = { gasoline: 'Xăng', electric: 'Điện', diesel: 'Dầu', hybrid: 'Hybrid' };
+  alert(`Chi tiết đơn ${id}\nBiển số: ${r.plate}\nChủ xe: ${r.ownerName}\nSĐT: ${r.ownerPhone}\nĐịa chỉ nhận xe: ${r.pickupAddress || r.centerName || '—'}\nĐộng cơ: ${engineLabels[r.engineType] || '—'}\nNgày: ${r.bookingDate} ${r.bookingTime}\nGiá: ${fmt(r.price)}\nTrạng thái: ${r.status}`);
 }
 
 function confirmRegistration(id) {
@@ -2509,12 +3043,19 @@ function confirmRegistration(id) {
 // MAINTENANCE (Bảo dưỡng) — song song với REGISTRATIONS
 // Cùng flow nhưng dùng mock data riêng (MAINTENANCE) và bookingType riêng (MAINTENANCE_ORDER)
 // ============================================
+function openMaintenanceCreate() {
+  clearMaintenanceForm();
+  openModal('maintenance-create-modal');
+}
+
 function renderMaintenance() {
   const search = document.getElementById('maintenance-search')?.value?.toLowerCase() || '';
+  const statusFilter = document.getElementById('maintenance-status-filter')?.value || '';
   let items = MAINTENANCE.filter(r =>
-    r.plate.toLowerCase().includes(search) ||
-    r.ownerName.toLowerCase().includes(search) ||
-    r.ownerPhone.includes(search)
+    (r.plate.toLowerCase().includes(search) ||
+     r.ownerName.toLowerCase().includes(search) ||
+     r.ownerPhone.includes(search)) &&
+    (statusFilter ? r.status === statusFilter : true)
   );
 
   const statusMap = {
@@ -2524,6 +3065,7 @@ function renderMaintenance() {
     cancelled: { label: 'Đã hủy', class: 'badge-cancelled' }
   };
   const serviceLabels = { basic: 'Cơ bản', full: 'Toàn diện', oil_change: 'Thay nhớt', tire: 'Lốp & cân chỉnh' };
+  const engineLabels = { gasoline: '⛽ Xăng', electric: '🔋 Điện', diesel: '🛢️ Dầu', hybrid: '⚡ Hybrid' };
 
   const body = document.getElementById('maintenance-table-body');
   if (!body) return;
@@ -2533,7 +3075,8 @@ function renderMaintenance() {
       <td><span class="fw-600">${r.plate}</span></td>
       <td>${r.ownerName}</td>
       <td>${r.ownerPhone}</td>
-      <td>${r.centerName}</td>
+      <td>${r.pickupAddress || r.centerName || '—'}</td>
+      <td>${engineLabels[r.engineType] || '—'}</td>
       <td>${r.bookingDate} ${r.bookingTime}</td>
       <td>${serviceLabels[r.service] || r.service}</td>
       <td class="fw-600 text-success">${fmt(r.price)}</td>
@@ -2543,36 +3086,32 @@ function renderMaintenance() {
         ${r.status === 'pending' ? `<button class="btn btn-sm btn-primary" title="Xác nhận" onclick="confirmMaintenance('${r.id}')">✓</button>` : ''}
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔧</div><div class="empty-state-text">Không tìm thấy đơn bảo dưỡng</div></div></td></tr>`;
+  `).join('') || `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">🔧</div><div class="empty-state-text">Không tìm thấy đơn bảo dưỡng</div></div></td></tr>`;
 }
 
 function createMaintenanceOrder() {
   const plate = document.getElementById('mnt-plate').value.trim();
   const ownerName = document.getElementById('mnt-owner-name').value.trim();
   const ownerPhone = document.getElementById('mnt-owner-phone').value.trim();
-  const address = document.getElementById('mnt-address').value.trim();
-  const center = document.getElementById('mnt-center').value;
+  const pickupAddress = document.getElementById('mnt-pickup-address').value.trim();
+  const engineType = document.getElementById('mnt-engine-type').value;
   const bookingDate = document.getElementById('mnt-booking-date').value;
   const bookingTime = document.getElementById('mnt-booking-time').value;
   const service = document.getElementById('mnt-service').value;
 
-  if (!plate || !ownerName || !ownerPhone || !address || !center || !bookingDate || !bookingTime) {
-    alert('Vui lòng điền đầy đủ thông tin bắt buộc'); return;
+  if (!plate || !ownerName || !ownerPhone || !pickupAddress || !engineType || !bookingDate || !bookingTime) {
+    alert('Vui lòng điền đầy đủ thông tin bắt buộc (gồm Địa chỉ nhận xe và Loại động cơ)'); return;
   }
 
   const servicePrices = { basic: 400000, full: 1200000, oil_change: 250000, tire: 800000 };
-  const centerNames = {
-    'GARA-A1': 'Gara A1 (Q.1)', 'GARA-B2': 'Gara B2 (Q.3)',
-    'GARA-C3': 'Gara C3 (Tân Bình)', 'GARA-D4': 'Gara D4 (Q.7)',
-    'GARA-E5': 'Gara E5 (Phú Nhuận)'
-  };
   const traceId = newTraceId();
 
   const newMnt = {
     id: genId('MNT', MAINTENANCE),
     plate, ownerName, ownerPhone,
     vehicleType: document.getElementById('mnt-vehicle-type').value,
-    address, center, centerName: centerNames[center],
+    engineType,
+    pickupAddress,
     bookingDate, bookingTime, service,
     price: servicePrices[service],
     status: 'pending',
@@ -2603,7 +3142,7 @@ function createMaintenanceOrder() {
     fulfillmentStatus: null,
     customerId: cust.id, agentId: currentUser?.id || null,
     driverId: null,
-    pickup: address, dropoff: centerNames[center],
+    pickup: pickupAddress, dropoff: pickupAddress,
     fareSnapshot: servicePrices[service], distance: 0,
     paymentMethod: 'cash',  // bảo dưỡng cũng thu khi xong
     paymentReference: null,
@@ -2620,7 +3159,7 @@ function createMaintenanceOrder() {
   });
   createNotification({
     type: 'booking_created', recipient: cust.id,
-    content: `Đơn bảo dưỡng ${newMnt.id} đã tạo, lịch hẹn ${bookingDate} ${bookingTime} tại ${centerNames[center]}`
+    content: `Đơn bảo dưỡng ${newMnt.id} đã tạo, lịch hẹn ${bookingDate} ${bookingTime} — nhận xe tại ${pickupAddress}`
   });
 
   // Cash → auto CASH status (skip pending payment)
@@ -2637,16 +3176,18 @@ function createMaintenanceOrder() {
 }
 
 function clearMaintenanceForm() {
-  ['mnt-plate','mnt-owner-name','mnt-owner-phone','mnt-address','mnt-center','mnt-booking-date','mnt-notes','mnt-mileage'].forEach(id => {
+  ['mnt-plate','mnt-owner-name','mnt-owner-phone','mnt-pickup-address','mnt-booking-date','mnt-notes','mnt-mileage'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
+  const eng = document.getElementById('mnt-engine-type'); if (eng) eng.value = 'gasoline';
 }
 
 function viewMaintenance(id) {
   const r = MAINTENANCE.find(x => x.id === id);
   if (!r) return;
-  alert(`Chi tiết đơn ${id}\nBiển số: ${r.plate}\nChủ xe: ${r.ownerName}\nSĐT: ${r.ownerPhone}\nGara: ${r.centerName}\nNgày: ${r.bookingDate} ${r.bookingTime}\nGiá: ${fmt(r.price)}\nTrạng thái: ${r.status}\nBooking: ${r.bookingId || '—'}`);
+  const engineLabels = { gasoline: 'Xăng', electric: 'Điện', diesel: 'Dầu', hybrid: 'Hybrid' };
+  alert(`Chi tiết đơn ${id}\nBiển số: ${r.plate}\nChủ xe: ${r.ownerName}\nSĐT: ${r.ownerPhone}\nĐịa chỉ nhận xe: ${r.pickupAddress || r.centerName || '—'}\nĐộng cơ: ${engineLabels[r.engineType] || '—'}\nNgày: ${r.bookingDate} ${r.bookingTime}\nGiá: ${fmt(r.price)}\nTrạng thái: ${r.status}\nBooking: ${r.bookingId || '—'}`);
 }
 
 function confirmMaintenance(id) {
