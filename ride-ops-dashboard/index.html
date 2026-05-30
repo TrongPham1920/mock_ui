@@ -95,7 +95,7 @@
     <main class="main-content">
       <header class="header">
         <div class="header-left">
-          <button class="header-btn" id="menu-toggle" onclick="toggleSidebar()" style="display:none">☰</button>
+          <button class="header-btn" id="menu-toggle" onclick="toggleSidebar()" aria-label="Mở/đóng menu" style="display:none">☰</button>
           <h2 class="header-title" id="page-title">Tổng quan</h2>
         </div>
         <div class="header-right">
@@ -403,7 +403,7 @@
           <div id="booking-tab-intercity">
             <div class="booking-search-bar">
               <div class="bsb-field"><label>Điểm đi</label><select class="input" id="intercity-origin"></select></div>
-              <button class="route-swap" onclick="swapRoute()" title="Đổi chiều">⇄</button>
+              <button class="route-swap" onclick="swapRoute()" title="Đổi chiều" aria-label="Đổi chiều đi và đến">⇄</button>
               <div class="bsb-field"><label>Điểm đến</label><select class="input" id="intercity-destination"></select></div>
               <div class="bsb-field"><label>Ngày đi</label><input type="date" class="input" id="intercity-date"></div>
               <div class="bsb-field"><label>Số khách</label><select class="input" id="intercity-passengers"><option value="1">1 khách</option><option value="2">2 khách</option><option value="3">3 khách</option><option value="4">4 khách</option><option value="5">5 khách</option></select></div>
@@ -649,7 +649,7 @@
   <!-- ========== MODALS ========== -->
   <div class="modal-overlay" id="dispatch-modal">
     <div class="modal">
-      <div class="modal-header"><span class="modal-title">Gán tài xế</span><button class="modal-close" onclick="closeModal('dispatch-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">Gán tài xế</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('dispatch-modal')">✕</button></div>
       <div class="modal-body">
         <div class="input-group mb-20"><label>Booking</label><div id="dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
         <div class="input-group"><label>Chọn tài xế</label><select id="dispatch-driver-select" style="width:100%"></select></div>
@@ -661,7 +661,7 @@
   <!-- Intercity Dispatch Modal: chọn xe + tài xế độc lập -->
   <div class="modal-overlay" id="intercity-dispatch-modal">
     <div class="modal" style="max-width:560px">
-      <div class="modal-header"><span class="modal-title">🚌 Phân công xe & tài xế (Liên tỉnh)</span><button class="modal-close" onclick="closeModal('intercity-dispatch-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">🚌 Phân công xe & tài xế (Liên tỉnh)</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('intercity-dispatch-modal')">✕</button></div>
       <div class="modal-body">
         <div class="input-group mb-20"><label>Booking</label><div id="intercity-dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
         <div class="input-group mb-20">
@@ -682,7 +682,7 @@
 
   <div class="modal-overlay" id="partner-modal">
     <div class="modal">
-      <div class="modal-header"><span class="modal-title">Thêm đối tác mới</span><button class="modal-close" onclick="closeModal('partner-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">Thêm đối tác mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('partner-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid">
           <div class="input-group full-width"><label>Tên nhà xe</label><input type="text" placeholder="VD: Nhà xe ABC"></div>
@@ -699,7 +699,7 @@
 
   <div class="modal-overlay" id="promo-modal">
     <div class="modal">
-      <div class="modal-header"><span class="modal-title">Tạo mã ưu đãi mới</span><button class="modal-close" onclick="closeModal('promo-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">Tạo mã ưu đãi mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('promo-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid">
           <div class="input-group"><label>Mã ưu đãi</label><input type="text" placeholder="VD: SALE30"></div>
@@ -718,7 +718,7 @@
 
   <div class="modal-overlay" id="driver-modal">
     <div class="modal">
-      <div class="modal-header"><span class="modal-title">Thêm tài xế mới</span><button class="modal-close" onclick="closeModal('driver-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">Thêm tài xế mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('driver-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid">
           <div class="input-group"><label>Họ tên</label><input type="text" id="driver-name" placeholder="Nguyễn Văn A"></div>
@@ -757,7 +757,7 @@
   <!-- Trip Create Modal -->
   <div class="modal-overlay" id="trip-create-modal">
     <div class="modal" style="max-width:600px">
-      <div class="modal-header"><span class="modal-title">🚌 Tạo chuyến xe liên tỉnh</span><button class="modal-close" onclick="closeModal('trip-create-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">🚌 Tạo chuyến xe liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('trip-create-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="input-group"><label>Tuyến đường *</label><select class="input" id="trip-route"><option value="">Chọn tuyến</option></select></div>
@@ -781,7 +781,7 @@
   <!-- ===== ĐẶT VÉ LIÊN TỈNH (popup) ===== -->
   <div class="modal-overlay" id="trip-book-modal">
     <div class="modal modal-lg">
-      <div class="modal-header"><span class="modal-title" id="trip-book-title">🎫 Đặt vé liên tỉnh</span><button class="modal-close" onclick="closeModal('trip-book-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title" id="trip-book-title">🎫 Đặt vé liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('trip-book-modal')">✕</button></div>
       <div class="modal-body" id="trip-book-body"></div>
     </div>
   </div>
@@ -789,7 +789,7 @@
   <!-- Schedule Create Modal -->
   <div class="modal-overlay" id="schedule-create-modal">
     <div class="modal" style="max-width:600px">
-      <div class="modal-header"><span class="modal-title">📅 Tạo lịch chạy</span><button class="modal-close" onclick="closeModal('schedule-create-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">📅 Tạo lịch chạy</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('schedule-create-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="input-group"><label>Tuyến đường *</label><select class="input" id="schedule-route"><option value="">Chọn tuyến</option></select></div>
@@ -811,7 +811,7 @@
   <!-- User Create Modal -->
   <div class="modal-overlay" id="user-create-modal">
     <div class="modal" style="max-width:500px">
-      <div class="modal-header"><span class="modal-title">👤 Thêm người dùng mới</span><button class="modal-close" onclick="closeModal('user-create-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">👤 Thêm người dùng mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('user-create-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;gap:16px">
           <div class="input-group"><label>Họ tên *</label><input type="text" class="input" id="new-user-name" placeholder="Nguyễn Văn A"></div>
@@ -830,7 +830,7 @@
   <!-- Role Create Modal -->
   <div class="modal-overlay" id="role-create-modal">
     <div class="modal" style="max-width:600px">
-      <div class="modal-header"><span class="modal-title">🔐 Tạo vai trò mới</span><button class="modal-close" onclick="closeModal('role-create-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">🔐 Tạo vai trò mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('role-create-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;gap:16px">
           <div class="input-group"><label>Tên vai trò *</label><input type="text" class="input" id="new-role-name" placeholder="Quản lý"></div>
@@ -864,7 +864,7 @@
 
   <div class="modal-overlay" id="booking-detail-modal">
     <div class="modal" style="max-width:640px">
-      <div class="modal-header"><span class="modal-title">Chi tiết Booking</span><button class="modal-close" onclick="closeModal('booking-detail-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">Chi tiết Booking</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('booking-detail-modal')">✕</button></div>
       <div class="modal-body" id="booking-detail-content"></div>
       <div class="modal-footer" id="booking-detail-actions"></div>
     </div>
@@ -875,7 +875,7 @@
     <div class="modal" style="max-width:480px">
       <div class="modal-header">
         <span class="modal-title">✏️ Chỉnh sửa chiết khấu</span>
-        <button class="modal-close" onclick="closeModal('commission-edit-modal')">✕</button>
+        <button class="modal-close" aria-label="Đóng" onclick="closeModal('commission-edit-modal')">✕</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="ce-id">
@@ -910,7 +910,7 @@
   <!-- Vehicle Model Create Modal -->
   <div class="modal-overlay" id="vehicle-model-modal">
     <div class="modal" style="max-width:560px">
-      <div class="modal-header"><span class="modal-title">🚐 Thêm loại xe</span><button class="modal-close" onclick="closeModal('vehicle-model-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">🚐 Thêm loại xe</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('vehicle-model-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="input-group"><label>Tên *</label><input type="text" class="input" id="vm-name" placeholder="VD: Limousine 22 chỗ"></div>
@@ -932,7 +932,7 @@
   <!-- Stop Create Modal -->
   <div class="modal-overlay" id="stop-modal">
     <div class="modal" style="max-width:520px">
-      <div class="modal-header"><span class="modal-title">📍 Thêm điểm dừng</span><button class="modal-close" onclick="closeModal('stop-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">📍 Thêm điểm dừng</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('stop-modal')">✕</button></div>
       <div class="modal-body">
         <div class="input-group mb-20"><label>Tên điểm dừng *</label><input type="text" class="input" id="stop-name" placeholder="VD: BX Miền Đông"></div>
         <div class="input-group mb-20"><label>Địa chỉ cụ thể *</label><input type="text" class="input" id="stop-address" placeholder="VD: 292 Đinh Bộ Lĩnh, P.26"></div>
@@ -951,7 +951,7 @@
   <!-- Route Create Modal -->
   <div class="modal-overlay" id="route-modal">
     <div class="modal" style="max-width:640px">
-      <div class="modal-header"><span class="modal-title">🗺️ Thêm tuyến đường</span><button class="modal-close" onclick="closeModal('route-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">🗺️ Thêm tuyến đường</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('route-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="input-group full-width" style="grid-column:1/-1"><label>Tên tuyến đường *</label><input type="text" class="input" id="route-name" placeholder="VD: HCM - Đà Lạt"></div>
@@ -982,7 +982,7 @@
     <div class="modal" style="max-width:520px">
       <div class="modal-header">
         <span class="modal-title" id="pf-title">Thêm</span>
-        <button class="modal-close" onclick="closeModal('pricing-form-modal')">✕</button>
+        <button class="modal-close" aria-label="Đóng" onclick="closeModal('pricing-form-modal')">✕</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="pf-type-input">

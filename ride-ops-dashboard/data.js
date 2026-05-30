@@ -1153,44 +1153,70 @@ const INTERCITY_TRIPS = [
   { id: 'TRP104', routeId: 'INT011', operatorId: 'PTR002', operatorName: 'Nhà xe Thành Bưởi', departureTime: '07:00', arrivalTime: '14:00', vehicleType: 'Giường nằm 36 chỗ', price: 220000, seatsTotal: 36, seatsAvailable: 25, status: 'available', date: '2026-05-27' },
 ];
 
-// ---- AUTO-SEED VÉ ĐÃ ĐẶT ----
-// Sinh thêm booking giả lập cho mỗi chuyến để số vé đã đặt khớp với "đã bán" (sold = seatsTotal - seatsAvailable).
-// Nhờ vậy popup "👥 Vé đã đặt (33/45)" có đủ danh sách khách để xem.
-(function seedTripBookings() {
+// ============================================================
+// AUTO-LINK & SEED — đảm bảo dữ liệu mock liên kết với nhau
+// 1) Tạo pool khách lẻ → gán cho vé liên tỉnh seed (customerId thật)
+// 2) Seed vé cho mỗi chuyến để khớp số đã bán (popup "Vé đã đặt 33/45")
+// 3) Nối 2 chiều REGISTRATIONS/MAINTENANCE ↔ BOOKINGS ↔ CUSTOMERS
+// ============================================================
+(function seedAndLink() {
   const FIRST = ['Nguyễn','Trần','Lê','Phạm','Hoàng','Huỳnh','Phan','Vũ','Võ','Đặng','Bùi','Đỗ','Hồ','Ngô','Dương','Lý','Đinh','Tô','Trương','Cao'];
   const MID = ['Văn','Thị','Hữu','Đức','Minh','Quốc','Gia','Hoài','Thanh','Bảo','Tuấn','Khánh','Ngọc','Phương','Anh'];
   const LAST = ['An','Bình','Chi','Dũng','Giang','Hà','Hải','Hùng','Khoa','Lan','Linh','Mai','Nam','Nga','Phúc','Quân','Sơn','Trang','Tú','Vy'];
   let seed = 7919;
   const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
   const pick = arr => arr[Math.floor(rnd() * arr.length)];
-  const phone = () => '09' + String(Math.floor(rnd() * 100000000)).padStart(8, '0');
   const pay = () => ['wallet', 'cash', 'momo'][Math.floor(rnd() * 3)];
 
+  // ID generator tránh trùng
+  let custSeq = CUSTOMERS.reduce((m, c) => Math.max(m, parseInt(String(c.id).replace(/\D/g, '')) || 0), 0);
+  const newCustId = () => 'KH' + String(++custSeq).padStart(3, '0');
+  function findOrCreateCustomer(name, phoneNo) {
+    let c = CUSTOMERS.find(x => x.phone === phoneNo);
+    if (!c) {
+      c = { id: newCustId(), name, phone: phoneNo, email: '', totalBookings: 0, status: 'active' };
+      CUSTOMERS.push(c);
+    }
+    return c;
+  }
+
+  // (1) Pool 36 khách lẻ cho vé liên tỉnh seed
+  const pool = [];
+  for (let i = 0; i < 36; i++) {
+    const name = `${pick(FIRST)} ${pick(MID)} ${pick(LAST)}`;
+    const phoneNo = '09' + String(10000000 + Math.floor(rnd() * 89999999));
+    const c = { id: newCustId(), name, phone: phoneNo, email: '', totalBookings: 0, status: 'active' };
+    CUSTOMERS.push(c);
+    pool.push(c);
+  }
+  let poolIdx = 0;
+
+  // (2) Seed vé liên tỉnh — mỗi vé gắn customerId từ pool
   let n = 500;
   INTERCITY_TRIPS.forEach(trip => {
     const sold = trip.seatsTotal - trip.seatsAvailable;
     if (sold <= 0) return;
     const route = INTERCITY_ROUTES.find(r => r.id === trip.routeId);
-    // Số khách đã có sẵn (booking thủ công) cho chuyến này
     let already = BOOKINGS
       .filter(b => b.bookingType === 'INTERCITY' && b.tripId === trip.id)
       .reduce((s, b) => s + (b.passengerSnapshot?.length || 1), 0);
     let remaining = sold - already;
     while (remaining > 0) {
-      const pax = Math.min(remaining, 1 + Math.floor(rnd() * 2)); // 1-2 khách / đơn
-      const passengers = Array.from({ length: pax }, () => ({
-        name: `${pick(FIRST)} ${pick(MID)} ${pick(LAST)}`,
-        phone: phone()
-      }));
+      const pax = Math.min(remaining, 1 + Math.floor(rnd() * 2));
+      const cust = pool[poolIdx++ % pool.length];
+      cust.totalBookings = (cust.totalBookings || 0) + 1;
+      const passengers = [{ name: cust.name, phone: cust.phone }];
+      for (let k = 1; k < pax; k++) passengers.push({ name: `${pick(FIRST)} ${pick(MID)} ${pick(LAST)}`, phone: cust.phone });
       const method = pay();
       BOOKINGS.push({
         id: 'BK' + n,
         bookingCode: 'RO-SEED-' + n,
         bookingType: 'INTERCITY',
-        bookingStatus: rnd() > 0.15 ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
-        paymentStatus: method === 'cash' ? 'CASH' : (rnd() > 0.15 ? 'CONFIRMED' : 'PENDING'),
-        fulfillmentStatus: 'PENDING',
-        customerId: null, agentId: 'USR003', driverId: null,
+        seed: true,
+        bookingStatus: 'COMPLETED',
+        paymentStatus: method === 'cash' ? 'CASH' : 'CONFIRMED',
+        fulfillmentStatus: 'COMPLETED',
+        customerId: cust.id, agentId: 'USR003', driverId: null,
         pickup: route ? 'BX ' + route.origin : '', dropoff: route ? 'BX ' + route.destination : '',
         routeId: trip.routeId, tripId: trip.id, scheduleId: null,
         seatNumbers: [],
@@ -1204,6 +1230,156 @@ const INTERCITY_TRIPS = [
       n++;
       remaining -= pax;
     }
+  });
+
+  // (3a) Nối các SERVICE_ORDER/MAINTENANCE_ORDER booking đang thiếu order-id
+  //      với REG/MNT tĩnh chưa có booking (ghép 2 chiều)
+  const regFree = REGISTRATIONS.filter(r => !r.bookingId);
+  const mntFree = MAINTENANCE.filter(m => !m.bookingId);
+  BOOKINGS.filter(b => b.bookingType === 'SERVICE_ORDER' && !b.serviceOrderId).forEach(b => {
+    const r = regFree.shift();
+    if (!r) return;
+    b.serviceOrderId = r.id;
+    r.bookingId = b.id;
+    r.customerId = b.customerId;
+  });
+  BOOKINGS.filter(b => b.bookingType === 'MAINTENANCE_ORDER' && !b.maintenanceOrderId).forEach(b => {
+    const m = mntFree.shift();
+    if (!m) return;
+    b.maintenanceOrderId = m.id;
+    m.bookingId = b.id;
+    m.customerId = b.customerId;
+  });
+
+  // (3b) REG/MNT tĩnh còn lại → tạo booking liên kết + khách
+  let bkSeq = 900;
+  const REG_PRICE = { normal: 350000, express: 500000, home: 700000 };
+  const MNT_PRICE = { basic: 400000, full: 1200000, oil_change: 250000, tire: 800000 };
+  REGISTRATIONS.filter(r => !r.bookingId).forEach(r => {
+    const cust = findOrCreateCustomer(r.ownerName, r.ownerPhone);
+    cust.totalBookings = (cust.totalBookings || 0) + 1;
+    const paid = r.status === 'completed' || r.status === 'confirmed';
+    const b = {
+      id: 'BK' + bkSeq++, bookingCode: 'RO-SVC-' + r.id, bookingType: 'SERVICE_ORDER',
+      bookingStatus: r.status === 'completed' ? 'COMPLETED' : (r.status === 'cancelled' ? 'CANCELLED' : (r.status === 'confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION')),
+      paymentStatus: paid ? 'CASH' : 'PENDING',
+      fulfillmentStatus: r.status === 'completed' ? 'COMPLETED' : (paid ? 'PENDING' : null),
+      customerId: cust.id, agentId: 'USR003', driverId: null,
+      pickup: r.pickupAddress, dropoff: r.pickupAddress,
+      fareSnapshot: r.price || REG_PRICE[r.service] || 0, distance: 0,
+      paymentMethod: 'cash', paymentReference: paid ? 'CASH-' + r.id : null,
+      fulfillmentTaskId: null, serviceOrderId: r.id,
+      createdAt: r.createdAt || nowTs(), updatedAt: r.createdAt || nowTs()
+    };
+    BOOKINGS.push(b);
+    r.bookingId = b.id;
+    r.customerId = cust.id;
+  });
+  MAINTENANCE.filter(m => !m.bookingId).forEach(m => {
+    const cust = findOrCreateCustomer(m.ownerName, m.ownerPhone);
+    cust.totalBookings = (cust.totalBookings || 0) + 1;
+    const paid = m.status === 'completed' || m.status === 'confirmed';
+    const b = {
+      id: 'BK' + bkSeq++, bookingCode: 'RO-MNT-' + m.id, bookingType: 'MAINTENANCE_ORDER',
+      bookingStatus: m.status === 'completed' ? 'COMPLETED' : (m.status === 'cancelled' ? 'CANCELLED' : (m.status === 'confirmed' ? 'CONFIRMED' : 'PENDING_CONFIRMATION')),
+      paymentStatus: paid ? 'CASH' : 'PENDING',
+      fulfillmentStatus: m.status === 'completed' ? 'COMPLETED' : (paid ? 'PENDING' : null),
+      customerId: cust.id, agentId: 'USR003', driverId: null,
+      pickup: m.pickupAddress, dropoff: m.pickupAddress,
+      fareSnapshot: m.price || MNT_PRICE[m.service] || 0, distance: 0,
+      paymentMethod: 'cash', paymentReference: paid ? 'CASH-' + m.id : null,
+      fulfillmentTaskId: null, maintenanceOrderId: m.id,
+      createdAt: m.createdAt || nowTs(), updatedAt: m.createdAt || nowTs()
+    };
+    BOOKINGS.push(b);
+    m.bookingId = b.id;
+    m.customerId = cust.id;
+  });
+
+  // (3c) Backfill customerId cho REG/MNT đã có bookingId sẵn nhưng thiếu customer
+  [...REGISTRATIONS, ...MAINTENANCE].forEach(o => {
+    if (o.bookingId && !o.customerId) {
+      const b = BOOKINGS.find(x => x.id === o.bookingId);
+      if (b && b.customerId) o.customerId = b.customerId;
+    }
+  });
+
+  function nowTs() {
+    const d = new Date();
+    const p = x => String(x).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+})();
+
+// ============================================================
+// LIÊN KẾT LỊCH CHẠY → CHUYẾN → ĐƠN VÉ
+// Mỗi chuyến (INTERCITY_TRIP) thuộc về 1 lịch chạy (SCHEDULE) theo
+// (tuyến + nhà xe + giờ chạy). Chuyến chưa có lịch → sinh lịch mới.
+// Đơn vé (BOOKING) kế thừa scheduleId từ chuyến của nó.
+// Quan hệ: 1 lịch chạy ─ n chuyến ─ n đơn vé.
+// ============================================================
+(function linkScheduleTrips() {
+  const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const destOf = name => String(name).split(' - ').pop().trim(); // "HCM - Đà Lạt" → "Đà Lạt"
+  const intByDest = {};
+  INTERCITY_ROUTES.forEach(r => { intByDest[r.destination] = r.id; });
+  const modelByName = {};
+  VEHICLE_MODELS.forEach(v => { modelByName[v.name] = v.id; });
+
+  // Signature của lịch đã có (quy về INTERCITY route id)
+  const sig = {};
+  SCHEDULES.forEach(sc => {
+    const rt = ROUTES.find(r => r.id === sc.routeId);
+    const intId = rt ? intByDest[destOf(rt.name)] : (INTERCITY_ROUTES.find(r => r.id === sc.routeId) ? sc.routeId : null);
+    if (intId) sig[`${intId}|${sc.operatorId}|${sc.departureTime}`] = sc.id;
+  });
+
+  let schSeq = SCHEDULES.reduce((m, s) => Math.max(m, parseInt(String(s.id).replace(/\D/g, '')) || 0), 0);
+
+  INTERCITY_TRIPS.forEach(t => {
+    if (t.scheduleId) return;
+    const key = `${t.routeId}|${t.operatorId}|${t.departureTime}`;
+    let scId = sig[key];
+    const day = DAYS[new Date(t.date + 'T00:00:00').getDay()];
+    if (!scId) {
+      scId = 'SCH' + String(++schSeq).padStart(3, '0');
+      SCHEDULES.push({
+        id: scId,
+        routeId: t.routeId,                 // tham chiếu INTERCITY_ROUTES
+        operatorId: t.operatorId,
+        departureTime: t.departureTime,
+        arrivalTime: t.arrivalTime,
+        vehicleModelId: modelByName[t.vehicleType] || null,
+        seatLayoutId: modelByName[t.vehicleType] || null,
+        status: 'active',
+        daysOfWeek: [day],
+        intercity: true
+      });
+      sig[key] = scId;
+    } else {
+      const sc = SCHEDULES.find(s => s.id === scId);
+      if (sc && sc.daysOfWeek && !sc.daysOfWeek.includes(day)) sc.daysOfWeek.push(day);
+    }
+    t.scheduleId = scId;
+  });
+
+  // Đơn vé kế thừa scheduleId từ chuyến
+  const tripById = {};
+  INTERCITY_TRIPS.forEach(t => { tripById[t.id] = t; });
+  BOOKINGS.forEach(b => {
+    if (b.bookingType !== 'INTERCITY') return;
+    // Đơn cũ thiếu tripId → gán 1 chuyến cùng lịch (hoặc cùng tuyến) để không mồ côi
+    if (!b.tripId) {
+      let cand = b.scheduleId ? INTERCITY_TRIPS.find(t => t.scheduleId === b.scheduleId) : null;
+      if (!cand && b.routeId) {
+        const rt = ROUTES.find(r => r.id === b.routeId);
+        const intId = rt ? intByDest[destOf(rt.name)] : b.routeId; // RT → INT
+        cand = INTERCITY_TRIPS.find(t => t.routeId === intId) || INTERCITY_TRIPS.find(t => t.routeId === b.routeId);
+      }
+      if (cand) b.tripId = cand.id;
+    }
+    const t = tripById[b.tripId];
+    if (t && t.scheduleId) b.scheduleId = t.scheduleId;
   });
 })();
 

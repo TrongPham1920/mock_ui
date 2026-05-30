@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Spec cho Dev — HaHaGo</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #656d76;
+    --border: #d0d7de; --code-bg: #f6f8fa; --accent: #0969da;
+    --warn: #bf3989; --bug: #cf222e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0d1117; --fg:#e6edf3; --muted:#8b949e; --border:#30363d; --code-bg:#161b22; --accent:#2f81f7; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Segoe UI, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--fg);
+    max-width: 980px; margin: 0 auto; padding: 32px 48px 96px;
+    line-height: 1.6; font-size: 15px;
+  }
+  h1 { font-size: 28px; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-top: 0; }
+  h2 { font-size: 22px; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-top: 36px; }
+  h3 { font-size: 17px; margin-top: 24px; }
+  h2 code, h3 code { font-size: 0.85em; padding: 2px 6px; background: var(--code-bg); border-radius: 4px; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
+          background: var(--code-bg); padding: 2px 5px; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: 14px 16px; border-radius: 6px; overflow-x: auto;
+         border: 1px solid var(--border); }
+  pre code { background: transparent; padding: 0; font-size: 13px; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 4px 0; }
+  li::marker { color: var(--muted); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
+  table { border-collapse: collapse; margin: 14px 0; width: 100%; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+  th { background: var(--code-bg); }
+  strong { color: var(--fg); }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Highlight markers */
+  li:has(strong:first-child) strong:first-child { color: var(--accent); }
+
+  /* Sticky TOC */
+  #toc {
+    position: fixed; top: 32px; right: 32px; max-width: 240px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; font-size: 12px; max-height: 80vh; overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  }
+  #toc-title { font-weight: 600; font-size: 11px; text-transform: uppercase;
+                color: var(--muted); margin-bottom: 8px; letter-spacing: 0.5px; }
+  #toc ul { padding: 0; margin: 0; list-style: none; }
+  #toc li { margin: 3px 0; }
+  #toc a { display: block; padding: 3px 6px; border-radius: 4px;
+            color: var(--fg); }
+  #toc a:hover { background: var(--code-bg); text-decoration: none; }
+  @media (max-width: 1280px) { #toc { display: none; } }
+
+  /* Print */
+  @media print {
+    body { max-width: 100%; padding: 0; }
+    #toc { display: none; }
+    h2 { page-break-before: auto; }
+  }
+</style>
+</head>
+<body>
+<nav id="toc">
+  <div id="toc-title">Mục lục</div>
+  <ul id="toc-list"></ul>
+</nav>
+<article>
+<h1 id="spec-cho-dev-chi-liet-ke-phan-can-sua">Spec cho Dev — Chỉ liệt kê phần cần sửa</h1>
+<p>Mỗi mục dưới đây là <strong>việc dev phải làm</strong>. Chỉ list các cột/tính năng cần thêm/sửa, không nhắc các phần dev đã làm đúng.</p>
+<p>Ký hiệu:
+- ⚠️ <strong>THIẾU</strong> — Cột/tính năng dev chưa có, phải bổ sung
+- 🔄 <strong>ĐỔI THỨ TỰ</strong> — Đã có nhưng đặt sai vị trí
+- 🐛 <strong>BUG</strong> — Có nhưng hoạt động sai</p>
+<hr />
+<h2 id="1-tuyen-uong-transportroutestabtransport-routes-tab">1. Tuyến đường <code>/transport/routes?tab=transport-routes-tab</code></h2>
+<p>Thứ tự cột chuẩn (đầy đủ):</p>
+<div class="codehilite"><pre><span></span><code>STT | Mã tuyến | Tên tuyến đường | Điểm đi | Điểm đến | Khoảng cách | Thời gian | Điểm dừng | Nhà xe khai thác | Trạng thái | Thao tác
+</code></pre></div>
+
+<p>Phải bổ sung:
+- ⚠️ <strong>Điểm dừng</strong> — đặt sau "Thời gian". Format rút gọn: <code>BX Miền Đông, Dầu Giây +2</code> (hover hoặc click xem full list)
+- ⚠️ <strong>Nhà xe khai thác</strong> — đặt sau "Điểm dừng". Multi badge: <code>Phương Trang</code> <code>Thành Bưởi</code></p>
+<hr />
+<h2 id="2-nha-xe-transportpartnerstabtransport-partners-tab">2. Nhà xe <code>/transport/partners?tab=transport-partners-tab</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code>STT | Mã | Tên nhà xe | Người liên hệ | Số điện thoại | Số xe | Số tài xế | Tuyến đường | Chiết khấu | Trạng thái | Thao tác
+</code></pre></div>
+
+<p>Phải bổ sung:
+- ⚠️ <strong>Tuyến đường</strong> — đặt sau "Số tài xế", trước "Chiết khấu". Multi badge: <code>HCM-Đà Lạt</code> <code>HCM-Cần Thơ</code> <code>+1</code></p>
+<hr />
+<h2 id="3-tai-xe-transportpartnerstabtransport-drivers-tach-3-tab">3. Tài xế <code>/transport/partners?tab=transport-drivers</code> — <strong>TÁCH 3 TAB</strong></h2>
+<p>Hiện đang gộp 1 table. Phải tách:</p>
+<h3 id="tab-3a-bikecar-tx-co-xe-co-inh">Tab 3a. "Bike/Car" (TX có xe cố định)</h3>
+<div class="codehilite"><pre><span></span><code>STT | Mã | Họ tên | SĐT | Loại xe | Biển số | Nhà xe | Đánh giá | Số chuyến | Trạng thái | Thao tác
+</code></pre></div>
+
+<ul>
+<li>⚠️ Thêm cột <strong>Nhà xe</strong> (nếu thuộc nhà xe, hoặc <code>Cá nhân</code>)</li>
+<li>🔄 Cột <strong>Trạng thái</strong> đặt SÁT cột Thao tác (đang ở giữa, sai vị trí)</li>
+</ul>
+<h3 id="tab-3b-tai-xe-lien-tinh-khong-co-xe-co-inh">Tab 3b. "Tài xế liên tỉnh" (không có xe cố định)</h3>
+<div class="codehilite"><pre><span></span><code>STT | Mã | Họ tên | SĐT | Nhà xe quản lý | Hạng GPLX | Đánh giá | Số chuyến | Đang gán | Trạng thái | Thao tác
+</code></pre></div>
+
+<ul>
+<li>⚠️ <strong>KHÔNG có cột Biển số</strong> (vì TX liên tỉnh dùng xe rời)</li>
+<li>⚠️ Thêm cột <strong>Nhà xe quản lý</strong> (bắt buộc)</li>
+<li>⚠️ Thêm cột <strong>Hạng GPLX</strong>: B2/C/D/E/F</li>
+<li>⚠️ Thêm cột <strong>Đang gán</strong> (taskId hiện tại, vd <code>FT100</code>)</li>
+</ul>
+<h3 id="tab-3c-xe-lien-tinh-quan-ly-xe-oc-lap-khong-co-tx-co-inh">Tab 3c. "Xe liên tỉnh" (quản lý xe độc lập, không có TX cố định)</h3>
+<div class="codehilite"><pre><span></span><code>STT | Mã | Biển số | Loại xe | Nhà xe quản lý | Số km | Đang gán | Trạng thái | Thao tác
+</code></pre></div>
+
+<ul>
+<li>⚠️ Toàn bộ tab này CHƯA CÓ. Phải tạo mới.</li>
+<li>Trạng thái: <code>Sẵn sàng</code> / <code>Đang chạy</code> / <code>Bảo dưỡng</code></li>
+</ul>
+<hr />
+<h2 id="4-giam-sat-on-hang-operationsbookingtabbooking-all">4. Giám sát đơn hàng <code>/operations/booking?tab=booking-all</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code>Mã booking | Loại | Khách hàng | Trạng thái đơn | Trạng thái thanh toán | Trạng thái fulfillment | Điểm đón | Điểm trả | Giá | Ngày tạo | Thao tác
+</code></pre></div>
+
+<p>Phải bổ sung:
+- ⚠️ <strong>Mã booking</strong> — đặt đầu tiên thay cho STT (vd <code>RO-260527-100</code>). Copy được.
+- ⚠️ <strong>Trạng thái fulfillment</strong> — đặt sau "Trạng thái thanh toán". Giá trị: <code>PENDING/ASSIGNED/IN_PROGRESS/COMPLETED/CANCELLED</code>. Đây là <strong>1 trong 3 trục lifecycle</strong> bắt buộc.
+- 🔄 <strong>Đổi thứ tự</strong>: hiện đang <code>Loại → Trạng thái đơn → Trạng thái TT → KH</code>. Phải đổi thành <code>Loại → KH → Trạng thái đơn → Trạng thái TT → Trạng thái fulfillment</code>.</p>
+<hr />
+<h2 id="5-nhiem-vu-phan-cong-operationsfulfillment">5. Nhiệm vụ phân công <code>/operations/fulfillment</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code>STT | Task ID | Booking ID | Loại dịch vụ | Xe | Tài xế | Trạng thái | Gán lúc | Bắt đầu | Hoàn thành | Thao tác
+</code></pre></div>
+
+<p>Phải bổ sung:
+- ⚠️ <strong>Task ID</strong> — đặt sau STT (vd <code>FT100</code>)
+- ⚠️ <strong>Booking ID</strong> — đặt sau Task ID (vd <code>BK100</code>, click → mở booking detail)
+- ⚠️ <strong>Xe</strong> — đặt sau Loại dịch vụ. Show <code>IV001 - 51B-10001</code> cho task INTERCITY; <code>—</code> cho BIKE/CAR (TX có xe cố định đã hiện ở cột Tài xế).</p>
+<p>Bug phải fix:
+- 🐛 <strong>Loại dịch vụ chỉ show "INSPECTION" toàn bộ rows</strong>. Phải hiển thị đúng theo <code>bookings.bookingType</code>: <code>BIKE</code> / <code>CAR</code> / <code>INTERCITY</code> / <code>SERVICE_ORDER</code> / <code>MAINTENANCE_ORDER</code>.
+- 🐛 <strong>Cột Tài xế toàn "—"</strong>. Phải join <code>task.driverId</code> với pool <code>DRIVERS ∪ INTERCITY_DRIVERS</code> để show tên + avatar.</p>
+<p>Layout cần kiểm tra:
+- Tab <strong>INTERCITY</strong> phải đổi sang <strong>3-column</strong> view: <code>Chờ phân công | Xe sẵn sàng | Tài xế sẵn sàng</code> (khác với 2-column của tab BIKE/CAR/SERVICE/MAINTENANCE).</p>
+<p>Logic dispatch:
+- 🐛 <strong>Time conflict</strong> — Khi mở modal gán TX/Xe, phải loại bỏ TX/Xe đang BUSY có thời gian trùng với chuyến đang gán. Nếu không trùng (vd chuyến mới sau khi TX kết thúc) thì show kèm hint <code>đang bận 27/05 08:00-15:00</code>.
+  - Test case: Mở dispatch cho <code>BK101</code> (10:00-18:00) → <code>IDR001</code> và <code>IV001</code> KHÔNG được xuất hiện trong dropdown (vì đang chạy <code>BK100</code> 08:00-15:00 → overlap).
+  - Mở dispatch cho <code>BK102</code> (20:00-03:00+1) → <code>IDR001</code> xuất hiện kèm hint "đang bận 08:00-15:00".</p>
+<hr />
+<h2 id="6-at-ve-lien-tinh-operationsbookingtabbooking-intercity">6. Đặt vé liên tỉnh <code>/operations/booking?tab=booking-intercity</code></h2>
+<p>Search form phải bổ sung:
+- ⚠️ <strong>Select Số khách</strong> (1-5 khách) — đặt cạnh "Ngày đi". Lọc chuyến có <code>seatsAvailable &gt;= số khách chọn</code>.
+- ⚠️ <strong>Nút swap ⇄</strong> — đặt giữa "Điểm đi" và "Điểm đến". Click đổi giá trị 2 select.</p>
+<hr />
+<h2 id="7-ang-kiem-ho-operationsbookingtabbooking-registration">7. Đăng kiểm hộ <code>/operations/booking?tab=booking-registration</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code>STT | Mã đơn | Biển số | Tên chủ xe | SĐT | Loại xe | Trung tâm | Ngày đặt | Dịch vụ | Giá | Trạng thái | Thao tác
+</code></pre></div>
+
+<p>Phải bổ sung:
+- ⚠️ <strong>Mã đơn</strong> — đặt sau STT (vd <code>REG001</code>). Copy được.</p>
+<hr />
+<h2 id="8-bao-duong-operationsbookingtabbooking-maintenance">8. Bảo dưỡng <code>/operations/booking?tab=booking-maintenance</code></h2>
+<ul>
+<li>⚠️ Cần kiểm tra <strong>tab Bảo dưỡng có hoạt động không</strong> (song song với Đăng kiểm).</li>
+<li>Schema giống Đăng kiểm, đổi cột "Trung tâm đăng kiểm" → "Gara/Trung tâm bảo dưỡng".</li>
+</ul>
+<hr />
+<h2 id="9-nguoi-dung-vai-tro-systemusers">9. Người dùng &amp; Vai trò <code>/system/users</code></h2>
+<ul>
+<li>⚠️ Cần kiểm tra <strong>Tab "Vai trò &amp; Quyền"</strong> đã có chưa.</li>
+<li>Headers tab Roles:
+  <code>STT | Mã | Tên vai trò | Mã vai trò | Quyền hạn | Số người dùng | Trạng thái | Thao tác</code></li>
+<li>Modal tạo role: checkbox grid các quyền <code>booking.view/create/cancel/...</code></li>
+</ul>
+<hr />
+<h2 id="10-vi-thanh-toan-financewallets">10. Ví &amp; Thanh toán <code>/finance/wallets</code></h2>
+<p>Cần kiểm tra có đủ <strong>2 bảng</strong> không:</p>
+<h3 id="bang-1-danh-sach-vi">Bảng 1: Danh sách Ví</h3>
+<div class="codehilite"><pre><span></span><code>STT | ID | Chủ ví | Loại chủ | Loại ví | Số dư | Tạm giữ | Trạng thái | Thao tác
+</code></pre></div>
+
+<h3 id="bang-2-giao-dich-gan-ay">Bảng 2: Giao dịch gần đây</h3>
+<div class="codehilite"><pre><span></span><code>STT | ID | Ví | Hướng | Loại | Số tiền | Số dư | Trạng thái | Thời gian
+</code></pre></div>
+
+<hr />
+<h2 id="11-hoan-tien-financerefunds">11. Hoàn tiền <code>/finance/refunds</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code><span class="nv">STT</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">ID</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">Booking</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">Kh</span>á<span class="nv">ch</span><span class="w"> </span><span class="nv">h</span>à<span class="nv">ng</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">S</span>ố<span class="w"> </span><span class="nv">ti</span>ề<span class="nv">n</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">L</span>ý<span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">Ph</span>ươ<span class="nv">ng</span><span class="w"> </span><span class="nv">th</span>ứ<span class="nv">c</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">Ng</span>ườ<span class="nv">i</span><span class="w"> </span><span class="nv">x</span>ử<span class="w"> </span><span class="nv">l</span>ý<span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">Tr</span>ạ<span class="nv">ng</span><span class="w"> </span><span class="nv">th</span>á<span class="nv">i</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">T</span>ạ<span class="nv">o</span><span class="w"> </span><span class="nv">l</span>ú<span class="nv">c</span><span class="w"> </span><span class="o">|</span><span class="w"> </span><span class="nv">Thao</span><span class="w"> </span><span class="nv">t</span>á<span class="nv">c</span>
+</code></pre></div>
+
+<ul>
+<li>⚠️ Cần kiểm tra cột <strong>Người xử lý</strong> (processedBy) đã có chưa.</li>
+</ul>
+<hr />
+<h2 id="12-ma-uu-ai-financepromos">12. Mã ưu đãi <code>/finance/promos</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code>STT | Mã | Loại giảm | Giá trị | Giảm tối đa | Đơn tối thiểu | Loại xe áp dụng | Đã dùng/Tổng | Thời hạn | Trạng thái | Thao tác
+</code></pre></div>
+
+<ul>
+<li>⚠️ Cần kiểm tra cột <strong>Loại xe áp dụng</strong> (vehicleTypes) — badges multi: <code>BIKE</code> <code>CAR</code> <code>INTERCITY</code>...</li>
+</ul>
+<hr />
+<h2 id="13-chiet-khau-financecommissions">13. Chiết khấu <code>/finance/commissions</code></h2>
+<p>Cần kiểm tra có đủ <strong>2 bảng</strong> không:</p>
+<h3 id="bang-1-config-chiet-khau">Bảng 1: Config chiết khấu</h3>
+<div class="codehilite"><pre><span></span><code>ID | Loại xe | Tỉ lệ % | Mô tả | Thao tác
+</code></pre></div>
+
+<h3 id="bang-2-lich-su-chiet-khau">Bảng 2: Lịch sử chiết khấu</h3>
+<div class="codehilite"><pre><span></span><code>STT | ID | Booking | Tài xế | Loại xe | Giá chuyến | Tỉ lệ | Chiết khấu | Thời gian
+</code></pre></div>
+
+<hr />
+<h2 id="14-nhat-ky-hoat-ong-systemaudit">14. Nhật ký hoạt động <code>/system/audit</code></h2>
+<p>Thứ tự cột chuẩn:</p>
+<div class="codehilite"><pre><span></span><code>STT | Thời gian | Thao tác | Người thực hiện | Vai trò | Đối tượng | Site | Trace ID | Trước → Sau
+</code></pre></div>
+
+<ul>
+<li>⚠️ Cần kiểm tra cột <strong>Trace ID</strong> + <strong>Before/After JSON</strong> (click row → modal xem diff).</li>
+</ul>
+<hr />
+<h2 id="15-giam-sat-he-thong-systemmonitoring">15. Giám sát hệ thống <code>/system/monitoring</code></h2>
+<div class="codehilite"><pre><span></span><code>STT | Dịch vụ | Trạng thái | Thời gian hoạt động | Độ trễ | Tỷ lệ lỗi
+</code></pre></div>
+
+<ul>
+<li>⚠️ Cần kiểm tra đủ <strong>6 service</strong>: mobility / wallet-payment / fulfillment / transport-master / users / notification.</li>
+</ul>
+<hr />
+<h2 id="16-rbac-toan-site">16. RBAC toàn site</h2>
+<ul>
+<li>⚠️ Test login với từng role, verify sidebar lọc đúng:</li>
+<li><code>ADMIN</code>: thấy tất cả</li>
+<li><code>OPERATOR</code>: ẩn Users, Audit</li>
+<li><code>AGENT</code>: chỉ thấy Dashboard, Bookings, Intercity, Partners, Wallets</li>
+<li><code>FINANCE</code>: chỉ thấy Dashboard, Bookings, Wallets, Refunds, Commissions, Audit, Monitoring</li>
+<li><code>VIEWER</code>: chỉ thấy Dashboard, Bookings, Wallets, Monitoring</li>
+<li>Truy cập trực tiếp URL không có quyền → redirect hoặc alert "Không có quyền".</li>
+</ul>
+<hr />
+<h2 id="17-responsive">17. Responsive</h2>
+<ul>
+<li>⚠️ Test mobile 375px:</li>
+<li>Sidebar phải collapse thành hamburger menu</li>
+<li>Table phải scroll horizontal (không vỡ layout)</li>
+<li>Modals phải fit viewport</li>
+</ul>
+<hr />
+<h1 id="convention-chung-ap-dung-moi-trang">Convention chung (áp dụng mọi trang)</h1>
+<ol>
+<li><strong>Mọi table</strong>: cột STT đầu tiên + cột Thao tác cuối cùng.</li>
+<li><strong>Mọi list page</strong>: filter bar trên + pagination dưới + nút "+ Thêm" góc phải.</li>
+<li><strong>Trạng thái</strong> luôn sát cột Thao tác.</li>
+<li><strong>Tiền</strong> format <code>200,000 đ</code>.</li>
+<li><strong>Ngày</strong> format <code>27/05/2026 - 22:59</code>.</li>
+<li><strong>Mã đơn</strong> format <code>RO-YYMMDD-XXX</code>, copy được.</li>
+<li><strong>Avatar tài xế</strong> + chấm trạng thái (xanh online / xám offline / vàng busy).</li>
+</ol>
+</article>
+<script>
+  const headings = document.querySelectorAll('article h2');
+  const list = document.getElementById('toc-list');
+  headings.forEach((h, i) => {
+    if (!h.id) h.id = 'sec-' + i;
+    const a = document.createElement('a');
+    a.href = '#' + h.id;
+    a.textContent = h.textContent.replace(/`/g, '');
+    const li = document.createElement('li');
+    li.appendChild(a);
+    list.appendChild(li);
+  });
+</script>
+</body>
+</html>

@@ -690,6 +690,40 @@ select {
 }
 
 /* ---- Modal ---- */
+/* ---- Toast ---- */
+.toast-host {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 400;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(380px, 90vw);
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--bg-secondary, #1a1f2e);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  color: var(--text-primary);
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity .25s ease, transform .25s ease;
+}
+.toast.show { opacity: 1; transform: translateX(0); }
+.toast-icon { flex: 0 0 auto; }
+.toast-msg { line-height: 1.4; word-break: break-word; }
+.toast-success { border-left-color: var(--success); }
+.toast-warning { border-left-color: var(--warning); }
+.toast-error { border-left-color: var(--danger); }
+
 .modal-overlay {
   position: fixed;
   top: 0;

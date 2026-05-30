@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🐛 Bug Report — Ride Ops Dashboard</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --bg-2: #111827;
+    --card: #1e293b;
+    --card-2: #243349;
+    --border: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --primary: #6366f1;
+    --primary-2: #818cf8;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --orange: #f97316;
+    --red: #ef4444;
+    --blue: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body {
+    margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: var(--text);
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 20px 60px; font-size: 14px; }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border-radius: 12px; padding: 20px 24px;
+    box-shadow: 0 8px 30px rgba(99, 102, 241, .25);
+    margin-bottom: 24px;
+  }
+  .header h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+  .header .meta { display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; opacity: .9; }
+  .header .meta span::before { content: "•"; margin-right: 6px; opacity: .6; }
+  .header .meta span:first-child::before { display: none; }
+
+  /* Summary cards */
+  .summary {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px; margin-bottom: 40px;
+  }
+  .stat {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; text-align: center;
+    transition: transform .2s, border-color .2s;
+  }
+  .stat:hover { transform: translateY(-2px); border-color: var(--primary); }
+  .stat { padding: 14px; }
+  .stat .num { font-size: 26px; font-weight: 800; line-height: 1; }
+  .stat .label { font-size: 12px; text-transform: uppercase; color: var(--muted); margin-top: 8px; letter-spacing: .5px; }
+  .stat.total .num { color: var(--primary-2); }
+  .stat.critical .num { color: var(--red); }
+  .stat.high .num { color: var(--orange); }
+  .stat.medium .num { color: var(--yellow); }
+  .stat.low .num { color: var(--green); }
+  .stat.fixed .num { color: var(--blue); }
+
+  /* Section titles */
+  h2.section {
+    font-size: 20px; font-weight: 700; margin: 40px 0 16px;
+    padding-bottom: 12px; border-bottom: 2px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+  }
+
+  /* Overview table */
+  .overview {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; margin-bottom: 32px;
+  }
+  table.overview-tbl {
+    width: 100%; border-collapse: collapse; font-size: 14px;
+  }
+  .overview-tbl th {
+    background: var(--card-2); padding: 14px 16px;
+    text-align: left; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; font-size: 11px; letter-spacing: .5px;
+  }
+  .overview-tbl td {
+    padding: 14px 16px; border-top: 1px solid var(--border);
+  }
+  .overview-tbl tbody tr { cursor: pointer; }
+  .overview-tbl tr:hover td { background: rgba(99, 102, 241, .12); }
+  .overview-tbl a { color: var(--primary-2); text-decoration: none; font-weight: 500; }
+  .overview-tbl a:hover { text-decoration: underline; }
+
+  /* Bug cards */
+  .bug {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-bottom: 18px;
+    scroll-margin-top: 20px;
+  }
+  .bug-head h3 { font-size: 17px; }
+  .bug:target { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99, 102, 241, .35); animation: pulse 1.2s ease; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99,102,241,.6); } 100% { box-shadow: 0 0 0 8px rgba(99,102,241,0); } }
+  .overview-tbl tr td:first-child a { display: inline-block; padding: 2px 8px; border-radius: 4px; background: var(--primary); color: white; }
+  .overview-tbl tr td:first-child a:hover { background: var(--primary-2); text-decoration: none; }
+  .bug-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+    padding-bottom: 16px; border-bottom: 1px solid var(--border);
+  }
+  .bug-head h3 {
+    margin: 0; font-size: 20px; font-weight: 700;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .bug-id {
+    background: var(--primary); color: white;
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 13px; font-family: 'SF Mono', Monaco, monospace;
+  }
+
+  /* Badges */
+  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  .badge {
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .badge.area { background: rgba(99, 102, 241, .15); color: var(--primary-2); }
+  .badge.sev-critical { background: rgba(239, 68, 68, .15); color: var(--red); }
+  .badge.sev-high { background: rgba(249, 115, 22, .15); color: var(--orange); }
+  .badge.sev-medium { background: rgba(234, 179, 8, .15); color: var(--yellow); }
+  .badge.sev-low { background: rgba(34, 197, 94, .15); color: var(--green); }
+  .badge.status-new { background: rgba(59, 130, 246, .15); color: var(--blue); }
+  .badge.status-fixed { background: rgba(34, 197, 94, .15); color: var(--green); }
+
+  /* Bug body */
+  .bug-body { font-size: 15px; }
+  .bug-body h4 {
+    font-size: 14px; text-transform: uppercase;
+    color: var(--muted); letter-spacing: .5px; margin: 24px 0 12px;
+  }
+  .bug-body ul { padding-left: 20px; margin: 8px 0; }
+  .bug-body li { margin: 6px 0; }
+  .bug-body code {
+    background: rgba(99, 102, 241, .15); color: var(--primary-2);
+    padding: 2px 6px; border-radius: 4px; font-size: 13px;
+    font-family: 'SF Mono', Monaco, monospace;
+  }
+  .bug-body strong { color: white; }
+
+  /* Inner tables */
+  table.inner {
+    width: 100%; border-collapse: collapse; margin: 12px 0;
+    font-size: 14px; background: var(--bg-2); border-radius: 8px;
+    overflow: hidden;
+  }
+  table.inner th, table.inner td {
+    padding: 10px 14px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  table.inner th {
+    background: var(--card-2); font-size: 12px;
+    text-transform: uppercase; color: var(--muted); letter-spacing: .5px;
+  }
+  table.inner tr:last-child td { border-bottom: none; }
+
+  /* Image gallery */
+  .imgs {
+    display: grid; grid-template-columns: 1fr;
+    gap: 10px; margin-top: 10px;
+  }
+  .imgs.multi { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .img-card img { max-height: 360px; object-fit: contain; background: #0b1220; }
+  .compare {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 16px; margin-top: 16px; align-items: start;
+  }
+  .compare .slot { margin-top: 0; }
+  @media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
+  .slot { margin-top: 16px; }
+  .slot-label {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .5px; padding: 4px 10px; border-radius: 6px;
+    margin-bottom: 8px;
+  }
+  .slot-label.current { background: rgba(249, 115, 22, .15); color: var(--orange); }
+  .slot-label.mockup  { background: rgba(34, 197, 94, .15);  color: var(--green); }
+  .slot-hint {
+    background: var(--bg-2); border-left: 3px solid var(--primary);
+    padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;
+    font-size: 13px; color: var(--muted);
+  }
+  .slot-hint b { color: var(--text); }
+  .slot-hint code {
+    background: rgba(99, 102, 241, .15); color: var(--primary-2);
+    padding: 2px 6px; border-radius: 4px; font-size: 12px;
+    font-family: 'SF Mono', Monaco, monospace;
+  }
+  .img-card {
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+    transition: transform .2s, border-color .2s;
+  }
+  .img-card:hover { transform: scale(1.02); border-color: var(--primary); }
+  .img-card img {
+    width: 100%; height: auto; display: block; cursor: zoom-in;
+  }
+  .img-frame { position: relative; }
+  .anno {
+    position: absolute;
+    border: 2px dashed #ef4444;
+    background: rgba(239, 68, 68, .08);
+    border-radius: 6px;
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.3);
+  }
+  .anno::before {
+    content: attr(data-label);
+    position: absolute;
+    top: -24px; left: -2px;
+    background: #ef4444; color: #fff;
+    padding: 3px 8px; font-size: 11px; font-weight: 700;
+    border-radius: 4px; white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,.3);
+  }
+  .anno.below::before { top: auto; bottom: -24px; }
+  .anno.right-label::before { left: auto; right: -2px; }
+  .img-card .cap {
+    padding: 8px 12px; font-size: 12px; color: var(--muted);
+    background: var(--card-2);
+  }
+  .img-missing {
+    padding: 40px 20px; text-align: center; color: var(--muted);
+    font-style: italic; font-size: 13px;
+    background: repeating-linear-gradient(45deg, var(--bg-2), var(--bg-2) 10px, var(--card-2) 10px, var(--card-2) 20px);
+  }
+
+  /* Lightbox */
+  .lightbox {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0, 0, 0, .9); z-index: 1000;
+    align-items: center; justify-content: center;
+    cursor: zoom-out; padding: 40px;
+  }
+  .lightbox.show { display: flex; }
+  .lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+
+  /* Severity legend */
+  .legend {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px; margin-top: 40px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  }
+  .legend h3 { margin: 0 0 12px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .legend ul { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+  .legend li { padding: 6px 0; }
+
+  @media (max-width: 640px) {
+    .container { padding: 16px; }
+    .header { padding: 20px; }
+    .header h1 { font-size: 22px; }
+    .legend { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>🐛 Bug Report — Ride Ops Dashboard</h1>
+    <div class="meta">
+      <span>📁 HahagoWeb / ride-ops-dashboard</span>
+      <span>👤 tin85pro@gmail.com</span>
+      <span>📅 2026-05-29</span>
+      <span>🟡 Đang test</span>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary">
+    <div class="stat total"><div class="num">10</div><div class="label">Tổng số</div></div>
+    <div class="stat critical"><div class="num">0</div><div class="label">🔴 Critical</div></div>
+    <div class="stat high"><div class="num">3</div><div class="label">🟠 High</div></div>
+    <div class="stat medium"><div class="num">7</div><div class="label">🟡 Medium</div></div>
+    <div class="stat low"><div class="num">0</div><div class="label">🟢 Low</div></div>
+    <div class="stat fixed"><div class="num">0</div><div class="label">✅ Fixed</div></div>
+  </div>
+
+  <!-- Overview -->
+  <h2 class="section">📋 Danh sách lỗi</h2>
+  <div class="overview">
+    <table class="overview-tbl">
+      <thead>
+        <tr><th>#</th><th>Khu vực</th><th>Mô tả</th><th>Mức độ</th><th>Trạng thái</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><a href="#bug-01">#01</a></td><td>Tuyến & Lịch chạy</td><td>Thêm cột Giá tiền</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-02">#02</a></td><td>Nhà xe</td><td>Thêm cột Người đại diện + SĐT</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-03">#03</a></td><td>Form Thêm/Sửa đối tác</td><td>Thêm trường Chiết khấu (optional)</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-04">#04</a></td><td>Nhà xe & Tài xế</td><td>Tách 2 tab Bike/Car & Liên tỉnh + Quản lý xe liên tỉnh</td><td><span class="badge sev-high">🟠 High</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-05">#05</a></td><td>Giám sát đơn hàng</td><td>Thêm Mã booking, Trạng thái hành trình; reorder</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-06">#06</a></td><td>Nhiệm vụ phân công</td><td>Tab Liên tỉnh + modal filter + reorder cột</td><td><span class="badge sev-high">🟠 High</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-07">#07</a></td><td>Đặt vé (Đăng kiểm/Bảo dưỡng)</td><td>Form inline + Mã đơn + Loại động cơ + Email</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-08">#08</a></td><td>Chiết khấu</td><td>5 ô dịch vụ + lịch sử chiết khấu mới</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-09">#09</a></td><td>Popup Chỉnh sửa chiết khấu</td><td>Auto-tính 100% giữa 2 ô %</td><td><span class="badge sev-medium">🟡 Medium</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+        <tr><td><a href="#bug-10">#10</a></td><td>Tab Giá tiền</td><td>5 sub-tab dịch vụ với cấu hình giá riêng</td><td><span class="badge sev-high">🟠 High</span></td><td><span class="badge status-new">🆕 New</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Bug details -->
+  <h2 class="section">📝 Chi tiết từng lỗi</h2>
+
+  <!-- #01 -->
+  <div class="bug" id="bug-01">
+    <div class="bug-head">
+      <h3><span class="bug-id">#01</span> Thiếu cột Giá tiền trên bảng Lịch chạy</h3>
+      <div class="badges">
+        <span class="badge area">Tuyến & Lịch chạy → Lịch chạy</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <p>Bảng <em>Danh sách lịch chạy</em> đang thiếu cột <strong>Giá tiền</strong>.</p>
+      <h4>Đề xuất</h4>
+      <ul>
+        <li>Vị trí: chèn sau cột <code>Loại xe</code> hoặc trước <code>Trạng thái</code></li>
+        <li>Định dạng: VNĐ (vd: <code>250.000 ₫</code>)</li>
+        <li>Cập nhật <code>data.js</code> và render trong <code>app.js</code></li>
+      </ul>
+      <div class="slot">
+        <div class="slot-label current">📸 Hiện trạng</div>
+        <div class="slot-hint">📍 <b>Menu:</b> Tuyến & Lịch chạy → tab <code>Lịch chạy</code> → chụp bảng <em>Danh sách lịch chạy</em></div>
+        <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/01-current.png" alt="01-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 01-current.png</div>'"></div><div class="cap">Bảng Lịch chạy hiện tại (thiếu cột Giá tiền)</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #02 -->
+  <div class="bug" id="bug-02">
+    <div class="bug-head">
+      <h3><span class="bug-id">#02</span> Thiếu cột Người đại diện & SĐT trên bảng Nhà xe</h3>
+      <div class="badges">
+        <span class="badge area">Nhà xe & Tài xế → Nhà xe</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <p>Bảng <em>Danh sách đối tác</em> cần thêm 2 cột: <strong>Tên người đại diện</strong> và <strong>Số điện thoại</strong> (chèn sau cột <code>Tên nhà xe</code>).</p>
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng</div>
+          <div class="slot-hint">📍 Nhà xe & Tài xế → <code>Nhà xe</code></div>
+          <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/02-current.png" alt="02-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 02-current.png</div>'"></div></div></div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup gợi ý</div>
+          <div class="slot-hint">✏️ Thêm 2 cột <code>Người đại diện</code> + <code>SĐT</code></div>
+          <div class="imgs"><div class="img-card"><img src="bug-images/02-mockup.png" alt="02-mockup" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 02-mockup.png</div>'"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #03 -->
+  <div class="bug" id="bug-03">
+    <div class="bug-head">
+      <h3><span class="bug-id">#03</span> Thiếu trường Chiết khấu trong form Thêm/Sửa đối tác</h3>
+      <div class="badges">
+        <span class="badge area">Modal Thêm/Sửa đối tác</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <p>Bổ sung trường <strong>Chiết khấu</strong> trong cả form <em>Thêm</em> và <em>Sửa</em>:</p>
+      <ul>
+        <li>❗ <strong>Không bắt buộc</strong></li>
+        <li>Định dạng: số (%) — vd: <code>10</code> = 10%</li>
+        <li>Giá trị hiển thị tại cột <code>Chiết khấu</code> ở bảng <em>Danh sách đối tác</em></li>
+      </ul>
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng</div>
+          <div class="slot-hint">📍 Nhà xe → <code>+ Thêm đối tác</code></div>
+          <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/03-current.png" alt="03-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 03-current.png</div>'"></div></div></div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup gợi ý</div>
+          <div class="slot-hint">✏️ Field <code>Chiết khấu (%)</code> — không bắt buộc</div>
+          <div class="imgs"><div class="img-card"><img src="bug-images/03-mockup.png" alt="03-mockup" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 03-mockup.png</div>'"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #04 -->
+  <div class="bug" id="bug-04">
+    <div class="bug-head">
+      <h3><span class="bug-id">#04</span> Tách Tài xế thành 2 tab + thêm Quản lý xe liên tỉnh</h3>
+      <div class="badges">
+        <span class="badge area">Nhà xe & Tài xế → Tài xế</span>
+        <span class="badge sev-high">🟠 High</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <h4>🅰️ Tab 1 — Tài xế Bike / Car (xe riêng)</h4>
+      <table class="inner">
+        <thead><tr><th>Cột</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          <tr><td>Mã, Họ tên, SĐT</td><td>Cơ bản</td></tr>
+          <tr><td><strong>Loại xe</strong></td><td>Xe máy / Xe hơi</td></tr>
+          <tr><td><strong>Biển số</strong></td><td>Bắt buộc</td></tr>
+          <tr><td>Trạng thái</td><td>Trực tuyến / Bận / Offline</td></tr>
+          <tr><td>Đánh giá, Số chuyến, Thao tác</td><td></td></tr>
+        </tbody>
+      </table>
+
+      <h4>🅱️ Tab 2 — Tài xế Liên tỉnh (nhà xe quản lý)</h4>
+      <table class="inner">
+        <thead><tr><th>Cột</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          <tr><td>Mã, Họ tên, SĐT</td><td>Cơ bản</td></tr>
+          <tr><td><strong>Nhà xe quản lý</strong></td><td>Liên kết tới Nhà xe</td></tr>
+          <tr><td><s>Biển số</s></td><td>❌ KHÔNG có</td></tr>
+          <tr><td>Trạng thái</td><td>Sẵn sàng / Đang trong chuyến / Offline</td></tr>
+          <tr><td><strong>Đang gán</strong></td><td>Mã đơn (khi đang trong chuyến)</td></tr>
+        </tbody>
+      </table>
+
+      <h4>➕ Mục mới — Quản lý xe liên tỉnh</h4>
+      <table class="inner">
+        <thead><tr><th>Cột</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          <tr><td>Biển số, Loại xe</td><td>Car 7 chỗ / 16 chỗ / Limousine…</td></tr>
+          <tr><td>Nhà xe quản lý</td><td>Liên kết</td></tr>
+          <tr><td>Số chuyến đã chạy</td><td></td></tr>
+          <tr><td>Trạng thái</td><td>Sẵn sàng / Đang chạy</td></tr>
+          <tr><td>Đang gán</td><td>Mã đơn (khi đang chạy)</td></tr>
+        </tbody>
+      </table>
+      <p><em>Vị trí: thêm tab thứ 4 trong <strong>Nhà xe & Tài xế</strong> — đặt tên <code>Xe liên tỉnh</code>.</em></p>
+
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng</div>
+          <div class="slot-hint">📍 Nhà xe & Tài xế → <code>Tài xế</code> (gộp chung)</div>
+          <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/04-current.png" alt="04-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 04-current.png</div>'"></div></div></div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup (3 màn)</div>
+          <div class="slot-hint">✏️ Tab Bike/Car + Tab Liên tỉnh + Mục Xe liên tỉnh</div>
+          <div class="imgs multi">
+            <div class="img-card"><img src="bug-images/04-mockup-bike-car.png" alt="04-bc" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 04-mockup-bike-car.png</div>'"><div class="cap">Bike/Car</div></div>
+            <div class="img-card"><img src="bug-images/04-mockup-lien-tinh.png" alt="04-lt" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 04-mockup-lien-tinh.png</div>'"><div class="cap">Liên tỉnh</div></div>
+            <div class="img-card"><img src="bug-images/04-mockup-xe-lien-tinh.png" alt="04-xlt" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 04-mockup-xe-lien-tinh.png</div>'"><div class="cap">Xe liên tỉnh</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #05 -->
+  <div class="bug" id="bug-05">
+    <div class="bug-head">
+      <h3><span class="bug-id">#05</span> Giám sát đơn hàng: thêm cột & sắp xếp lại</h3>
+      <div class="badges">
+        <span class="badge area">Giám sát đơn hàng</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <h4>Cột cần thêm</h4>
+      <ul>
+        <li>➕ <code>Mã booking</code></li>
+        <li>➕ <code>Trạng thái hành trình</code> (fulfillment) — vd: <em>Chờ tài xế / Đang đón / Đang đi / Đã đến / Đã huỷ</em></li>
+      </ul>
+      <h4>Thứ tự mới (trái → phải)</h4>
+      <table class="inner">
+        <thead><tr><th>#</th><th>Cột</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>STT</td></tr>
+          <tr><td>2</td><td><strong>Mã booking</strong> 🆕</td></tr>
+          <tr><td>3</td><td>Loại</td></tr>
+          <tr><td>4</td><td>Khách hàng</td></tr>
+          <tr><td>5</td><td>Trạng thái đơn</td></tr>
+          <tr><td>6</td><td>Trạng thái thanh toán</td></tr>
+          <tr><td>7</td><td><strong>Trạng thái hành trình</strong> 🆕</td></tr>
+          <tr><td>8</td><td>Điểm đón – trả</td></tr>
+          <tr><td>9</td><td>Giá</td></tr>
+          <tr><td>10</td><td>Thời gian tạo</td></tr>
+          <tr><td>11</td><td>Thao tác</td></tr>
+        </tbody>
+      </table>
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng</div>
+          <div class="slot-hint">📍 Giám sát đơn hàng → <code>Tất cả</code></div>
+          <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/05-current.png" alt="05-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 05-current.png</div>'"></div></div></div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup gợi ý</div>
+          <div class="slot-hint">✏️ Bảng 11 cột — highlight 🆕 <code>Mã booking</code> + <code>Trạng thái hành trình</code></div>
+          <div class="imgs"><div class="img-card"><img src="bug-images/05-mockup.png" alt="05-mockup" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 05-mockup.png</div>'"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #06 -->
+  <div class="bug" id="bug-06">
+    <div class="bug-head">
+      <h3><span class="bug-id">#06</span> Nhiệm vụ phân công: tab Liên tỉnh, modal filter & cột</h3>
+      <div class="badges">
+        <span class="badge area">Nhiệm vụ phân công</span>
+        <span class="badge sev-high">🟠 High</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <h4>🅰️ Tab Liên tỉnh</h4>
+      <ul>
+        <li>➕ <strong>Bảng danh sách xe</strong> (chỉ xe liên tỉnh)</li>
+        <li>➕ <strong>Widget</strong> số lượng xe sẵn sàng (riêng liên tỉnh)</li>
+      </ul>
+      <h4>🅱️ Modal Phân công xe & tài xế</h4>
+      <p>Dropdown <strong>Chọn xe</strong> và <strong>Chọn tài xế</strong> phải <strong>filter theo nhà xe của đơn hàng</strong>.</p>
+      <h4>🆎 Bảng danh sách nhiệm vụ — thứ tự cột mới</h4>
+      <table class="inner">
+        <thead><tr><th>#</th><th>Cột</th><th>Ghi chú</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><strong>Task ID</strong> 🆕</td><td>ID của fulfillment</td></tr>
+          <tr><td>2</td><td><strong>Booking</strong> 🆕</td><td>vd: RO-240318-033</td></tr>
+          <tr><td>3</td><td><strong>Xe</strong> 🆕</td><td>Chỉ liên tỉnh; bike/car để trống</td></tr>
+          <tr><td>4</td><td>Tài xế</td><td></td></tr>
+          <tr><td>5</td><td>Trạng thái</td><td>Fulfillment hiện tại</td></tr>
+          <tr><td>6</td><td>Gán lúc</td><td></td></tr>
+          <tr><td>7</td><td>Bắt đầu</td><td></td></tr>
+          <tr><td>8</td><td>Hoàn thành</td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng (Tab + Modal)</div>
+          <div class="slot-hint">📍 Nhiệm vụ phân công → <code>Liên tỉnh</code></div>
+          <div class="imgs multi">
+            <div class="img-card"><div class="img-frame"><img src="bug-images/06a-current.png" alt="06a-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 06a-current.png</div>'"></div><div class="cap">Tab Liên tỉnh</div></div>
+            <div class="img-card"><div class="img-frame"><img src="bug-images/06b-current.png" alt="06b-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 06b-current.png</div>'"></div><div class="cap">Modal phân công</div></div>
+          </div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup (3 màn)</div>
+          <div class="slot-hint">✏️ Tab có widget + bảng xe / Modal filter / Bảng 8 cột</div>
+          <div class="imgs multi">
+            <div class="img-card"><img src="bug-images/06-mockup-tab.png" alt="06-mt" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 06-mockup-tab.png</div>'"><div class="cap">Tab</div></div>
+            <div class="img-card"><img src="bug-images/06-mockup-modal.png" alt="06-mm" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 06-mockup-modal.png</div>'"><div class="cap">Modal</div></div>
+            <div class="img-card"><img src="bug-images/06-mockup-table.png" alt="06-mtb" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 06-mockup-table.png</div>'"><div class="cap">Bảng nhiệm vụ</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #07 -->
+  <div class="bug" id="bug-07">
+    <div class="bug-head">
+      <h3><span class="bug-id">#07</span> Đặt vé (Đăng kiểm/Bảo dưỡng): form inline & cột mới</h3>
+      <div class="badges">
+        <span class="badge area">Đặt vé → Đăng kiểm hộ / Bảo dưỡng</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <h4>🅰️ UX — Form nhập nhanh inline</h4>
+      <p>Đưa form <strong>Tạo đơn đăng kiểm / bảo dưỡng</strong> ra inline trên trang, không cần button mở modal.</p>
+      <h4>🅱️ Bảng danh sách</h4>
+      <ul>
+        <li>➕ Thêm cột <strong>Mã đơn</strong></li>
+        <li>🔁 Đổi <code>Trung tâm đăng kiểm</code> → <strong>Địa chỉ nhận xe</strong></li>
+      </ul>
+      <h4>🆎 Form tạo đơn — bổ sung trường</h4>
+      <table class="inner">
+        <thead><tr><th>Trường</th><th>Bắt buộc</th></tr></thead>
+        <tbody>
+          <tr><td>Loại động cơ</td><td>✅ Có</td></tr>
+          <tr><td>Email</td><td>❌ Không</td></tr>
+        </tbody>
+      </table>
+      <div class="slot">
+        <div class="slot-label current">📸 Hiện trạng</div>
+        <div class="slot-hint">📍 <b>Menu:</b> Đặt vé → tab <code>Đăng kiểm hộ</code> (hoặc <code>Bảo dưỡng</code>) → chụp toàn trang + bấm <code>+ Tạo đơn đăng kiểm</code> chụp modal</div>
+        <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/07-current.png" alt="07-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 07-current.png</div>'"></div><div class="cap">Trang Đăng kiểm hộ hiện tại</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #08 -->
+  <div class="bug" id="bug-08">
+    <div class="bug-head">
+      <h3><span class="bug-id">#08</span> Chiết khấu: UI mới 5 ô dịch vụ + lịch sử</h3>
+      <div class="badges">
+        <span class="badge area">Chiết khấu & Giá tiền</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <h4>🅰️ 5 ô dịch vụ</h4>
+      <table class="inner">
+        <thead><tr><th>Dịch vụ</th><th>TX nhận</th><th>Phí dịch vụ</th></tr></thead>
+        <tbody>
+          <tr><td>🛵 Xe máy</td><td>80%</td><td>20%</td></tr>
+          <tr><td>🚗 Xe hơi</td><td>78%</td><td>22%</td></tr>
+          <tr><td>🚌 Xe khách liên tỉnh</td><td>85%</td><td>15%</td></tr>
+          <tr><td>📋 Đăng kiểm hộ</td><td>90%</td><td>10%</td></tr>
+          <tr><td>🔧 Bảo dưỡng</td><td>88%</td><td>12%</td></tr>
+        </tbody>
+      </table>
+      <h4>🅱️ Bảng Lịch sử chiết khấu</h4>
+      <p>Hiển thị như <em>lịch sử đơn hoàn thành</em> với số tiền chia tách.</p>
+      <table class="inner">
+        <thead><tr><th>#</th><th>Cột</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>ID</td></tr>
+          <tr><td>2</td><td>Booking</td></tr>
+          <tr><td>3</td><td>Tài xế</td></tr>
+          <tr><td>4</td><td>Loại xe / Loại dịch vụ</td></tr>
+          <tr><td>5</td><td>Tổng tiền</td></tr>
+          <tr><td>6</td><td>Tài xế nhận</td></tr>
+          <tr><td>7</td><td>Phí dịch vụ</td></tr>
+          <tr><td>8</td><td>Thời gian</td></tr>
+        </tbody>
+      </table>
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng</div>
+          <div class="slot-hint">📍 Chiết khấu & Giá tiền → <code>Chiết khấu</code></div>
+          <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/08-current.png" alt="08-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 08-current.png</div>'"></div></div></div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup gợi ý</div>
+          <div class="slot-hint">✏️ 5 card dịch vụ + bảng lịch sử 8 cột</div>
+          <div class="imgs"><div class="img-card"><img src="bug-images/08-mockup.png" alt="08-mockup" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 08-mockup.png</div>'"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #09 -->
+  <div class="bug" id="bug-09">
+    <div class="bug-head">
+      <h3><span class="bug-id">#09</span> Popup Chỉnh sửa chiết khấu: auto-tính 100%</h3>
+      <div class="badges">
+        <span class="badge area">Modal Chỉnh sửa chiết khấu</span>
+        <span class="badge sev-medium">🟡 Medium</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <ul>
+        <li>Tổng 2 ô <strong>= 100%</strong></li>
+        <li>Khi user nhập 1 ô → ô còn lại tự động cập nhật = <code>100 − giá trị</code></li>
+        <li>Hiển thị ví dụ tính theo chuyến 100.000đ</li>
+        <li>Validate: <code>0 ≤ giá trị ≤ 100</code></li>
+      </ul>
+      <div class="slot">
+        <div class="slot-label mockup">🎯 Mockup gợi ý</div>
+        <div class="slot-hint">📍 <b>Menu:</b> Chiết khấu & Giá tiền → bấm <code>✏️ Chỉnh sửa</code> trên 1 card dịch vụ → chụp modal. ✏️ Logic: nhập 1 ô → ô còn lại auto = <code>100 − giá trị</code></div>
+        <div class="imgs"><div class="img-card"><img src="bug-images/09-mockup.png" alt="09-mockup" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 09-mockup.png</div>'"><div class="cap">Popup auto-tính 100% giữa 2 ô %</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- #10 -->
+  <div class="bug" id="bug-10">
+    <div class="bug-head">
+      <h3><span class="bug-id">#10</span> Tab Giá tiền: cấu hình giá theo 5 dịch vụ</h3>
+      <div class="badges">
+        <span class="badge area">Chiết khấu & Giá tiền → tab Giá tiền</span>
+        <span class="badge sev-high">🟠 High</span>
+        <span class="badge status-new">🆕 New</span>
+      </div>
+    </div>
+    <div class="bug-body">
+      <p>Thêm tab <strong>Giá tiền</strong>, bên trong chia <strong>5 sub-tab dịch vụ</strong>:</p>
+      <table class="inner">
+        <thead>
+          <tr><th>Dịch vụ</th><th>Giá theo km</th><th>Giá dịch vụ</th><th>Phụ phí khung giờ</th><th>Phụ phí thời điểm</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>🛵 Xe máy</td><td>✅</td><td>—</td><td>✅</td><td>✅</td></tr>
+          <tr><td>🚗 Xe hơi</td><td>✅</td><td>—</td><td>✅</td><td>✅</td></tr>
+          <tr><td>🚌 Liên tỉnh</td><td>❌ <em>(tính từ giá vé)</em></td><td>—</td><td>✅</td><td>✅</td></tr>
+          <tr><td>📋 Đăng kiểm hộ</td><td>—</td><td>✅</td><td>✅</td><td>✅</td></tr>
+          <tr><td>🔧 Bảo dưỡng hộ</td><td>—</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        </tbody>
+      </table>
+
+      <h4>Cấu trúc các bảng con</h4>
+      <ul>
+        <li><strong>Giá theo km</strong>: <code>Từ km</code> → <code>Đến km</code> → <code>Giá/km</code> → <code>Ghi chú</code>. Hàng đầu là <em>Giá mở cửa</em>.</li>
+        <li><strong>Giá mỗi dịch vụ</strong> (đăng kiểm/bảo dưỡng): <code>Mã</code> → <code>Tên</code> → <code>Giá</code>.</li>
+        <li><strong>Phụ phí theo khung giờ</strong>: <code>Từ</code> → <code>Đến</code> → <code>Phụ phí</code> → <code>Ghi chú</code>.</li>
+        <li><strong>Phụ phí theo thời điểm</strong>: <code>Tên</code> → <code>Loại</code> → <code>Khoảng thời gian</code> → <code>Phụ phí</code>.</li>
+      </ul>
+
+      <div class="compare">
+        <div class="slot">
+          <div class="slot-label current">📸 Hiện trạng</div>
+          <div class="slot-hint">📍 Chiết khấu & Giá tiền → <code>Giá tiền</code></div>
+          <div class="imgs"><div class="img-card"><div class="img-frame"><img src="bug-images/10-current.png" alt="10-current" onerror="this.parentElement.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 10-current.png</div>'"></div></div></div>
+        </div>
+        <div class="slot">
+          <div class="slot-label mockup">🎯 Mockup (5 sub-tab)</div>
+          <div class="slot-hint">✏️ Mỗi sub-tab có cấu trúc bảng khác nhau</div>
+          <div class="imgs multi">
+            <div class="img-card"><img src="bug-images/10a-mockup-xe-may.png" alt="10a" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 10a</div>'"><div class="cap">🛵 Xe máy</div></div>
+            <div class="img-card"><img src="bug-images/10b-mockup-xe-hoi.png" alt="10b" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 10b</div>'"><div class="cap">🚗 Xe hơi</div></div>
+            <div class="img-card"><img src="bug-images/10c-mockup-lien-tinh.png" alt="10c" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 10c</div>'"><div class="cap">🚌 Liên tỉnh</div></div>
+            <div class="img-card"><img src="bug-images/10d-mockup-dang-kiem.png" alt="10d" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 10d</div>'"><div class="cap">📋 Đăng kiểm</div></div>
+            <div class="img-card"><img src="bug-images/10e-mockup-bao-duong.png" alt="10e" onerror="this.parentElement.innerHTML='<div class=img-missing>⚠️ Chưa có: 10e</div>'"><div class="cap">🔧 Bảo dưỡng</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div>
+      <h3>🏷️ Mức độ</h3>
+      <ul>
+        <li>🔴 <strong>Critical</strong> — Chặn người dùng</li>
+        <li>🟠 <strong>High</strong> — Ảnh hưởng lớn</li>
+        <li>🟡 <strong>Medium</strong> — Lỗi nhỏ, không chặn</li>
+        <li>🟢 <strong>Low</strong> — Cosmetic, polish</li>
+      </ul>
+    </div>
+    <div>
+      <h3>🏷️ Trạng thái</h3>
+      <ul>
+        <li>🆕 <strong>New</strong> — Mới ghi nhận</li>
+        <li>🔧 <strong>In Progress</strong> — Đang fix</li>
+        <li>✅ <strong>Fixed</strong> — Đã fix</li>
+        <li>⏸️ <strong>Deferred</strong> — Hoãn</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="this.classList.remove('show')"><img id="lightbox-img"></div>
+<script>
+  document.querySelectorAll('.img-card img').forEach(img => {
+    img.addEventListener('click', e => {
+      const lb = document.getElementById('lightbox');
+      document.getElementById('lightbox-img').src = e.target.src;
+      lb.classList.add('show');
+    });
+  });
+
+  // Toàn bộ row trong bảng overview clickable
+  document.querySelectorAll('.overview-tbl tbody tr').forEach(tr => {
+    const a = tr.querySelector('a[href^="#bug-"]');
+    if (!a) return;
+    tr.addEventListener('click', e => {
+      if (e.target.tagName === 'A') return;
+      location.hash = a.getAttribute('href');
+    });
+  });
+</script>
+</body>
+</html>

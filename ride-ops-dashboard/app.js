@@ -107,6 +107,43 @@ function renderPage(page) {
 
 // ---- Helpers ----
 function fmt(amount) { return new Intl.NumberFormat('vi-VN').format(amount) + 'đ'; }
+// Escape chuỗi người dùng nhập trước khi nhúng vào innerHTML (chống chèn HTML)
+function esc(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ---- Toast (thay alert) ----
+function toast(message, type = 'info', timeout = 3200) {
+  let host = document.getElementById('toast-host');
+  if (!host) {
+    host = document.createElement('div');
+    host.id = 'toast-host';
+    host.className = 'toast-host';
+    document.body.appendChild(host);
+  }
+  const icons = { info: 'ℹ️', success: '✅', warning: '⚠️', error: '❌' };
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-msg">${esc(message)}</span>`;
+  host.appendChild(el);
+  requestAnimationFrame(() => el.classList.add('show'));
+  setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.remove(), 260);
+  }, timeout);
+}
+// Tương thích ngược: chuyển alert() sang toast (đoán loại theo nội dung)
+function alert(msg) {
+  const s = String(msg);
+  const type = /thất bại|lỗi|không|chưa|vui lòng|sai|hủy/i.test(s)
+    ? (/thành công/i.test(s) ? 'success' : 'warning')
+    : (/thành công/i.test(s) ? 'success' : 'info');
+  toast(s.replace(/\n/g, ' · '), type, 3800);
+}
 function getCustomer(id) { return CUSTOMERS.find(c => c.id === id); }
 function getCustomerName(id) { const c = getCustomer(id); return c ? c.name : '—'; }
 // Tra cứu tài xế ở cả 2 pool (BIKE/CAR và INTERCITY)
@@ -117,7 +154,13 @@ function findDriver(id) {
 }
 function getDriverName(id) { if (!id) return '—'; const d = findDriver(id); return d ? d.name : '—'; }
 function getPartnerName(id) { if (!id) return 'Cá nhân'; const p = PARTNERS.find(p => p.id === id); return p ? p.name : '—'; }
-function getRouteName(id) { if (!id) return ''; const r = ROUTES.find(r => r.id === id); return r ? r.name : ''; }
+function getRouteName(id) {
+  if (!id) return '';
+  const r = ROUTES.find(r => r.id === id);
+  if (r) return r.name;
+  const ir = typeof INTERCITY_ROUTES !== 'undefined' ? INTERCITY_ROUTES.find(x => x.id === id) : null;
+  return ir ? `${ir.origin} → ${ir.destination}` : id;
+}
 function getUserName(id) { if (!id) return '—'; if (id === 'SYSTEM') return 'Hệ thống'; const u = PORTAL_USERS.find(u => u.id === id); return u ? u.name : id; }
 
 // ---- Driver pool selection theo loại booking / tab ----
@@ -2893,15 +2936,18 @@ function orderDetailHTML(o, kind) {
     </div>
     <div class="odp-body">
       <div class="odp-grid">
-        <div class="odp-cell"><div class="odp-label">Biển số</div><div class="odp-value">${o.plate}</div></div>
+        <div class="odp-cell"><div class="odp-label">Biển số</div><div class="odp-value">${esc(o.plate)}</div></div>
         <div class="odp-cell"><div class="odp-label">Động cơ</div><div class="odp-value">${ORDER_ENGINE_LABELS[o.engineType] || '—'}</div></div>
-        <div class="odp-cell"><div class="odp-label">Chủ xe</div><div class="odp-value">${o.ownerName}</div></div>
-        <div class="odp-cell"><div class="odp-label">SĐT</div><div class="odp-value">${o.ownerPhone}</div></div>
-        <div class="odp-cell odp-span"><div class="odp-label">Địa chỉ nhận xe</div><div class="odp-value">${o.pickupAddress || o.centerName || '—'}</div></div>
+        <div class="odp-cell"><div class="odp-label">Chủ xe</div><div class="odp-value">${esc(o.ownerName)}</div></div>
+        <div class="odp-cell"><div class="odp-label">SĐT</div><div class="odp-value">${esc(o.ownerPhone)}</div></div>
+        <div class="odp-cell odp-span"><div class="odp-label">Địa chỉ nhận xe</div><div class="odp-value">${esc(o.pickupAddress || o.centerName || '—')}</div></div>
         <div class="odp-cell"><div class="odp-label">Lịch hẹn</div><div class="odp-value">${o.bookingDate} ${o.bookingTime}</div></div>
         <div class="odp-cell"><div class="odp-label">Dịch vụ</div><div class="odp-value">${serviceLabel}</div></div>
         <div class="odp-cell"><div class="odp-label">Giá</div><div class="odp-value text-success">${fmt(o.price)}</div></div>
+        ${isReg && o.expireDate ? `<div class="odp-cell"><div class="odp-label">Hết hạn ĐK</div><div class="odp-value">${o.expireDate}</div></div>` : ''}
+        ${!isReg && o.mileage ? `<div class="odp-cell"><div class="odp-label">Số km</div><div class="odp-value">${esc(o.mileage)}</div></div>` : ''}
         ${o.bookingId ? `<div class="odp-cell"><div class="odp-label">Booking</div><div class="odp-value">${o.bookingId}</div></div>` : ''}
+        ${o.notes ? `<div class="odp-cell odp-span"><div class="odp-label">Ghi chú</div><div class="odp-value">${esc(o.notes)}</div></div>` : ''}
       </div>
       <div class="odp-qr">
         <img src="${qrUrl(orderQrData(o, kind), 120)}" alt="QR ${o.id}" width="120" height="120" loading="lazy">
@@ -2949,7 +2995,7 @@ function exportOrderTicket(kind, id, autoPrint) {
   const serviceLabel = (isReg ? REG_SERVICE_LABELS : MNT_SERVICE_LABELS)[o.service] || o.service;
   const engineLabel = (ORDER_ENGINE_LABELS[o.engineType] || '—').replace(/[^\p{L} ]/gu, '').trim() || '—';
   const title = isReg ? 'PHIẾU ĐĂNG KIỂM HỘ' : 'PHIẾU BẢO DƯỠNG HỘ';
-  const row = (l, v) => `<tr><td class="l">${l}</td><td class="v">${v}</td></tr>`;
+  const row = (l, v) => `<tr><td class="l">${esc(l)}</td><td class="v">${esc(v)}</td></tr>`;
   const html = `<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>${o.id}</title>
     <style>
       *{font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;box-sizing:border-box}
@@ -2969,7 +3015,7 @@ function exportOrderTicket(kind, id, autoPrint) {
       .foot{margin-top:18px;font-size:11px;color:#9ca3af;text-align:center}
     </style></head><body>
     <div class="ticket">
-      <div class="brand">HAHAGO · DỊCH VỤ XE</div>
+      <div class="brand">RIDEOPS · DỊCH VỤ XE</div>
       <h1>${title}</h1>
       <div class="code">Mã đơn: ${o.id}${o.bookingId ? ' · Booking: ' + o.bookingId : ''}</div>
       <table>
@@ -3024,10 +3070,10 @@ function renderRegistrations() {
   document.getElementById('registrations-table-body').innerHTML = regs.map(r => `
     <tr class="row-clickable ${selectedRegId === r.id ? 'row-selected' : ''}" onclick="selectRegistration('${r.id}')">
       <td><span class="text-accent fw-600">${r.id}</span></td>
-      <td><span class="fw-600">${r.plate}</span></td>
-      <td>${r.ownerName}</td>
-      <td>${r.ownerPhone}</td>
-      <td>${r.pickupAddress || r.centerName || '—'}</td>
+      <td><span class="fw-600">${esc(r.plate)}</span></td>
+      <td>${esc(r.ownerName)}</td>
+      <td>${esc(r.ownerPhone)}</td>
+      <td>${esc(r.pickupAddress || r.centerName || '—')}</td>
       <td>${engineLabels[r.engineType] || '—'}</td>
       <td>${r.bookingDate} ${r.bookingTime}</td>
       <td>${serviceLabels[r.service]}</td>
@@ -3050,6 +3096,8 @@ function createRegistrationOrder() {
   const bookingDate = document.getElementById('reg-booking-date').value;
   const bookingTime = document.getElementById('reg-booking-time').value;
   const service = document.getElementById('reg-service').value;
+  const expireDate = document.getElementById('reg-expire-date')?.value || '';
+  const notes = document.getElementById('reg-notes')?.value.trim() || '';
 
   if (!plate || !ownerName || !ownerPhone || !pickupAddress || !engineType || !bookingDate || !bookingTime) {
     alert('Vui lòng điền đầy đủ thông tin bắt buộc (gồm Địa chỉ nhận xe và Loại động cơ)');
@@ -3066,6 +3114,7 @@ function createRegistrationOrder() {
     engineType,
     pickupAddress,
     bookingDate, bookingTime, service,
+    expireDate, notes,
     price: servicePrices[service],
     status: 'pending',
     createdAt: nowStr(),
@@ -3130,20 +3179,14 @@ function createRegistrationOrder() {
 }
 
 function clearRegistrationForm() {
-  document.getElementById('reg-plate').value = '';
-  document.getElementById('reg-owner-name').value = '';
-  document.getElementById('reg-owner-phone').value = '';
-  document.getElementById('reg-pickup-address').value = '';
-  document.getElementById('reg-engine-type').value = 'gasoline';
-  document.getElementById('reg-booking-date').value = '';
-  document.getElementById('reg-notes').value = '';
-}
-
-function viewRegistration(id) {
-  const r = REGISTRATIONS.find(x => x.id === id);
-  if (!r) return;
-  const engineLabels = { gasoline: 'Xăng', electric: 'Điện', diesel: 'Dầu', hybrid: 'Hybrid' };
-  alert(`Chi tiết đơn ${id}\nBiển số: ${r.plate}\nChủ xe: ${r.ownerName}\nSĐT: ${r.ownerPhone}\nĐịa chỉ nhận xe: ${r.pickupAddress || r.centerName || '—'}\nĐộng cơ: ${engineLabels[r.engineType] || '—'}\nNgày: ${r.bookingDate} ${r.bookingTime}\nGiá: ${fmt(r.price)}\nTrạng thái: ${r.status}`);
+  ['reg-plate','reg-owner-name','reg-owner-phone','reg-pickup-address','reg-booking-date','reg-expire-date','reg-notes'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('reg-engine-type', 'gasoline');
+  set('reg-vehicle-type', 'car');
+  set('reg-service', 'normal');
+  set('reg-booking-time', '07:00');
 }
 
 function confirmRegistration(id) {
@@ -3211,10 +3254,10 @@ function renderMaintenance() {
   body.innerHTML = items.map(r => `
     <tr class="row-clickable ${selectedMntId === r.id ? 'row-selected' : ''}" onclick="selectMaintenance('${r.id}')">
       <td><span class="text-accent fw-600">${r.id}</span></td>
-      <td><span class="fw-600">${r.plate}</span></td>
-      <td>${r.ownerName}</td>
-      <td>${r.ownerPhone}</td>
-      <td>${r.pickupAddress || r.centerName || '—'}</td>
+      <td><span class="fw-600">${esc(r.plate)}</span></td>
+      <td>${esc(r.ownerName)}</td>
+      <td>${esc(r.ownerPhone)}</td>
+      <td>${esc(r.pickupAddress || r.centerName || '—')}</td>
       <td>${engineLabels[r.engineType] || '—'}</td>
       <td>${r.bookingDate} ${r.bookingTime}</td>
       <td>${serviceLabels[r.service] || r.service}</td>
@@ -3237,6 +3280,8 @@ function createMaintenanceOrder() {
   const bookingDate = document.getElementById('mnt-booking-date').value;
   const bookingTime = document.getElementById('mnt-booking-time').value;
   const service = document.getElementById('mnt-service').value;
+  const mileage = document.getElementById('mnt-mileage')?.value || '';
+  const notes = document.getElementById('mnt-notes')?.value.trim() || '';
 
   if (!plate || !ownerName || !ownerPhone || !pickupAddress || !engineType || !bookingDate || !bookingTime) {
     alert('Vui lòng điền đầy đủ thông tin bắt buộc (gồm Địa chỉ nhận xe và Loại động cơ)'); return;
@@ -3252,6 +3297,7 @@ function createMaintenanceOrder() {
     engineType,
     pickupAddress,
     bookingDate, bookingTime, service,
+    mileage, notes,
     price: servicePrices[service],
     status: 'pending',
     createdAt: nowStr(),
@@ -3320,14 +3366,11 @@ function clearMaintenanceForm() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  const eng = document.getElementById('mnt-engine-type'); if (eng) eng.value = 'gasoline';
-}
-
-function viewMaintenance(id) {
-  const r = MAINTENANCE.find(x => x.id === id);
-  if (!r) return;
-  const engineLabels = { gasoline: 'Xăng', electric: 'Điện', diesel: 'Dầu', hybrid: 'Hybrid' };
-  alert(`Chi tiết đơn ${id}\nBiển số: ${r.plate}\nChủ xe: ${r.ownerName}\nSĐT: ${r.ownerPhone}\nĐịa chỉ nhận xe: ${r.pickupAddress || r.centerName || '—'}\nĐộng cơ: ${engineLabels[r.engineType] || '—'}\nNgày: ${r.bookingDate} ${r.bookingTime}\nGiá: ${fmt(r.price)}\nTrạng thái: ${r.status}\nBooking: ${r.bookingId || '—'}`);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  set('mnt-engine-type', 'gasoline');
+  set('mnt-vehicle-type', 'car');
+  set('mnt-service', 'basic');
+  set('mnt-booking-time', '07:00');
 }
 
 function confirmMaintenance(id) {
@@ -3552,14 +3595,14 @@ function renderTripBookingList(tripId) {
     return `
       <div class="tb-booking-item">
         <div class="tb-bi-head">
-          <span>${cust?.name || b.passengerSnapshot?.[0]?.name || '—'}</span>
+          <span>${esc(cust?.name || b.passengerSnapshot?.[0]?.name || '—')}</span>
           <span class="badge ${st.c}">${st.t}</span>
         </div>
         <div style="display:flex;justify-content:space-between;color:var(--text-muted)">
-          <span>📞 ${cust?.phone || b.passengerSnapshot?.[0]?.phone || '—'} · 👥 ${pax} vé</span>
+          <span>📞 ${esc(cust?.phone || b.passengerSnapshot?.[0]?.phone || '—')} · 👥 ${pax} vé</span>
           <span class="text-success fw-600">${fmt(b.fareSnapshot)}</span>
         </div>
-        <div style="color:var(--text-muted);margin-top:2px">${b.bookingCode}</div>
+        <div style="color:var(--text-muted);margin-top:2px">${esc(b.bookingCode)}</div>
       </div>
     `;
   }).join('');
