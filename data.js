@@ -1463,3 +1463,75 @@ const PAYMENT_INTENT_STATUS = {
   CANCELLED: { label: 'Đã hủy', color: '#64748B' },
   REFUNDED: { label: 'Đã hoàn tiền', color: '#7C5CFC' }
 };
+
+// ============================================================
+// SEED DEMO — tài xế / xe có NHIỀU lịch bận (3-5 lịch) để test UI ghi chú
+//   PTR003 (Hoàng Long): IDR005 + IV006 → 4 lịch (2026-06-02)
+//   PTR005 (Việt Thanh): IDR007 + IV008 → 5 lịch (2026-06-02)
+//   Kèm 2 đơn CHỜ PHÂN CÔNG (2026-06-05, không trùng giờ) để mở popup thấy danh sách lịch bận.
+// ============================================================
+(function seedBusySchedules() {
+  // [tripId, routeId, operatorId, opName, dep, arr, vehicleType, price, dropoff]
+  const groups = [
+    {
+      op: 'PTR003', opName: 'Nhà xe Hoàng Long', route: 'INT003', drv: 'IDR005', veh: 'IV006',
+      n: 'PT3', dropoff: 'BX Nha Trang', vt: 'Giường nằm 36 chỗ', price: 290000,
+      slots: [['05:00','07:00'], ['09:00','11:00'], ['13:00','15:00'], ['17:00','19:00']]
+    },
+    {
+      op: 'PTR005', opName: 'Nhà xe Việt Thanh', route: 'INT005', drv: 'IDR007', veh: 'IV008',
+      n: 'PT5', dropoff: 'BX Vũng Tàu', vt: 'Ghế ngồi 45 chỗ', price: 120000,
+      slots: [['04:00','06:00'], ['08:00','09:30'], ['11:00','12:30'], ['14:00','15:30'], ['17:00','18:30']]
+    }
+  ];
+  const cust = (CUSTOMERS[0] && CUSTOMERS[0].id) || 'KH001';
+
+  groups.forEach(g => {
+    g.slots.forEach((s, i) => {
+      const idx = i + 1;
+      const tripId = `TRP-${g.n}-${idx}`;
+      const bkId = `BK-${g.n}-${idx}`;
+      const ftId = `FT-${g.n}-${idx}`;
+      INTERCITY_TRIPS.push({
+        id: tripId, routeId: g.route, operatorId: g.op, operatorName: g.opName,
+        departureTime: s[0], arrivalTime: s[1], vehicleType: g.vt, price: g.price,
+        seatsTotal: 36, seatsAvailable: 20, status: 'available', date: '2026-06-02'
+      });
+      BOOKINGS.push({
+        id: bkId, bookingCode: `RO-260602-${g.n}${idx}`, bookingType: 'INTERCITY',
+        bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'ASSIGNED',
+        customerId: cust, agentId: null, driverId: g.drv,
+        pickup: 'BX Miền Đông, TP.HCM', dropoff: g.dropoff,
+        routeId: g.route, tripId, scheduleId: null, seatNumbers: ['A' + idx],
+        passengerSnapshot: [{ name: 'Khách demo', phone: '0900000000' }],
+        fareSnapshot: g.price, distance: 200, paymentMethod: 'momo', paymentReference: 'PAY-' + bkId,
+        fulfillmentTaskId: ftId,
+        createdAt: '2026-06-01 10:00', updatedAt: '2026-06-01 10:05'
+      });
+      FULFILLMENT_TASKS.push({
+        id: ftId, bookingId: bkId, driverId: g.drv, vehicleId: g.veh,
+        status: 'ASSIGNED', assignedAt: '2026-06-01 10:05', startedAt: null, completedAt: null
+      });
+    });
+
+    // Đơn CHỜ PHÂN CÔNG cùng nhà xe, khác ngày → IDR/IV trên hiện trong popup kèm N lịch bận
+    const pendTrip = `TRP-${g.n}-PEND`;
+    const pendBk = `BK-${g.n}-PEND`;
+    INTERCITY_TRIPS.push({
+      id: pendTrip, routeId: g.route, operatorId: g.op, operatorName: g.opName,
+      departureTime: '08:00', arrivalTime: '10:00', vehicleType: g.vt, price: g.price,
+      seatsTotal: 36, seatsAvailable: 30, status: 'available', date: '2026-06-05'
+    });
+    BOOKINGS.push({
+      id: pendBk, bookingCode: `RO-260605-${g.n}`, bookingType: 'INTERCITY',
+      bookingStatus: 'CONFIRMED', paymentStatus: 'CONFIRMED', fulfillmentStatus: 'PENDING',
+      customerId: cust, agentId: null, driverId: null,
+      pickup: 'BX Miền Đông, TP.HCM', dropoff: g.dropoff,
+      routeId: g.route, tripId: pendTrip, scheduleId: null, seatNumbers: ['D1'],
+      passengerSnapshot: [{ name: 'Khách demo', phone: '0900000001' }],
+      fareSnapshot: g.price, distance: 200, paymentMethod: 'momo', paymentReference: 'PAY-' + pendBk,
+      fulfillmentTaskId: null,
+      createdAt: '2026-06-04 09:00', updatedAt: '2026-06-04 09:00'
+    });
+  });
+})();

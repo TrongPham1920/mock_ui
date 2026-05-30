@@ -648,11 +648,15 @@
 
   <!-- ========== MODALS ========== -->
   <div class="modal-overlay" id="dispatch-modal">
-    <div class="modal">
+    <div class="modal" style="max-width:600px">
       <div class="modal-header"><span class="modal-title">Gán tài xế</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('dispatch-modal')">✕</button></div>
       <div class="modal-body">
-        <div class="input-group mb-20"><label>Booking</label><div id="dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
-        <div class="input-group"><label>Chọn tài xế</label><select id="dispatch-driver-select" style="width:100%"></select></div>
+        <div class="input-group mb-16"><label>Booking</label><div id="dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
+        <div id="dispatch-selected" class="dispatch-sel-wrap"></div>
+        <div class="dispatch-pick-col">
+          <div class="dispatch-pick-head">🧑‍✈️ Chọn tài xế <span class="dispatch-pick-count" id="dispatch-modal-driver-count"></span></div>
+          <div class="dispatch-pick-list" id="dispatch-modal-driver-list"></div>
+        </div>
       </div>
       <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('dispatch-modal')">Hủy</button><button class="btn btn-primary" onclick="assignDriver()">Gán tài xế</button></div>
     </div>
@@ -660,22 +664,29 @@
 
   <!-- Intercity Dispatch Modal: chọn xe + tài xế độc lập -->
   <div class="modal-overlay" id="intercity-dispatch-modal">
-    <div class="modal" style="max-width:560px">
+    <div class="modal" style="max-width:880px">
       <div class="modal-header"><span class="modal-title">🚌 Phân công xe & tài xế (Liên tỉnh)</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('intercity-dispatch-modal')">✕</button></div>
       <div class="modal-body">
-        <div class="input-group mb-20"><label>Booking</label><div id="intercity-dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
-        <div class="input-group mb-20">
-          <label>1️⃣ Chọn xe (theo nhà xe + loại xe phù hợp)</label>
-          <select id="intercity-dispatch-vehicle-select" style="width:100%"></select>
-        </div>
-        <div class="input-group">
-          <label>2️⃣ Chọn tài xế (chỉ TX hạng INTERCITY đang online)</label>
-          <select id="intercity-dispatch-driver-select" style="width:100%"></select>
+        <div class="input-group mb-16"><label>Booking</label><div id="intercity-dispatch-trip-info" style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm)"></div></div>
+
+        <!-- Tổng quan đã chọn (final preview trước khi xác nhận) -->
+        <div id="intercity-dispatch-selected" class="dispatch-sel-wrap"></div>
+
+        <!-- 2 cột: xe | tài xế, cuộn dọc -->
+        <div class="dispatch-pick-grid">
+          <div class="dispatch-pick-col">
+            <div class="dispatch-pick-head">🚐 Chọn xe <span class="dispatch-pick-count" id="intercity-dispatch-vehicle-count"></span></div>
+            <div class="dispatch-pick-list" id="intercity-dispatch-vehicle-list"></div>
+          </div>
+          <div class="dispatch-pick-col">
+            <div class="dispatch-pick-head">🧑‍✈️ Chọn tài xế <span class="dispatch-pick-count" id="intercity-dispatch-driver-count"></span></div>
+            <div class="dispatch-pick-list" id="intercity-dispatch-driver-list"></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('intercity-dispatch-modal')">Hủy</button>
-        <button class="btn btn-primary" onclick="assignIntercityDispatch()">Phân công</button>
+        <button class="btn btn-primary" onclick="assignIntercityDispatch()">Xác nhận phân công</button>
       </div>
     </div>
   </div>

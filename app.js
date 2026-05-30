@@ -8,6 +8,11 @@ let currentBookingType = 'ALL';
 let currentFulfillmentTab = 'all';   // 'all' | 'bikecar' | 'intercity' | 'service' | 'maintenance'
 let selectedDispatchBooking = null;
 let selectedIntercityVehicleId = null;
+let selectedIntercityDriverId = null;
+let selectedDispatchDriverId = null;  // modal gán tài xế (bike/car/service/maintenance)
+let _icDispatchVehicles = [];   // [{v, sameOp}] cho re-render card xe
+let _icDispatchDrivers = [];    // [{d, sameOp}] cho re-render card tài xế
+let _dispatchDrivers = [];      // tài xế khả dụng cho modal mặc định
 let currentRole = 'ADMIN';
 let currentUser = null;
 
@@ -1752,6 +1757,7 @@ function openDispatchModal(bookingId) {
     return openIntercityDispatchModal(bookingId);
   }
   selectedDispatchBooking = b;
+  selectedDispatchDriverId = null;
   const vt = VEHICLE_TYPES[b.bookingType];
   const window = getBookingTimeWindow(b);
   const scheduleHtml = window
@@ -1762,22 +1768,69 @@ function openDispatchModal(bookingId) {
     <div style="font-size:12px;color:var(--text-secondary)">📍 ${b.pickup}<br>🏁 ${b.dropoff}</div>${scheduleHtml}`;
   // Pool tài xế phù hợp với loại booking
   const pool = getDriverPoolForBooking(b.bookingType);
-  // Với booking có lịch (SERVICE/MAINTENANCE) → filter theo time-conflict thay vì status
-  // Với BIKE/CAR (real-time) → filter theo status='online'
-  const hasSchedule = (b.bookingType === 'SERVICE_ORDER' || b.bookingType === 'MAINTENANCE_ORDER') && window;
-  const avail = hasSchedule
+  // SERVICE/MAINTENANCE dùng chung pool INTERCITY_DRIVERS → logic hiển thị giống liên tỉnh:
+  //   status !== 'offline' và rảnh trong khung giờ (không xung đột lịch khác)
+  // BIKE/CAR (real-time) → chỉ TX đang online
+  const isServiceType = b.bookingType === 'SERVICE_ORDER' || b.bookingType === 'MAINTENANCE_ORDER';
+  _dispatchDrivers = isServiceType
     ? pool.filter(d => d.status !== 'offline' && isDriverFreeAt(d.id, window, b.fulfillmentTaskId))
     : pool.filter(d => d.status === 'online');
 
-  document.getElementById('dispatch-driver-select').innerHTML = `<option value="">-- Chọn tài xế --</option>` + avail.map(d => {
+  document.getElementById('dispatch-modal-driver-count').textContent = `(${_dispatchDrivers.length})`;
+  renderDispatchDriverCards();
+  renderDispatchSelected();
+  openModal('dispatch-modal');
+}
+
+// Render card tài xế cho modal gán mặc định (bike/car/service/maintenance)
+function renderDispatchDriverCards() {
+  const list = document.getElementById('dispatch-modal-driver-list');
+  if (!_dispatchDrivers.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-state-text">Không có tài xế khả dụng</div></div>';
+    return;
+  }
+  list.innerHTML = _dispatchDrivers.map(d => {
     const meta = d.plate
-      ? `${VEHICLE_TYPES[d.vehicleType]?.icon||''} ${d.plate}`
+      ? `${VEHICLE_TYPES[d.vehicleType]?.icon || ''} ${d.plate}`
       : `🪪 GPLX ${d.licenseClass || '—'} · ${getPartnerName(d.operatorId)}`;
     const busy = d.status === 'busy' ? describeNextBusyWindow('driver', d.id) : null;
-    const busyHint = busy ? ` · ⏳ đang bận ${busy}` : '';
-    return `<option value="${d.id}">${d.avatar} ${d.name} · ${meta} · ⭐${d.rating}${busyHint}</option>`;
+    const nBusy = _busyWindows('driver', d.id, null).length;
+    const sel = d.id === selectedDispatchDriverId;
+    return `<div class="dispatch-pick-card ${sel ? 'selected' : ''}" onclick="selectDispatchDriver('${d.id}')">
+      <div class="driver-avatar">${d.avatar}</div>
+      <div class="dispatch-pick-info">
+        <div class="dispatch-pick-name">${d.name}${sel ? '<span class="dispatch-pick-check">✓</span>' : ''}</div>
+        <div class="dispatch-pick-meta">${meta} · ⭐ ${d.rating}</div>
+        <div class="dispatch-pick-sub">${busy ? `⏳ đang bận ${busy}${nBusy > 1 ? ` +${nBusy - 1} lịch` : ''}` : 'Sẵn sàng nhận chuyến'}</div>
+      </div>
+      ${driverBadge(d.status)}
+    </div>`;
   }).join('');
-  openModal('dispatch-modal');
+}
+
+function selectDispatchDriver(id) {
+  selectedDispatchDriverId = (selectedDispatchDriverId === id) ? null : id;
+  renderDispatchDriverCards();
+  renderDispatchSelected();
+}
+
+function renderDispatchSelected() {
+  const el = document.getElementById('dispatch-selected');
+  const d = selectedDispatchDriverId ? findDriver(selectedDispatchDriverId) : null;
+  if (!d) {
+    el.innerHTML = `<div class="dispatch-sel-title">✅ Đã chọn</div><div class="dispatch-sel-box"><div class="dispatch-sel-empty">🧑‍✈️ Chưa chọn tài xế</div></div>`;
+    return;
+  }
+  const meta = d.plate
+    ? `${VEHICLE_TYPES[d.vehicleType]?.icon || ''} ${d.plate}`
+    : `🪪 GPLX ${d.licenseClass || '—'} · ${getPartnerName(d.operatorId)}`;
+  const exclude = selectedDispatchBooking ? selectedDispatchBooking.fulfillmentTaskId : null;
+  el.innerHTML = `<div class="dispatch-sel-title">✅ Đã chọn</div>
+    <div class="dispatch-sel-box filled">
+      <div class="dispatch-sel-head"><span class="driver-avatar">${d.avatar}</span><div><div class="dispatch-sel-name">${d.name}</div><div class="dispatch-sel-meta">${meta} · ⭐ ${d.rating}</div></div></div>
+      <div class="dispatch-sel-notes-title">${_busyNotesTitle('driver', d.id, exclude)}</div>
+      <div class="dispatch-sel-notes">${_busyWindowsHtml('driver', d.id, exclude)}</div>
+    </div>`;
 }
 
 // Intercity: dispatch modal với 2 dropdown — xe và tài xế độc lập
@@ -1786,6 +1839,7 @@ function openIntercityDispatchModal(bookingId) {
   if (!b || b.bookingType !== 'INTERCITY') return;
   selectedDispatchBooking = b;
   selectedIntercityVehicleId = null;
+  selectedIntercityDriverId = null;
 
   const trip = INTERCITY_TRIPS.find(t => t.id === b.tripId);
   const operator = trip ? PARTNERS.find(p => p.id === trip.operatorId) : null;
@@ -1813,20 +1867,9 @@ function openIntercityDispatchModal(bookingId) {
   const vehiclesAvail = INTERCITY_VEHICLES.filter(v =>
     v.status !== 'maintenance' && isVehicleFreeAt(v.id, window, b.fulfillmentTaskId)
   );
+  // Xe chỉ được gán cho đơn cùng nhà xe quản lý (giống tài xế)
   const sameOpVehicles = operatorId ? vehiclesAvail.filter(v => v.operatorId === operatorId) : vehiclesAvail;
-  const otherVehicles = operatorId ? vehiclesAvail.filter(v => v.operatorId !== operatorId) : [];
-
-  const renderVehicleOption = v => {
-    const op = PARTNERS.find(p => p.id === v.operatorId);
-    const busy = v.status === 'busy' ? describeNextBusyWindow('vehicle', v.id) : null;
-    const busyHint = busy ? ` · ⏳ đang chạy ${busy}` : '';
-    return `<option value="${v.id}">${v.plate} · ${v.vehicleClass} · ${op ? op.name : ''}${busyHint}</option>`;
-  };
-  const vsel = document.getElementById('intercity-dispatch-vehicle-select');
-  vsel.innerHTML = '<option value="">-- Chọn xe --</option>' +
-    sameOpVehicles.map(renderVehicleOption).join('') +
-    (otherVehicles.length ? '<optgroup label="--- Xe khác nhà xe ---">' +
-      otherVehicles.map(renderVehicleOption).join('') + '</optgroup>' : '');
+  _icDispatchVehicles = sameOpVehicles.map(v => ({ v, sameOp: true }));
 
   // Tài xế: filter theo:
   //   - status !== 'offline'
@@ -1834,21 +1877,129 @@ function openIntercityDispatchModal(bookingId) {
   const driversAvail = INTERCITY_DRIVERS.filter(d =>
     d.status !== 'offline' && isDriverFreeAt(d.id, window, b.fulfillmentTaskId)
   );
+  // TX chỉ được gán cho đơn cùng nhà xe quản lý
   const sameOpDrivers = operatorId ? driversAvail.filter(d => d.operatorId === operatorId) : driversAvail;
-  const otherDrivers = operatorId ? driversAvail.filter(d => d.operatorId !== operatorId) : [];
-  const renderDriverOption = d => {
-    const op = PARTNERS.find(p => p.id === d.operatorId);
-    const busy = d.status === 'busy' ? describeNextBusyWindow('driver', d.id) : null;
-    const busyHint = busy ? ` · ⏳ đang bận ${busy}` : '';
-    return `<option value="${d.id}">${d.avatar} ${d.name} · ${op ? op.name : 'Cá nhân'} · ⭐${d.rating}${busyHint}</option>`;
-  };
-  const dsel = document.getElementById('intercity-dispatch-driver-select');
-  dsel.innerHTML = '<option value="">-- Chọn tài xế --</option>' +
-    sameOpDrivers.map(renderDriverOption).join('') +
-    (otherDrivers.length ? '<optgroup label="--- TX khác nhà xe ---">' +
-      otherDrivers.map(renderDriverOption).join('') + '</optgroup>' : '');
+  _icDispatchDrivers = sameOpDrivers.map(d => ({ d, sameOp: true }));
+
+  document.getElementById('intercity-dispatch-vehicle-count').textContent = `(${sameOpVehicles.length})`;
+  document.getElementById('intercity-dispatch-driver-count').textContent = `(${sameOpDrivers.length})`;
+
+  renderIcDispatchVehicleCards();
+  renderIcDispatchDriverCards();
+  renderIcDispatchSelected();
 
   openModal('intercity-dispatch-modal');
+}
+
+// Render card xe trong popup phân công (bố cục giống cột "Xe sẵn sàng")
+function renderIcDispatchVehicleCards() {
+  const list = document.getElementById('intercity-dispatch-vehicle-list');
+  if (!_icDispatchVehicles.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-state-text">Không có xe khả dụng</div></div>';
+    return;
+  }
+  list.innerHTML = _icDispatchVehicles.map(({ v }) => {
+    const op = PARTNERS.find(p => p.id === v.operatorId);
+    const busy = v.status === 'busy' ? describeNextBusyWindow('vehicle', v.id) : null;
+    const nBusy = _busyWindows('vehicle', v.id, null).length;
+    const busyTxt = busy ? `⏳ ${busy}${nBusy > 1 ? ` +${nBusy - 1} lịch` : ''}` : '';
+    const sel = v.id === selectedIntercityVehicleId;
+    return `<div class="dispatch-pick-card ${sel ? 'selected' : ''}" onclick="selectIcVehicle('${v.id}')">
+      <div class="driver-avatar">🚐</div>
+      <div class="dispatch-pick-info">
+        <div class="dispatch-pick-name">${v.plate}${sel ? '<span class="dispatch-pick-check">✓</span>' : ''}</div>
+        <div class="dispatch-pick-meta">${v.vehicleClass} · ${op ? op.name : '—'}</div>
+        <div class="dispatch-pick-sub">${v.mileage.toLocaleString()}km${busyTxt ? ` · ${busyTxt}` : ''}</div>
+      </div>
+      <span class="badge ${VEHICLE_STATUS[v.status]?.class || 'badge-offline'}">${VEHICLE_STATUS[v.status]?.label || v.status}</span>
+    </div>`;
+  }).join('');
+}
+
+// Render card tài xế trong popup phân công (bố cục giống cột "Tài xế sẵn sàng")
+function renderIcDispatchDriverCards() {
+  const list = document.getElementById('intercity-dispatch-driver-list');
+  if (!_icDispatchDrivers.length) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-state-text">Không có TX khả dụng</div></div>';
+    return;
+  }
+  list.innerHTML = _icDispatchDrivers.map(({ d }) => {
+    const op = PARTNERS.find(p => p.id === d.operatorId);
+    const busy = d.status === 'busy' ? describeNextBusyWindow('driver', d.id) : null;
+    const nBusy = _busyWindows('driver', d.id, null).length;
+    const sel = d.id === selectedIntercityDriverId;
+    return `<div class="dispatch-pick-card ${sel ? 'selected' : ''}" onclick="selectIcDriver('${d.id}')">
+      <div class="driver-avatar">${d.avatar}</div>
+      <div class="dispatch-pick-info">
+        <div class="dispatch-pick-name">${d.name}${sel ? '<span class="dispatch-pick-check">✓</span>' : ''}</div>
+        <div class="dispatch-pick-meta">🚌 ${op ? op.name : 'Cá nhân'} · ⭐ ${d.rating} · ${d.trips} chuyến</div>
+        <div class="dispatch-pick-sub">${busy ? `⏳ đang bận ${busy}${nBusy > 1 ? ` +${nBusy - 1} lịch` : ''}` : 'Sẵn sàng nhận chuyến'}</div>
+      </div>
+      ${driverBadge(d.status)}
+    </div>`;
+  }).join('');
+}
+
+function selectIcVehicle(id) {
+  selectedIntercityVehicleId = (selectedIntercityVehicleId === id) ? null : id;
+  renderIcDispatchVehicleCards();
+  renderIcDispatchSelected();
+}
+
+function selectIcDriver(id) {
+  selectedIntercityDriverId = (selectedIntercityDriverId === id) ? null : id;
+  renderIcDispatchDriverCards();
+  renderIcDispatchSelected();
+}
+
+// Các khung giờ đang bận (đơn đã gán chưa hoàn thành) của 1 xe/TX — chỉ hiện thời gian,
+// 1 entity có thể có nhiều lịch ở khung khác nhau. Sắp xếp tăng dần theo giờ bắt đầu.
+function _busyWindows(entityType, entityId, excludeFtId) {
+  return _entityActiveFts(entityType, entityId, excludeFtId)
+    .map(ft => getBookingTimeWindow(BOOKINGS.find(x => x.id === ft.bookingId)))
+    .filter(Boolean)
+    .sort((a, b) => a.start - b.start);
+}
+
+function _busyWindowsHtml(entityType, entityId, excludeFtId) {
+  const wins = _busyWindows(entityType, entityId, excludeFtId);
+  if (!wins.length) return '<div class="dispatch-note-empty">Không có lịch bận</div>';
+  return wins.map((w, i) => `<div class="dispatch-note-row"><span class="dispatch-note-idx">${i + 1}</span>🕐 ${fmtBookingWindow(w)}</div>`).join('');
+}
+
+// Tiêu đề panel ghi chú kèm số lịch bận
+function _busyNotesTitle(entityType, entityId, excludeFtId) {
+  const n = _busyWindows(entityType, entityId, excludeFtId).length;
+  return `📌 Khung giờ đang bận${n ? ` (${n})` : ''}`;
+}
+
+// Tổng quan tài xế & xe đã chọn + ghi chú đơn đang gán
+function renderIcDispatchSelected() {
+  const el = document.getElementById('intercity-dispatch-selected');
+  const v = selectedIntercityVehicleId ? INTERCITY_VEHICLES.find(x => x.id === selectedIntercityVehicleId) : null;
+  const d = selectedIntercityDriverId ? (INTERCITY_DRIVERS.find(x => x.id === selectedIntercityDriverId) || findDriver(selectedIntercityDriverId)) : null;
+  const dOp = d ? PARTNERS.find(p => p.id === d.operatorId) : null;
+  const vOp = v ? PARTNERS.find(p => p.id === v.operatorId) : null;
+
+  const exclude = selectedDispatchBooking ? selectedDispatchBooking.fulfillmentTaskId : null;
+
+  const vehicleBox = v
+    ? `<div class="dispatch-sel-box filled">
+        <div class="dispatch-sel-head"><span class="driver-avatar">🚐</span><div><div class="dispatch-sel-name">${v.plate}</div><div class="dispatch-sel-meta">${v.vehicleClass} · ${vOp ? vOp.name : '—'}</div></div></div>
+        <div class="dispatch-sel-notes-title">${_busyNotesTitle('vehicle', v.id, exclude)}</div>
+        <div class="dispatch-sel-notes">${_busyWindowsHtml('vehicle', v.id, exclude)}</div>
+      </div>`
+    : `<div class="dispatch-sel-box"><div class="dispatch-sel-empty">🚐 Chưa chọn xe</div></div>`;
+
+  const driverBox = d
+    ? `<div class="dispatch-sel-box filled">
+        <div class="dispatch-sel-head"><span class="driver-avatar">${d.avatar}</span><div><div class="dispatch-sel-name">${d.name}</div><div class="dispatch-sel-meta">${dOp ? dOp.name : 'Cá nhân'} · ⭐ ${d.rating}</div></div></div>
+        <div class="dispatch-sel-notes-title">${_busyNotesTitle('driver', d.id, exclude)}</div>
+        <div class="dispatch-sel-notes">${_busyWindowsHtml('driver', d.id, exclude)}</div>
+      </div>`
+    : `<div class="dispatch-sel-box"><div class="dispatch-sel-empty">🧑‍✈️ Chưa chọn tài xế</div></div>`;
+
+  el.innerHTML = `<div class="dispatch-sel-title">✅ Đã chọn</div><div class="dispatch-sel-grid">${vehicleBox}${driverBox}</div>`;
 }
 
 // Helper validate trước khi gán bất kỳ
@@ -1865,7 +2016,7 @@ function _validateAssign(b) {
 }
 
 function assignDriver() {
-  const driverId = document.getElementById('dispatch-driver-select').value;
+  const driverId = selectedDispatchDriverId;
   if (!driverId || !selectedDispatchBooking) return;
   const b = selectedDispatchBooking;
   if (!_validateAssign(b)) return;
@@ -1898,14 +2049,15 @@ function assignDriver() {
 
   closeModal('dispatch-modal');
   selectedDispatchBooking = null;
+  selectedDispatchDriverId = null;
   renderPage(currentPage);
   updateBadges();
 }
 
 // Intercity: gán xe + tài xế độc lập trong cùng 1 thao tác
 function assignIntercityDispatch() {
-  const vehicleId = document.getElementById('intercity-dispatch-vehicle-select').value;
-  const driverId = document.getElementById('intercity-dispatch-driver-select').value;
+  const vehicleId = selectedIntercityVehicleId;
+  const driverId = selectedIntercityDriverId;
   if (!vehicleId || !driverId) {
     alert('Vui lòng chọn cả xe lẫn tài xế');
     return;
@@ -1973,6 +2125,7 @@ function assignIntercityDispatch() {
   closeModal('intercity-dispatch-modal');
   selectedDispatchBooking = null;
   selectedIntercityVehicleId = null;
+  selectedIntercityDriverId = null;
   renderPage(currentPage);
   updateBadges();
 }
