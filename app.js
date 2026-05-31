@@ -227,6 +227,13 @@ function nowStr() {
   return new Date().toISOString().replace('T', ' ').slice(0, 16);
 }
 
+// Ngày hôm nay dạng YYYY-MM-DD (so sánh hiệu lực mã ưu đãi)
+function TODAY_STR() {
+  const d = new Date();
+  const p = x => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 function genId(prefix, list) {
   let max = 0;
   list.forEach(item => {
@@ -480,7 +487,11 @@ function processPayment(booking, traceId) {
     note: `Thanh toán ${booking.bookingCode}`
   });
   const sysWallet = getSystemHoldingWallet();
-  if (sysWallet) sysWallet.pendingBalance += booking.fareSnapshot;
+  if (sysWallet) {
+    sysWallet.pendingBalance += booking.fareSnapshot;
+    logTx(sysWallet, { direction: 'HOLD', type: 'HOLD', amount: booking.fareSnapshot,
+      refType: 'booking', refId: booking.id, note: `Giữ tiền ${booking.bookingCode} chờ quyết toán` });
+  }
   booking.paymentStatus = 'CONFIRMED';
   createNotification({
     type: 'payment_confirmed', recipient: booking.customerId,
@@ -540,7 +551,11 @@ function refundBooking(booking, reason = 'Khách hủy', traceId) {
     note: `Hoàn tiền ${booking.bookingCode}`
   });
   const sysWallet = getSystemHoldingWallet();
-  if (sysWallet) sysWallet.pendingBalance = Math.max(0, sysWallet.pendingBalance - booking.fareSnapshot);
+  if (sysWallet) {
+    sysWallet.pendingBalance = Math.max(0, sysWallet.pendingBalance - booking.fareSnapshot);
+    logTx(sysWallet, { direction: 'RELEASE', type: 'RELEASE', amount: booking.fareSnapshot,
+      refType: 'booking', refId: booking.id, note: `Nhả tạm giữ ${booking.bookingCode} (huỷ/hoàn)` });
+  }
 
   const refund = {
     id: genId('RF', REFUNDS),
@@ -587,6 +602,8 @@ function completeBookingSettlement(booking, traceId) {
   } else {
     if (sysWallet) {
       sysWallet.pendingBalance = Math.max(0, sysWallet.pendingBalance - booking.fareSnapshot);
+      logTx(sysWallet, { direction: 'RELEASE', type: 'RELEASE', amount: booking.fareSnapshot,
+        refType: 'booking', refId: booking.id, note: `Nhả tạm giữ ${booking.bookingCode} (quyết toán)` });
       createWalletTxn({
         walletId: sysWallet.id, direction: 'DEBIT', type: 'SETTLEMENT',
         amount: earning, referenceType: 'booking', referenceId: booking.id,
@@ -1308,6 +1325,8 @@ function renderIntercityDrivers() {
     <div class="stat-card danger"><div class="stat-card-header"><div class="stat-card-icon danger">⚫</div><span class="stat-card-label">Offline</span></div><div class="stat-card-value">${INTERCITY_DRIVERS.filter(d=>d.status==='offline').length}</div></div>
   `;
 
+  renderDriverApplications('intercity');
+
   const body = document.getElementById('intercity-drivers-table-body');
   if (!body) return;
   body.innerHTML = items.map(d => `
@@ -1324,6 +1343,156 @@ function renderIntercityDrivers() {
       <td><button class="btn btn-sm btn-outline">✏️</button></td>
     </tr>
   `).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy</div></div></td></tr>`;
+}
+
+// ============================================
+// XÉT DUYỆT ĐĂNG KÝ TÀI XẾ (đơn gửi từ app)
+// ============================================
+const APPLY_TYPE_LABELS = { bikecar: '🏍️🚗 Bike/Car', intercity: '🧑‍✈️ Liên tỉnh' };
+
+// Cập nhật nút "Đơn đăng ký mới (N)" trên header — chỉ hiện khi có đơn chờ.
+function renderDriverApplications(applyType) {
+  const btn = document.getElementById(applyType === 'bikecar' ? 'bikecar-app-btn' : 'intercity-app-btn');
+  const countEl = document.getElementById(applyType === 'bikecar' ? 'bikecar-app-count' : 'intercity-app-count');
+  if (!btn || !countEl) return;
+  const n = DRIVER_APPLICATIONS.filter(a => a.applyType === applyType && a.status === 'pending').length;
+  countEl.textContent = n;
+  btn.style.display = n ? '' : 'none';
+  // Nếu modal danh sách đang mở cho đúng loại này → refresh nội dung
+  if (driverAppsOpenType === applyType && document.getElementById('driver-apps-modal').classList.contains('show')) {
+    fillDriverAppsList(applyType);
+  }
+}
+
+let driverAppsOpenType = null;
+
+function fillDriverAppsList(applyType) {
+  const pending = DRIVER_APPLICATIONS.filter(a => a.applyType === applyType && a.status === 'pending');
+  document.getElementById('driver-apps-title').textContent =
+    `📥 Đơn đăng ký ${applyType === 'bikecar' ? 'Bike/Car' : 'Liên tỉnh'} chờ duyệt (${pending.length})`;
+  const body = document.getElementById('driver-apps-list');
+  if (!pending.length) {
+    body.innerHTML = `<div class="odp-empty"><div class="odp-empty-icon">📭</div>Không còn đơn nào chờ duyệt</div>`;
+    return;
+  }
+  body.innerHTML = `<div class="app-list">${pending.map(a => `
+    <div class="app-item">
+      <div class="driver-avatar" style="width:36px;height:36px">${a.avatar || '👤'}</div>
+      <div class="app-item-info">
+        <div class="app-item-name">${esc(a.name)} <span class="text-muted">· ${a.id}</span></div>
+        <div class="app-item-meta">${esc(a.phone)} · ${esc(a.email || '—')} · ${applyType === 'bikecar' ? `${VEHICLE_TYPES[a.vehicleType]?.icon || ''} ${a.plate || ''} · 🪪 ${a.licenseClass}` : `${getPartnerName(a.operatorId)} · 🪪 ${a.licenseClass}`}</div>
+        <div class="app-item-time">⏱ Gửi lúc ${a.submittedAt}</div>
+      </div>
+      <div class="app-item-actions">
+        <button class="btn btn-sm btn-outline" onclick="reviewDriverApplication('${a.id}')">👁️ Xem hồ sơ</button>
+        <button class="btn btn-sm btn-primary" onclick="approveDriverApplication('${a.id}')">✓ Duyệt</button>
+        <button class="btn btn-sm btn-danger" onclick="rejectDriverApplication('${a.id}')">✗ Từ chối</button>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+function openDriverApps(applyType) {
+  driverAppsOpenType = applyType;
+  fillDriverAppsList(applyType);
+  openModal('driver-apps-modal');
+}
+
+function reviewDriverApplication(id) {
+  const a = DRIVER_APPLICATIONS.find(x => x.id === id);
+  if (!a) return;
+  const row = (l, v) => `<div class="odp-cell"><div class="odp-label">${l}</div><div class="odp-value">${v}</div></div>`;
+  const rowSpan = (l, v) => `<div class="odp-cell odp-span"><div class="odp-label">${l}</div><div class="odp-value">${v}</div></div>`;
+  const d = a.documents || {};
+  // 1 ô ảnh
+  const docCell = (label, url) => url
+    ? `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${label}" class="reg-doc-img"></a></div>`
+    : `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><div class="reg-doc-empty">Chưa có ảnh</div></div>`;
+  // 1 mục giấy tờ: tiêu đề + lưới ảnh
+  const docSection = (no, title, cells) =>
+    `<div class="doc-section"><div class="doc-section-title">${no}. ${title}</div><div class="reg-doc-grid">${cells.join('')}</div></div>`;
+
+  document.getElementById('driver-app-title').textContent = `Xét duyệt đăng ký tài xế · ${a.id}`;
+  document.getElementById('driver-app-body').innerHTML = `
+    <div class="doc-section-title" style="margin-top:0">Thông tin liên hệ</div>
+    <div class="odp-grid" style="margin-bottom:6px">
+      ${row('Loại đăng ký', APPLY_TYPE_LABELS[a.applyType] || a.applyType)}
+      ${row('Họ và tên', esc(a.name))}
+      ${row('Số điện thoại', esc(a.phone))}
+      ${row('Email', esc(a.email || '—'))}
+      ${rowSpan('Địa chỉ', esc(a.address || '—'))}
+      ${a.applyType === 'bikecar' ? row('Loại xe', `${VEHICLE_TYPES[a.vehicleType]?.icon || ''} ${VEHICLE_TYPES[a.vehicleType]?.label || a.vehicleType}`) : row('Nhà xe quản lý', getPartnerName(a.operatorId))}
+      ${a.applyType === 'bikecar' ? row('Biển số', esc(a.plate || '—')) : ''}
+      ${row('Hạng GPLX', `🪪 ${a.licenseClass}`)}
+      ${row('Thời gian gửi', a.submittedAt)}
+    </div>
+    <div class="doc-section-title">Giấy tờ cá nhân</div>
+    ${docSection(1, 'Ảnh đại diện', [docCell('Ảnh 3×4', d.avatar)])}
+    ${docSection(2, 'Căn cước công dân / hộ chiếu', [docCell('Mặt trước', d.cccd?.front), docCell('Mặt sau', d.cccd?.back), docCell('Ảnh VNeID', d.cccd?.vnid)])}
+    ${docSection(3, 'Giấy phép lái xe', [docCell('Mặt trước', d.license?.front), docCell('Mặt sau', d.license?.back)])}
+    ${docSection(4, 'Giấy đăng ký xe', [docCell('Mặt trước', d.vehicleReg?.front), docCell('Mặt sau', d.vehicleReg?.back)])}
+    ${docSection(5, 'Giấy khám sức khỏe (có kiểm tra Heroin)', [docCell('Mặt trước', d.health?.front), docCell('Mặt sau', d.health?.back)])}
+    ${docSection(6, 'Lý lịch tư pháp', [docCell('Mặt trước', d.criminal?.front), docCell('Mặt sau', d.criminal?.back)])}
+    ${docSection(7, 'Đăng kiểm xe loại kinh doanh', [docCell('Mặt trước', d.inspection?.front), docCell('Mặt sau', d.inspection?.back)])}
+    ${docSection(8, 'Bảo hiểm bắt buộc TNDS', [docCell('Mặt trước', d.insurance?.front), docCell('Mặt sau', d.insurance?.back)])}
+    ${docSection(9, 'Hình ảnh xe hiện tại', [docCell('Phía trước', d.vehiclePhotos?.front), docCell('Phía sau', d.vehiclePhotos?.rear), docCell('Bên phải', d.vehiclePhotos?.right), docCell('Bên trái', d.vehiclePhotos?.left), docCell('Nội thất', d.vehiclePhotos?.interior), docCell('Đồng hồ đo km (Odo)', d.vehiclePhotos?.odometer)])}
+    ${docSection(10, 'Phù hiệu xe hợp đồng', [docCell('Mặt trước', d.badge?.front), docCell('Mặt sau', d.badge?.back)])}
+  `;
+  document.getElementById('driver-app-footer').innerHTML = `
+    <button class="btn btn-danger" onclick="rejectDriverApplication('${a.id}', true)">✗ Từ chối</button>
+    <button class="btn btn-primary" onclick="approveDriverApplication('${a.id}', true)">✓ Duyệt đăng ký</button>
+  `;
+  openModal('driver-app-modal');
+}
+
+function nextDriverId(prefix, arr) {
+  let n = 1;
+  while (arr.some(d => d.id === prefix + String(n).padStart(3, '0'))) n++;
+  return prefix + String(n).padStart(3, '0');
+}
+
+function approveDriverApplication(id, fromModal) {
+  const a = DRIVER_APPLICATIONS.find(x => x.id === id);
+  if (!a || a.status !== 'pending') return;
+  if (!confirm(`Duyệt đăng ký tài xế "${a.name}"?\nHệ thống sẽ gửi email + thông báo về app cho tài xế.`)) return;
+
+  let newId;
+  if (a.applyType === 'bikecar') {
+    newId = nextDriverId('DRV', DRIVERS);
+    DRIVERS.push({
+      id: newId, name: a.name, phone: a.phone, vehicleType: a.vehicleType, plate: a.plate,
+      status: 'offline', operatorId: null, rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null
+    });
+  } else {
+    newId = nextDriverId('IDR', INTERCITY_DRIVERS);
+    INTERCITY_DRIVERS.push({
+      id: newId, name: a.name, phone: a.phone, operatorId: a.operatorId, licenseClass: a.licenseClass,
+      status: 'offline', rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null
+    });
+  }
+  a.status = 'approved';
+  a.approvedDriverId = newId;
+
+  closeModal('driver-app-modal');
+  renderDriverApplications(a.applyType);
+  if (a.applyType === 'bikecar') renderDrivers(); else renderIntercityDrivers();
+
+  alert(`✅ Đã duyệt đăng ký tài xế "${a.name}".\n\n` +
+    `• Tạo hồ sơ tài xế ${newId} vào danh sách ${a.applyType === 'bikecar' ? 'Bike/Car' : 'Liên tỉnh'}.\n` +
+    `• 📧 Email xác nhận đã gửi tới ${a.email || '(không có email)'}.\n` +
+    `• 📱 Thông báo "Đăng ký tài xế thành công" đã gửi về app.`);
+}
+
+function rejectDriverApplication(id, fromModal) {
+  const a = DRIVER_APPLICATIONS.find(x => x.id === id);
+  if (!a || a.status !== 'pending') return;
+  const reason = prompt(`Từ chối đăng ký tài xế "${a.name}".\nNhập lý do (gửi về app + email cho tài xế):`, '');
+  if (reason === null) return;
+  a.status = 'rejected';
+  a.rejectReason = reason;
+
+  closeModal('driver-app-modal');
+  renderDriverApplications(a.applyType);
+  alert(`Đã từ chối đăng ký "${a.name}".\n📧 Email + 📱 thông báo lý do đã gửi cho tài xế.`);
 }
 
 // ---- Xe liên tỉnh ----
@@ -1386,6 +1555,8 @@ function renderDrivers() {
     <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon warning">🚗</div><span class="stat-card-label">Đang chạy</span></div><div class="stat-card-value">${DRIVERS.filter(d=>d.status==='busy').length}</div></div>
     <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon danger">⚫</div><span class="stat-card-label">Offline</span></div><div class="stat-card-value">${DRIVERS.filter(d=>d.status==='offline').length}</div></div>
   `;
+  renderDriverApplications('bikecar');
+
   document.getElementById('drivers-table-body').innerHTML = drivers.map(d => `<tr>
     <td><span class="text-accent fw-600">${d.id}</span></td>
     <td><div class="flex-center"><div class="driver-avatar" style="width:28px;height:28px;font-size:14px">${d.avatar}</div><span class="fw-600">${d.name}</span></div></td>
@@ -2141,46 +2312,290 @@ function releaseVehicle(vehicleId) {
 // ============================================
 // WALLETS
 // ============================================
+const OWNER_TYPE_META = {
+  CUSTOMER: { label: 'Khách hàng', icon: '👤' },
+  DRIVER:   { label: 'Tài xế',     icon: '🧑‍✈️' },
+  PARTNER:  { label: 'Đối tác',    icon: '🤝' },
+  SYSTEM:   { label: 'Hệ thống',   icon: '🖥️' },
+};
+let selectedWalletId = null;
+let txDirFilter = '';
+
 function renderWallets() {
   let wallets = [...WALLETS];
   const tf = document.getElementById('wallet-type-filter')?.value;
   if (tf) wallets = wallets.filter(w => w.ownerType === tf);
   const search = document.getElementById('wallet-search')?.value?.toLowerCase();
-  if (search) wallets = wallets.filter(w => w.ownerName.toLowerCase().includes(search));
+  if (search) wallets = wallets.filter(w =>
+    w.ownerName.toLowerCase().includes(search) || w.id.toLowerCase().includes(search));
 
+  // Tổng quan
   const total = WALLETS.reduce((s,w) => s + w.balance, 0);
   const pending = WALLETS.reduce((s,w) => s + w.pendingBalance, 0);
+  const active = WALLETS.filter(w => w.status === 'ACTIVE').length;
   document.getElementById('wallet-stats').innerHTML = `
     <div class="stat-card accent"><div class="stat-card-header"><div class="stat-card-icon accent">💰</div><span class="stat-card-label">Tổng số dư</span></div><div class="stat-card-value">${fmt(total)}</div></div>
+    <div class="stat-card success"><div class="stat-card-header"><div class="stat-card-icon success">✅</div><span class="stat-card-label">Khả dụng</span></div><div class="stat-card-value">${fmt(total - pending)}</div></div>
     <div class="stat-card warning"><div class="stat-card-header"><div class="stat-card-icon warning">🔒</div><span class="stat-card-label">Tạm giữ</span></div><div class="stat-card-value">${fmt(pending)}</div></div>
-    <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon success">📊</div><span class="stat-card-label">Tổng ví</span></div><div class="stat-card-value">${WALLETS.length}</div></div>
+    <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon info">📊</div><span class="stat-card-label">Ví hoạt động</span></div><div class="stat-card-value">${active}/${WALLETS.length}</div></div>
   `;
 
-  const ownerTypeLabels = { CUSTOMER: '👤 Khách hàng', DRIVER: '🧑‍✈️ Tài xế', PARTNER: '🤝 Đối tác', SYSTEM: '🖥️ Hệ thống' };
-  document.getElementById('wallets-table-body').innerHTML = wallets.map(w => `<tr>
-    <td><span class="text-accent fw-600">${w.id}</span></td><td class="fw-600">${w.ownerName}</td>
-    <td><span class="badge badge-accepted">${ownerTypeLabels[w.ownerType]||w.ownerType}</span></td>
-    <td><span class="badge ${w.walletType==='MAIN'?'badge-accepted':w.walletType==='BONUS'?'badge-pending':'badge-picking'}">${WALLET_TYPES[w.walletType]?.icon||''} ${WALLET_TYPES[w.walletType]?.label||w.walletType}</span></td>
-    <td class="fw-700 ${w.balance>0?'text-success':'text-muted'}">${fmt(w.balance)}</td>
-    <td class="${w.pendingBalance>0?'text-warning':'text-muted'}">${fmt(w.pendingBalance)}</td>
-    <td><span class="badge ${WALLET_STATUS[w.status]?.class||'badge-expired'}">${WALLET_STATUS[w.status]?.label||w.status}</span></td>
-    <td><div class="flex-center"><button class="btn btn-sm btn-outline">💳 Nạp</button><button class="btn-icon">📋</button></div></td>
-  </tr>`).join('');
+  // Danh sách ví (item bấm chọn)
+  document.getElementById('wallet-list').innerHTML = wallets.map(w => {
+    const om = OWNER_TYPE_META[w.ownerType] || { label: w.ownerType, icon: '💼' };
+    const st = WALLET_STATUS[w.status] || { label: w.status, class: 'badge-expired' };
+    return `<div class="wallet-item ${selectedWalletId === w.id ? 'active' : ''}" onclick="selectWallet('${w.id}')">
+      <div class="wallet-item-avatar">${om.icon}</div>
+      <div class="wallet-item-main">
+        <div class="wallet-item-name">${esc(w.ownerName)}</div>
+        <div class="wallet-item-sub">${w.id} · ${WALLET_TYPES[w.walletType]?.icon||''} ${WALLET_TYPES[w.walletType]?.label||w.walletType}</div>
+      </div>
+      <div class="wallet-item-right">
+        <div class="wallet-item-balance ${w.balance>0?'text-success':'text-muted'}">${fmt(w.balance)}</div>
+        <span class="badge ${st.class}" style="font-size:10px">${st.label}</span>
+      </div>
+    </div>`;
+  }).join('') || `<div class="odp-empty"><div class="odp-empty-icon">🔍</div>Không tìm thấy ví</div>`;
 
-  document.getElementById('transactions-table-body').innerHTML = WALLET_TRANSACTIONS.map(tx => {
-    const t = TRANSACTION_TYPES[tx.type] || { label: tx.type, class: '' };
-    const w = WALLETS.find(w => w.id === tx.walletId);
-    return `<tr>
-      <td class="text-muted">${tx.id}</td><td class="fw-600">${w?w.ownerName:tx.walletId}</td>
-      <td><span class="badge ${tx.direction==='CREDIT'?'badge-completed':'badge-cancelled'}">${tx.direction==='CREDIT'?'↑ CREDIT':'↓ DEBIT'}</span></td>
-      <td>${t.label}</td>
-      <td class="fw-700 ${tx.direction==='CREDIT'?'text-success':'text-danger'}">${tx.direction==='CREDIT'?'+':'−'}${fmt(tx.amount)}</td>
-      <td>${fmt(tx.balance)}</td>
-      <td class="text-muted" style="font-family:monospace;font-size:11px">${tx.referenceType}:${tx.referenceId}</td>
-      <td><span class="badge badge-${tx.status==='SUCCESS'?'completed':tx.status==='PENDING'?'pending':'cancelled'}">${tx.status}</span></td>
-      <td class="text-muted">${tx.createdAt}</td>
-    </tr>`;
-  }).join('');
+  renderWalletDetail(selectedWalletId);
+}
+
+function selectWallet(id) {
+  selectedWalletId = (selectedWalletId === id) ? null : id;
+  txDirFilter = '';
+  renderWallets();
+}
+
+// Một dòng giao dịch trong bảng chi tiết
+function walletTxRow(tx, showOwner) {
+  const t = TRANSACTION_TYPES[tx.type] || { label: tx.type };
+  const w = WALLETS.find(w => w.id === tx.walletId);
+  // HOLD/RELEASE chỉ ảnh hưởng tạm giữ, không đổi số dư → hiển thị trung tính
+  let amtCls = 'text-muted', sign = '', col = fmt(tx.amount);
+  if (tx.direction === 'CREDIT') { amtCls = 'text-success'; sign = '+'; }
+  else if (tx.direction === 'DEBIT') { amtCls = 'text-danger'; sign = '−'; }
+  else if (tx.direction === 'HOLD') { amtCls = 'text-warning'; sign = '🔒 '; }
+  else if (tx.direction === 'RELEASE') { amtCls = 'text-accent'; sign = '🔓 '; }
+  return `<tr>
+    <td class="text-muted" style="white-space:nowrap">${tx.createdAt}</td>
+    ${showOwner ? `<td class="fw-600">${esc(w ? w.ownerName : tx.walletId)}</td>` : ''}
+    <td>${t.label}<div class="text-muted" style="font-size:11px;font-family:monospace">${tx.referenceType}:${tx.referenceId}</div></td>
+    <td class="fw-700 ${amtCls}" style="white-space:nowrap">${sign}${col}</td>
+    <td style="white-space:nowrap">${fmt(tx.balance)}</td>
+    <td><span class="badge badge-${tx.status==='SUCCESS'?'completed':tx.status==='PENDING'?'pending':'cancelled'}">${tx.status}</span></td>
+  </tr>`;
+}
+
+function walletTxTable(list, showOwner) {
+  if (!list.length) return `<div class="odp-empty" style="padding:32px"><div class="odp-empty-icon">🧾</div>Chưa có giao dịch</div>`;
+  return `<div class="table-wrapper"><table class="wallet-tx-table">
+    <thead><tr><th>Thời gian</th>${showOwner?'<th>Chủ ví</th>':''}<th>Loại</th><th>Số tiền</th><th>Số dư</th><th>Trạng thái</th></tr></thead>
+    <tbody>${list.map(tx => walletTxRow(tx, showOwner)).join('')}</tbody>
+  </table></div>`;
+}
+
+function renderWalletDetail(id) {
+  const pane = document.getElementById('wallet-detail');
+  if (!pane) return;
+  const sorted = arr => [...arr].sort((a,b) => (a.createdAt < b.createdAt ? 1 : -1));
+  const dirSel = `<select class="input" style="height:32px;width:auto" onchange="txDirFilter=this.value;renderWalletDetail(selectedWalletId)">
+      <option value="" ${txDirFilter===''?'selected':''}>Tất cả</option>
+      <option value="CREDIT" ${txDirFilter==='CREDIT'?'selected':''}>↑ Tiền vào</option>
+      <option value="DEBIT" ${txDirFilter==='DEBIT'?'selected':''}>↓ Tiền ra</option>
+    </select>`;
+
+  // Chưa chọn ví → feed toàn bộ giao dịch
+  if (!id) {
+    let txs = sorted(WALLET_TRANSACTIONS);
+    if (txDirFilter) txs = txs.filter(t => t.direction === txDirFilter);
+    pane.innerHTML = `
+      <div class="wallet-detail-head">
+        <div><div class="wallet-detail-title">🧾 Tất cả giao dịch gần đây</div>
+        <div class="text-muted" style="font-size:12px">Chọn một ví bên trái để xem chi tiết & lịch sử riêng</div></div>
+        <div>${dirSel}</div>
+      </div>
+      ${walletTxTable(txs.slice(0, 50), true)}`;
+    return;
+  }
+
+  const w = WALLETS.find(x => x.id === id);
+  if (!w) { selectedWalletId = null; renderWalletDetail(null); return; }
+  const om = OWNER_TYPE_META[w.ownerType] || { label: w.ownerType, icon: '💼' };
+  const st = WALLET_STATUS[w.status] || { label: w.status, class: 'badge-expired' };
+  let txs = sorted(WALLET_TRANSACTIONS.filter(t => t.walletId === id));
+  if (txDirFilter) txs = txs.filter(t => t.direction === txDirFilter);
+  const locked = w.status === 'LOCKED';
+
+  pane.innerHTML = `
+    <div class="wallet-detail-head">
+      <div class="wallet-detail-owner">
+        <div class="wallet-item-avatar lg">${om.icon}</div>
+        <div>
+          <div class="wallet-detail-title">${esc(w.ownerName)}</div>
+          <div class="text-muted" style="font-size:12px">${w.id} · ${om.label} · ${WALLET_TYPES[w.walletType]?.icon||''} ${WALLET_TYPES[w.walletType]?.label||w.walletType}</div>
+        </div>
+      </div>
+      <span class="badge ${st.class}">${st.label}</span>
+    </div>
+
+    <div class="wallet-balance-tiles">
+      <div class="wallet-balance-tile"><div class="wbt-label">Số dư</div><div class="wbt-value text-success">${fmt(w.balance)}</div></div>
+      <div class="wallet-balance-tile"><div class="wbt-label">Khả dụng</div><div class="wbt-value">${fmt(w.balance - w.pendingBalance)}</div></div>
+      <div class="wallet-balance-tile"><div class="wbt-label">Tạm giữ</div><div class="wbt-value text-warning">${fmt(w.pendingBalance)}</div></div>
+    </div>
+
+    <div class="wallet-detail-actions">
+      <button class="btn btn-sm btn-primary" onclick="topupWallet('${w.id}')" ${locked?'disabled':''}>💳 Nạp tiền</button>
+      <button class="btn btn-sm btn-outline" onclick="adjustWallet('${w.id}')" ${locked?'disabled':''}>🔧 Điều chỉnh</button>
+      <button class="btn btn-sm btn-outline" onclick="toggleWalletLock('${w.id}')" style="color:${locked?'var(--success)':'var(--danger)'}">${locked?'🔓 Mở khóa':'🔒 Khóa ví'}</button>
+      ${w.ownerType === 'DRIVER' ? `<button class="btn btn-sm btn-outline" onclick="openCashSettle('${w.id}')" ${locked?'disabled':''}>🚌 Quyết toán chuyến tiền mặt</button>` : ''}
+    </div>
+
+    <div class="wallet-detail-head" style="margin-top:6px">
+      <div class="wallet-detail-title" style="font-size:14px">Lịch sử giao dịch <span class="text-muted">(${txs.length})</span></div>
+      <div>${dirSel}</div>
+    </div>
+    ${walletTxTable(txs, false)}`;
+}
+
+function nextTxId() {
+  const max = WALLET_TRANSACTIONS.reduce((m,t) => Math.max(m, parseInt(t.id.replace(/\D/g,''),10)||0), 0);
+  return 'TXN' + String(max + 1).padStart(3, '0');
+}
+
+function addWalletTx(w, direction, type, amount, note) {
+  w.balance += (direction === 'CREDIT' ? amount : -amount);
+  WALLET_TRANSACTIONS.push({
+    id: nextTxId(), walletId: w.id, direction, type, amount: Math.abs(amount),
+    balance: w.balance, referenceType: 'manual', referenceId: 'CMS', status: 'SUCCESS',
+    note: note || '', createdAt: nowStr()
+  });
+}
+
+function topupWallet(id) {
+  const w = WALLETS.find(x => x.id === id); if (!w) return;
+  const v = parseInt(prompt(`Nạp tiền vào ví ${w.ownerName} (đ):`, '100000'), 10);
+  if (!v || v <= 0) return;
+  addWalletTx(w, 'CREDIT', 'TOPUP', v, 'Nạp tay từ CMS');
+  renderWallets();
+}
+
+function adjustWallet(id) {
+  const w = WALLETS.find(x => x.id === id); if (!w) return;
+  const v = parseInt(prompt(`Điều chỉnh số dư ví ${w.ownerName} (đ — số âm để trừ):`, '0'), 10);
+  if (!v) return;
+  if (w.balance + v < 0) { alert('Số dư không đủ để trừ.'); return; }
+  addWalletTx(w, v > 0 ? 'CREDIT' : 'DEBIT', 'ADJUSTMENT', v, 'Điều chỉnh tay từ CMS');
+  renderWallets();
+}
+
+function toggleWalletLock(id) {
+  const w = WALLETS.find(x => x.id === id); if (!w) return;
+  if (w.status === 'LOCKED') { w.status = 'ACTIVE'; }
+  else {
+    if (!confirm(`Khóa ví ${w.ownerName}? Ví bị khóa sẽ không nạp/điều chỉnh được.`)) return;
+    w.status = 'LOCKED';
+  }
+  renderWallets();
+}
+
+// Ghi 1 bút toán ví (linh hoạt: có thể đổi balance và/hoặc pending)
+function logTx(w, { direction, type, amount, note, refType = 'trip', refId = '', balanceDelta = 0, pendingDelta = 0 }) {
+  if (balanceDelta) w.balance += balanceDelta;
+  if (pendingDelta) w.pendingBalance = Math.max(0, w.pendingBalance + pendingDelta);
+  WALLET_TRANSACTIONS.push({
+    id: nextTxId(), walletId: w.id, direction, type, amount: Math.abs(amount),
+    balance: w.balance, referenceType: refType, referenceId: refId,
+    status: 'SUCCESS', note: note || '', createdAt: nowStr()
+  });
+}
+
+// ===== Quyết toán chuyến liên tỉnh TIỀN MẶT (tạm giữ + xử lý khách vắng) =====
+let cashTrip = null; // { walletId, seats, price, rate, held, tripId }
+
+function openCashSettle(walletId) {
+  const w = WALLETS.find(x => x.id === walletId);
+  if (!w || w.ownerType !== 'DRIVER') { alert('Chỉ áp dụng cho ví tài xế.'); return; }
+  cashTrip = { walletId, seats: 5, price: 200000, rate: 10, held: false, noShow: [], tripId: 'TRIP-' + Date.now().toString().slice(-5) };
+  renderCashSettle();
+  openModal('cash-settle-modal');
+}
+
+// Tick/bỏ tick 1 khách không lên xe (lưu vào state, không đọc DOM)
+function toggleCashNoShow(i) {
+  cashTrip.noShow[i] = !cashTrip.noShow[i];
+  renderCashSettle();
+}
+
+// Tính các bút toán theo số khách vắng đã lưu trong state
+function cashSettleCalc() {
+  const noShow = cashTrip.noShow.slice(0, cashTrip.seats).filter(Boolean).length;
+  const boarded = cashTrip.seats - noShow;
+  const bookedFare = cashTrip.seats * cashTrip.price;
+  const refund = noShow * cashTrip.price;
+  const commission = Math.round(boarded * cashTrip.price * cashTrip.rate / 100);
+  const finalDebit = boarded * cashTrip.price * (1 + cashTrip.rate / 100); // = bookedFare - refund + commission
+  return { noShow, boarded, bookedFare, refund, commission, finalDebit };
+}
+
+function renderCashSettle() {
+  const w = WALLETS.find(x => x.id === cashTrip.walletId);
+  const c = cashSettleCalc();
+  document.getElementById('cash-settle-title').textContent = `🚌 Quyết toán chuyến tiền mặt · ${w.ownerName}`;
+  const seatRows = Array.from({ length: cashTrip.seats }, (_, i) => `
+    <label class="cash-seat"><input type="checkbox" class="cash-noshow" ${cashTrip.noShow[i] ? 'checked' : ''} onchange="toggleCashNoShow(${i})"> Khách ${i + 1} <span class="text-muted">(${fmt(cashTrip.price)})</span> — <span class="cash-seat-state">${cashTrip.noShow[i] ? '⛔ không lên xe' : 'không lên xe'}</span></label>
+  `).join('');
+  document.getElementById('cash-settle-body').innerHTML = `
+    <div class="form-grid" style="margin-bottom:12px">
+      <div class="input-group"><label>Số ghế đặt</label><input type="number" id="cash-seats" class="input" value="${cashTrip.seats}" min="1" max="45" onchange="cashTrip.seats=Math.max(1,parseInt(this.value)||1);cashTrip.noShow=[];cashTrip.held=false;renderCashSettle()"></div>
+      <div class="input-group"><label>Giá / ghế (đ)</label><input type="number" id="cash-price" class="input" value="${cashTrip.price}" min="0" onchange="cashTrip.price=parseInt(this.value)||0;cashTrip.held=false;renderCashSettle()"></div>
+      <div class="input-group"><label>Phí hệ thống (%)</label><input type="number" id="cash-rate" class="input" value="${cashTrip.rate}" min="0" max="100" onchange="cashTrip.rate=parseInt(this.value)||0;renderCashSettle()"></div>
+    </div>
+    <div class="doc-section-title" style="margin-top:0">Tích khách KHÔNG lên xe</div>
+    <div class="cash-seats">${seatRows}</div>
+    <div class="cash-calc">
+      <div class="apply-rowx"><span>🔒 Tạm giữ khi nhận chuyến (${cashTrip.seats}×${fmt(cashTrip.price)})</span><b>${fmt(c.bookedFare)}</b></div>
+      <div class="apply-rowx"><span>🔓 Trừ tạm giữ ban đầu khi hoàn tất</span><b class="text-danger">− ${fmt(c.bookedFare)}</b></div>
+      <div class="apply-rowx"><span>↩️ Hoàn ${c.noShow} khách không lên xe</span><b class="text-success">+ ${fmt(c.refund)}</b></div>
+      <div class="apply-rowx"><span>🏢 Phí hệ thống ${cashTrip.rate}% × ${c.boarded} khách lên xe</span><b class="text-danger">− ${fmt(c.commission)}</b></div>
+      <div class="apply-rowx total"><span>Trừ ví thực tế (${c.boarded} khách)</span><b>− ${fmt(c.finalDebit)}</b></div>
+      <div class="text-muted" style="font-size:12px;margin-top:6px">Tài xế thu tiền mặt ${fmt(c.boarded * cashTrip.price)} · thực nhận ròng ${fmt(c.boarded * cashTrip.price - c.commission)}</div>
+    </div>
+  `;
+  document.getElementById('cash-settle-footer').innerHTML = `
+    <button class="btn btn-outline" onclick="closeModal('cash-settle-modal')">Đóng</button>
+    <button class="btn ${cashTrip.held ? 'btn-outline' : 'btn-primary'}" onclick="cashHold()" ${cashTrip.held ? 'disabled' : ''}>1️⃣ Nhận chuyến (tạm giữ ${fmt(c.bookedFare)})</button>
+    <button class="btn btn-primary" onclick="cashFinalize()" ${cashTrip.held ? '' : 'disabled'}>2️⃣ Hoàn tất & quyết toán</button>
+  `;
+}
+
+function cashHold() {
+  const w = WALLETS.find(x => x.id === cashTrip.walletId);
+  const c = cashSettleCalc();
+  logTx(w, { direction: 'HOLD', type: 'HOLD', amount: c.bookedFare, pendingDelta: c.bookedFare,
+    note: `Tạm giữ 100% khi nhận chuyến (${cashTrip.seats} ghế)`, refId: cashTrip.tripId });
+  cashTrip.held = true;
+  renderCashSettle();
+  renderWallets();
+}
+
+function cashFinalize() {
+  const w = WALLETS.find(x => x.id === cashTrip.walletId);
+  const c = cashSettleCalc();
+  // 1) Nhả tạm giữ + trừ phần giữ ban đầu vào số dư
+  logTx(w, { direction: 'RELEASE', type: 'RELEASE', amount: c.bookedFare, pendingDelta: -c.bookedFare, balanceDelta: -c.bookedFare,
+    note: 'Hoàn tất chuyến — trừ tạm giữ ban đầu', refId: cashTrip.tripId });
+  // 2) Hoàn lại khách không lên xe
+  if (c.refund) logTx(w, { direction: 'CREDIT', type: 'REFUND', amount: c.refund, balanceDelta: c.refund,
+    note: `Hoàn ${c.noShow} khách không lên xe`, refId: cashTrip.tripId });
+  // 3) Phí hệ thống trên khách lên xe
+  if (c.commission) logTx(w, { direction: 'DEBIT', type: 'COMMISSION', amount: c.commission, balanceDelta: -c.commission,
+    note: `Phí hệ thống ${cashTrip.rate}% × ${c.boarded} khách`, refId: cashTrip.tripId });
+  closeModal('cash-settle-modal');
+  selectedWalletId = cashTrip.walletId;
+  cashTrip = null;
+  renderWallets();
+  alert(`✅ Đã quyết toán chuyến.\nTrừ ví thực tế: ${fmt(c.finalDebit)} (${c.boarded} khách lên xe).`);
 }
 
 // ============================================
@@ -2224,23 +2639,227 @@ function renderPromos() {
     <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon success">✅</div><span class="stat-card-label">Đang hoạt động</span></div><div class="stat-card-value">${active.length}</div></div>
     <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon warning">📊</div><span class="stat-card-label">Lượt sử dụng</span></div><div class="stat-card-value">${totalUsed.toLocaleString()}</div></div>
   `;
-  const statusMap = { active: 'badge-active', expired: 'badge-expired', scheduled: 'badge-scheduled' };
-  const statusLabel = { active: '✅ Hoạt động', expired: '⛔ Hết hạn', scheduled: '📅 Lên lịch' };
+  const statusMap = { active: 'badge-active', expired: 'badge-expired', scheduled: 'badge-scheduled', paused: 'badge-pending' };
+  const statusLabel = { active: '✅ Hoạt động', expired: '⛔ Hết hạn', scheduled: '📅 Lên lịch', paused: '⏸️ Tạm dừng' };
   document.getElementById('promos-table-body').innerHTML = PROMOS.map(p => {
     const pct = Math.round((p.used/p.usageLimit)*100);
+    const aud = PROMO_AUDIENCE[p.audience || 'all'] || PROMO_AUDIENCE.all;
+    const audExtra = p.audience === 'manual' ? ` (${(p.targetCustomers||[]).length} KH)` : '';
+    const perUser = p.perUserLimit ? `${p.perUserLimit} lần` : 'Không giới hạn';
     return `<tr>
-      <td><span class="text-accent fw-700" style="font-family:monospace">${p.code}</span></td>
+      <td><span class="text-accent fw-700" style="font-family:monospace">${p.code}</span>${p.firstOrderOnly?'<br><span class="text-muted" style="font-size:11px">🥇 Đơn đầu tiên</span>':''}</td>
+      <td><span class="badge ${aud.class}">${aud.icon} ${aud.label}${audExtra}</span></td>
       <td>${p.type==='percent'?'📊 %':'💵 Cố định'}</td>
       <td class="fw-600">${p.type==='percent'?p.value+'%':fmt(p.value)}</td>
       <td>${fmt(p.maxDiscount)}</td>
       <td>${fmt(p.minOrder)}</td>
-      <td>${p.vehicleTypes.map(v=>VEHICLE_TYPES[v]?.icon||'').join(' ')}</td>
-      <td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border-color);border-radius:4px;min-width:60px"><div style="height:100%;width:${pct}%;background:${pct>=90?'var(--danger)':'var(--accent)'};border-radius:4px"></div></div><span class="text-muted" style="font-size:11px">${p.used}/${p.usageLimit}</span></div></td>
+      <td class="fw-600">${perUser}</td>
+      <td>${p.vehicleTypes.map(v=>`<span title="${VEHICLE_TYPES[v]?.label||v}">${VEHICLE_TYPES[v]?.icon||''}</span>`).join(' ')}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:4px;background:var(--border-color);border-radius:4px;min-width:60px"><div style="height:100%;width:${pct}%;background:${pct>=90?'var(--danger)':'var(--accent)'};border-radius:4px"></div></div><span class="text-muted" style="font-size:11px">${p.used.toLocaleString()}/${p.usageLimit.toLocaleString()}</span></div></td>
       <td class="text-muted" style="font-size:12px">${p.startDate}<br>${p.endDate}</td>
       <td><span class="badge ${statusMap[p.status]||''}">${statusLabel[p.status]||p.status}</span></td>
-      <td><div class="flex-center"><button class="btn-icon">✏️</button>${p.status==='active'?'<button class="btn-icon" style="color:var(--danger)">⛔</button>':''}</div></td>
+      <td><div class="flex-center"><button class="btn-icon" title="Chỉnh sửa" onclick="openPromoEdit('${p.id}')">✏️</button>${p.status==='active'?`<button class="btn-icon" title="Tạm dừng" style="color:var(--danger)" onclick="togglePromoStatus('${p.id}')">⛔</button>`:''}${p.status==='paused'?`<button class="btn-icon" title="Kích hoạt lại" style="color:var(--success)" onclick="togglePromoStatus('${p.id}')">▶️</button>`:''}</div></td>
     </tr>`;
   }).join('');
+}
+
+let editingPromoId = null;
+
+// Đổ dữ liệu 1 mã vào form (null = form trống để tạo mới)
+function fillPromoForm(p) {
+  document.getElementById('promo-code').value = p?.code || '';
+  document.getElementById('promo-audience').value = p?.audience || 'all';
+  document.getElementById('promo-type').value = p?.type || 'percent';
+  document.getElementById('promo-value').value = p?.value ?? '';
+  document.getElementById('promo-max').value = p?.maxDiscount ?? '';
+  document.getElementById('promo-min').value = p?.minOrder ?? '';
+  document.getElementById('promo-limit').value = p?.usageLimit ?? '';
+  document.getElementById('promo-peruser').value = p?.perUserLimit ?? '';
+  document.getElementById('promo-start').value = p?.startDate || '';
+  document.getElementById('promo-end').value = p?.endDate || '';
+  document.getElementById('promo-firstorder').checked = !!p?.firstOrderOnly;
+  // Nạp danh sách khách được chỉ định (gắn nhãn từ CUSTOMERS nếu khớp)
+  promoTargets = (p?.targetCustomers || []).map(v => ({ value: v, label: labelForCustomer(v) }));
+  document.getElementById('promo-target-search').value = '';
+  hidePromoTargetDropdown();
+  renderPromoTargetChips();
+  const vts = p?.vehicleTypes || [];
+  document.querySelectorAll('.promo-vt').forEach(c => { c.checked = vts.includes(c.value); });
+  onPromoAudienceChange();
+}
+
+// Ẩn/hiện ô danh sách khách khi đối tượng = "Chỉ định thủ công"
+function onPromoAudienceChange() {
+  const manual = document.getElementById('promo-audience').value === 'manual';
+  document.getElementById('promo-targets-group').style.display = manual ? '' : 'none';
+}
+
+// ---- Bộ chọn khách cho mã "Chỉ định thủ công" (search → chọn → search tiếp) ----
+let promoTargets = []; // [{ value, label }]
+
+// Tìm nhãn hiển thị cho 1 giá trị (id/SĐT) dựa trên CUSTOMERS
+function labelForCustomer(v) {
+  const c = CUSTOMERS.find(c => c.id === v || c.phone === v);
+  return c ? `${c.name} · ${c.phone}` : v;
+}
+
+function renderPromoTargetChips() {
+  const box = document.getElementById('promo-target-chips');
+  const cnt = document.getElementById('promo-target-count');
+  if (cnt) cnt.textContent = promoTargets.length ? `(${promoTargets.length} khách)` : '';
+  if (!box) return;
+  box.innerHTML = promoTargets.map(t =>
+    `<span class="target-chip">${esc(t.label)}<button type="button" class="target-chip-x" onclick="removePromoTarget('${esc(t.value)}')">✕</button></span>`
+  ).join('') || `<span class="text-muted" style="font-size:12px">Chưa chọn khách nào</span>`;
+}
+
+function promoTargetSearch() {
+  const q = document.getElementById('promo-target-search').value.trim().toLowerCase();
+  const dd = document.getElementById('promo-target-dropdown');
+  const chosen = new Set(promoTargets.map(t => t.value));
+  let list = CUSTOMERS.filter(c => !chosen.has(c.id) && !chosen.has(c.phone));
+  if (q) list = list.filter(c =>
+    c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.id.toLowerCase().includes(q));
+  list = list.slice(0, 8);
+  if (!list.length) {
+    dd.innerHTML = `<div class="target-opt muted">Không tìm thấy khách phù hợp</div>`;
+  } else {
+    dd.innerHTML = list.map(c =>
+      `<div class="target-opt" onmousedown="addPromoTarget('${c.id}')"><b>${esc(c.name)}</b><span class="text-muted"> · ${c.phone} · ${c.id}</span></div>`
+    ).join('');
+  }
+  dd.style.display = 'block';
+}
+
+function hidePromoTargetDropdown() {
+  const dd = document.getElementById('promo-target-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+
+function addPromoTarget(value, label) {
+  if (!promoTargets.some(t => t.value === value)) {
+    promoTargets.push({ value, label: label || labelForCustomer(value) });
+    renderPromoTargetChips();
+  }
+  const s = document.getElementById('promo-target-search');
+  s.value = '';
+  promoTargetSearch();
+  s.focus();
+}
+
+function removePromoTarget(value) {
+  promoTargets = promoTargets.filter(t => t.value !== value);
+  renderPromoTargetChips();
+}
+
+// Import file .csv/.txt: mỗi token (xuống dòng / phẩy / ;) là 1 SĐT hoặc mã KH
+function importPromoTargets(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const tokens = String(e.target.result).split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    let added = 0, dup = 0;
+    tokens.forEach(tok => {
+      // bỏ tiền tố cột nếu là header kiểu "phone"/"id"
+      if (/^(phone|sdt|số điện thoại|id|ma kh|mã kh|name|tên)$/i.test(tok)) return;
+      const c = CUSTOMERS.find(c => c.phone === tok || c.id === tok || c.name.toLowerCase() === tok.toLowerCase());
+      const value = c ? c.id : tok;
+      if (promoTargets.some(t => t.value === value)) { dup++; return; }
+      promoTargets.push({ value, label: c ? `${c.name} · ${c.phone}` : tok });
+      added++;
+    });
+    renderPromoTargetChips();
+    input.value = '';
+    alert(`Đã import: +${added} khách${dup ? `, bỏ ${dup} trùng` : ''}.\nTổng hiện tại: ${promoTargets.length} khách.`);
+  };
+  reader.readAsText(file);
+}
+
+function openPromoCreate() {
+  editingPromoId = null;
+  fillPromoForm(null);
+  document.getElementById('promo-modal-title').textContent = 'Tạo mã ưu đãi mới';
+  document.getElementById('promo-save-btn').textContent = 'Tạo mã';
+  document.getElementById('promo-code').disabled = false;
+  openModal('promo-modal');
+}
+
+function openPromoEdit(id) {
+  const p = PROMOS.find(x => x.id === id);
+  if (!p) return;
+  editingPromoId = id;
+  fillPromoForm(p);
+  document.getElementById('promo-modal-title').textContent = 'Chỉnh sửa mã: ' + p.code;
+  document.getElementById('promo-save-btn').textContent = 'Lưu thay đổi';
+  document.getElementById('promo-code').disabled = true; // mã là khóa, không đổi
+  openModal('promo-modal');
+}
+
+function togglePromoStatus(id) {
+  const p = PROMOS.find(x => x.id === id);
+  if (!p) return;
+  if (p.status === 'active') {
+    if (!confirm(`Tạm dừng mã ${p.code}? Khách sẽ không áp dụng được cho tới khi kích hoạt lại.`)) return;
+    p.status = 'paused';
+  } else if (p.status === 'paused') {
+    p.status = 'active';
+  }
+  renderPromos();
+}
+
+// Tạo mới hoặc lưu chỉnh sửa (tùy editingPromoId)
+function savePromo() {
+  const editing = editingPromoId ? PROMOS.find(p => p.id === editingPromoId) : null;
+  const code = document.getElementById('promo-code').value.trim().toUpperCase();
+  const audience = document.getElementById('promo-audience').value;
+  const type = document.getElementById('promo-type').value;
+  const value = parseInt(document.getElementById('promo-value').value, 10);
+  const maxDiscount = parseInt(document.getElementById('promo-max').value, 10) || 0;
+  const minOrder = parseInt(document.getElementById('promo-min').value, 10) || 0;
+  const usageLimit = parseInt(document.getElementById('promo-limit').value, 10);
+  const perUserLimit = parseInt(document.getElementById('promo-peruser').value, 10) || null;
+  const startDate = document.getElementById('promo-start').value;
+  const endDate = document.getElementById('promo-end').value;
+  const firstOrderOnly = document.getElementById('promo-firstorder').checked;
+  const vehicleTypes = [...document.querySelectorAll('.promo-vt:checked')].map(c => c.value);
+  const targetCustomers = audience === 'manual' ? promoTargets.map(t => t.value) : [];
+
+  if (!code || !value || !usageLimit || !startDate || !endDate || !vehicleTypes.length) {
+    alert('Vui lòng nhập đủ: Mã, Giá trị, Tổng lượt, Thời hạn và ít nhất 1 dịch vụ áp dụng.');
+    return;
+  }
+  if (type === 'percent' && value > 100) { alert('Giảm theo % không vượt quá 100.'); return; }
+  if (audience === 'manual' && !targetCustomers.length) { alert('Đối tượng "Chỉ định thủ công" cần nhập ít nhất 1 khách (SĐT hoặc mã KH).'); return; }
+  if (PROMOS.some(p => p.code === code && p.id !== editingPromoId)) { alert('Mã ưu đãi đã tồn tại: ' + code); return; }
+  if (editing && usageLimit < editing.used) { alert(`Tổng lượt phải ≥ số đã dùng (${editing.used.toLocaleString()}).`); return; }
+
+  const computedStatus = new Date(startDate) > new Date() ? 'scheduled'
+    : (new Date(endDate) < new Date() ? 'expired' : 'active');
+
+  if (editing) {
+    Object.assign(editing, {
+      audience, type, value, targetCustomers,
+      maxDiscount: type === 'percent' ? maxDiscount : value,
+      minOrder, usageLimit, perUserLimit, firstOrderOnly, vehicleTypes, startDate, endDate,
+      // giữ paused nếu đang tạm dừng; còn lại cập nhật theo ngày
+      status: editing.status === 'paused' ? 'paused' : computedStatus
+    });
+    closeModal('promo-modal');
+    renderPromos();
+    alert(`✅ Đã cập nhật mã ${editing.code}.`);
+  } else {
+    const maxNum = PROMOS.reduce((m, p) => Math.max(m, parseInt(p.id.slice(2), 10) || 0), 0);
+    PROMOS.push({
+      id: 'PM' + String(maxNum + 1).padStart(3, '0'), code, type, value,
+      maxDiscount: type === 'percent' ? maxDiscount : value,
+      minOrder, usageLimit, used: 0, perUserLimit, audience, firstOrderOnly, targetCustomers,
+      vehicleTypes, startDate, endDate, status: computedStatus
+    });
+    closeModal('promo-modal');
+    renderPromos();
+    alert(`✅ Đã tạo mã ưu đãi ${code}\n• Đối tượng: ${PROMO_AUDIENCE[audience]?.label}\n• Giảm: ${type==='percent'?value+'% (tối đa '+fmt(maxDiscount)+')':fmt(value)}\n• ${perUserLimit?perUserLimit+' lần/tài khoản':'Không giới hạn lượt/tài khoản'}\n• Dịch vụ: ${vehicleTypes.map(v=>VEHICLE_TYPES[v]?.label||v).join(', ')}`);
+  }
 }
 
 // ============================================
@@ -3101,6 +3720,7 @@ function orderDetailHTML(o, kind) {
         ${!isReg && o.mileage ? `<div class="odp-cell"><div class="odp-label">Số km</div><div class="odp-value">${esc(o.mileage)}</div></div>` : ''}
         ${o.bookingId ? `<div class="odp-cell"><div class="odp-label">Booking</div><div class="odp-value">${o.bookingId}</div></div>` : ''}
         ${o.notes ? `<div class="odp-cell odp-span"><div class="odp-label">Ghi chú</div><div class="odp-value">${esc(o.notes)}</div></div>` : ''}
+        ${o.docImages && (o.docImages.front || o.docImages.back) ? `<div class="odp-cell odp-span"><div class="odp-label">${isReg ? 'Hồ sơ đăng kiểm' : 'Hồ sơ bảo dưỡng'}</div><div class="odp-value"><a href="javascript:void(0)" class="text-accent fw-600" onclick="viewOrderDocs('${kind}','${o.id}')">📷 Xem ảnh ${isReg ? 'hồ sơ đăng kiểm' : 'hồ sơ bảo dưỡng'}</a></div></div>` : ''}
       </div>
       <div class="odp-qr">
         <img src="${qrUrl(orderQrData(o, kind), 120)}" alt="QR ${o.id}" width="120" height="120" loading="lazy">
@@ -3194,6 +3814,21 @@ function exportOrderTicket(kind, id, autoPrint) {
   if (!w) { alert('Trình duyệt chặn cửa sổ. Vui lòng cho phép pop-up để xuất vé.'); return; }
   w.document.write(html);
   w.document.close();
+}
+
+function viewOrderDocs(kind, id) {
+  const isReg = kind === 'reg';
+  const o = (isReg ? REGISTRATIONS : MAINTENANCE).find(x => x.id === id);
+  if (!o || !o.docImages) return;
+  const { front, back } = o.docImages;
+  const cell = (label, url) => url
+    ? `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${label}" class="reg-doc-img"></a></div>`
+    : `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><div class="reg-doc-empty">Chưa có ảnh</div></div>`;
+  const kindLabel = isReg ? 'Hồ sơ đăng kiểm' : 'Hồ sơ bảo dưỡng';
+  document.getElementById('reg-docs-title').textContent = `${kindLabel} · ${o.id} · ${o.plate}`;
+  document.getElementById('reg-docs-body').innerHTML =
+    cell('Mặt trước', front) + cell('Mặt sau', back);
+  openModal('reg-docs-modal');
 }
 
 function openRegistrationCreate() {

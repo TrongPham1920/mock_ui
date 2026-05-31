@@ -261,6 +261,7 @@
             <div class="table-container">
               <div class="table-header"><span class="table-title">Tài xế Bike & Car</span>
                 <div class="table-actions">
+                  <button class="btn btn-outline app-review-btn" id="bikecar-app-btn" onclick="openDriverApps('bikecar')" style="display:none">📥 Đơn đăng ký mới <span class="app-count-badge" id="bikecar-app-count">0</span></button>
                   <select id="driver-status-filter" onchange="renderDrivers()"><option value="">Tất cả</option><option value="online">Online</option><option value="busy">Đang chạy</option><option value="offline">Offline</option></select>
                   <div class="search-box"><input type="search" placeholder="Tìm tài xế..." id="driver-search" oninput="renderDrivers()"></div>
                   <button class="btn btn-primary" onclick="openModal('driver-modal')">➕ Thêm tài xế</button>
@@ -279,6 +280,7 @@
             <div class="table-container">
               <div class="table-header"><span class="table-title">Tài xế Liên tỉnh (phục vụ Intercity / Đăng kiểm / Bảo dưỡng)</span>
                 <div class="table-actions">
+                  <button class="btn btn-outline app-review-btn" id="intercity-app-btn" onclick="openDriverApps('intercity')" style="display:none">📥 Đơn đăng ký mới <span class="app-count-badge" id="intercity-app-count">0</span></button>
                   <select id="intercity-driver-status-filter" onchange="renderIntercityDrivers()"><option value="">Tất cả</option><option value="online">Online</option><option value="busy">Đang chạy</option><option value="offline">Offline</option></select>
                   <select id="intercity-driver-operator-filter" onchange="renderIntercityDrivers()"><option value="">Mọi nhà xe</option></select>
                   <div class="search-box"><input type="search" placeholder="Tìm tài xế..." id="intercity-driver-search" oninput="renderIntercityDrivers()"></div>
@@ -515,23 +517,17 @@
         <!-- ===== WALLETS ===== -->
         <div class="page" id="page-wallets">
           <div class="wallet-summary" id="wallet-stats"></div>
-          <div class="table-container" style="margin-bottom:20px">
-            <div class="table-header"><span class="table-title">Danh sách Ví</span>
-              <div class="table-actions">
-                <select id="wallet-type-filter" onchange="renderWallets()"><option value="">Tất cả</option><option value="CUSTOMER">Khách hàng</option><option value="DRIVER">Tài xế</option><option value="PARTNER">Đối tác</option><option value="SYSTEM">Hệ thống</option></select>
-                <div class="search-box"><input type="search" placeholder="Tìm kiếm..." id="wallet-search" oninput="renderWallets()"></div>
+          <div class="wallet-workspace">
+            <div class="table-container wallet-list-col">
+              <div class="table-header">
+                <span class="table-title">Danh sách Ví</span>
+                <select id="wallet-type-filter" class="input" style="height:34px;width:auto" onchange="renderWallets()"><option value="">Tất cả loại</option><option value="CUSTOMER">Khách hàng</option><option value="DRIVER">Tài xế</option><option value="PARTNER">Đối tác</option><option value="SYSTEM">Hệ thống</option></select>
               </div>
+              <div class="wallet-search-row"><div class="search-box" style="width:100%"><input type="search" placeholder="🔍 Tìm theo tên chủ ví / mã ví..." id="wallet-search" oninput="renderWallets()" style="width:100%"></div></div>
+              <div class="wallet-list" id="wallet-list"></div>
             </div>
-            <div class="table-wrapper">
-              <table><thead><tr><th>ID</th><th>Chủ ví</th><th>Loại chủ</th><th>Loại ví</th><th>Số dư</th><th>Tạm giữ</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
-              <tbody id="wallets-table-body"></tbody></table>
-            </div>
-          </div>
-          <div class="table-container">
-            <div class="table-header"><span class="table-title">Giao dịch gần đây</span></div>
-            <div class="table-wrapper">
-              <table><thead><tr><th>ID</th><th>Ví</th><th>Hướng</th><th>Loại</th><th>Số tiền</th><th>Số dư</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
-              <tbody id="transactions-table-body"></tbody></table>
+            <div class="table-container wallet-detail-col">
+              <div id="wallet-detail"></div>
             </div>
           </div>
         </div>
@@ -553,10 +549,10 @@
           <div class="stats-grid" id="promo-stats"></div>
           <div class="table-container">
             <div class="table-header"><span class="table-title">Mã ưu đãi</span>
-              <div class="table-actions"><button class="btn btn-primary" onclick="openModal('promo-modal')">➕ Tạo mã mới</button></div>
+              <div class="table-actions"><button class="btn btn-primary" onclick="openPromoCreate()">➕ Tạo mã mới</button></div>
             </div>
             <div class="table-wrapper">
-              <table><thead><tr><th>Mã</th><th>Loại giảm</th><th>Giá trị</th><th>Giảm tối đa</th><th>Đơn tối thiểu</th><th>Loại xe</th><th>Đã dùng</th><th>Thời hạn</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+              <table><thead><tr><th>Mã</th><th>Đối tượng</th><th>Loại giảm</th><th>Giá trị</th><th>Giảm tối đa</th><th>Đơn tối thiểu</th><th>Lượt/tài khoản</th><th>Dịch vụ áp dụng</th><th>Đã dùng</th><th>Thời hạn</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
               <tbody id="promos-table-body"></tbody></table>
             </div>
           </div>
@@ -647,6 +643,30 @@
   </div>
 
   <!-- ========== MODALS ========== -->
+  <div class="modal-overlay" id="reg-docs-modal">
+    <div class="modal" style="max-width:760px">
+      <div class="modal-header"><span class="modal-title" id="reg-docs-title">Hồ sơ đăng kiểm</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('reg-docs-modal')">✕</button></div>
+      <div class="modal-body"><div class="reg-doc-grid" id="reg-docs-body"></div></div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('reg-docs-modal')">Đóng</button></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="driver-apps-modal">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header"><span class="modal-title" id="driver-apps-title">Đơn đăng ký tài xế</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('driver-apps-modal')">✕</button></div>
+      <div class="modal-body" id="driver-apps-list"></div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('driver-apps-modal')">Đóng</button></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="driver-app-modal">
+    <div class="modal" style="max-width:760px">
+      <div class="modal-header"><span class="modal-title" id="driver-app-title">Xét duyệt đăng ký tài xế</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('driver-app-modal')">✕</button></div>
+      <div class="modal-body" id="driver-app-body"></div>
+      <div class="modal-footer" id="driver-app-footer"></div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="dispatch-modal">
     <div class="modal" style="max-width:600px">
       <div class="modal-header"><span class="modal-title">Gán tài xế</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('dispatch-modal')">✕</button></div>
@@ -708,22 +728,57 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="cash-settle-modal">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><span class="modal-title" id="cash-settle-title">Quyết toán chuyến tiền mặt</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('cash-settle-modal')">✕</button></div>
+      <div class="modal-body" id="cash-settle-body"></div>
+      <div class="modal-footer" id="cash-settle-footer"></div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="promo-modal">
     <div class="modal">
-      <div class="modal-header"><span class="modal-title">Tạo mã ưu đãi mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('promo-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title" id="promo-modal-title">Tạo mã ưu đãi mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('promo-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid">
-          <div class="input-group"><label>Mã ưu đãi</label><input type="text" placeholder="VD: SALE30"></div>
-          <div class="input-group"><label>Loại giảm giá</label><select><option value="percent">Phần trăm (%)</option><option value="fixed">Số tiền cố định</option></select></div>
-          <div class="input-group"><label>Giá trị</label><input type="number" placeholder="30" min="0"></div>
-          <div class="input-group"><label>Giảm tối đa (đ)</label><input type="number" placeholder="50000" min="0"></div>
-          <div class="input-group"><label>Đơn tối thiểu (đ)</label><input type="number" placeholder="20000" min="0"></div>
-          <div class="input-group"><label>Số lần sử dụng</label><input type="number" placeholder="1000" min="1"></div>
-          <div class="input-group"><label>Bắt đầu</label><input type="date"></div>
-          <div class="input-group"><label>Kết thúc</label><input type="date"></div>
+          <div class="input-group"><label>Mã ưu đãi</label><input type="text" id="promo-code" placeholder="VD: SALE30"></div>
+          <div class="input-group"><label>Đối tượng áp dụng</label><select id="promo-audience" onchange="onPromoAudienceChange()"><option value="all">👥 Mọi người dùng</option><option value="new_user">🆕 Thành viên mới</option><option value="existing">🔁 Khách hiện hữu</option><option value="vip">⭐ Khách VIP</option><option value="manual">🎯 Chỉ định thủ công</option></select></div>
+          <div class="input-group"><label>Loại giảm giá</label><select id="promo-type"><option value="percent">Phần trăm (%)</option><option value="fixed">Số tiền cố định</option></select></div>
+          <div class="input-group"><label>Giá trị</label><input type="number" id="promo-value" placeholder="75" min="0"></div>
+          <div class="input-group"><label>Giảm tối đa (đ)</label><input type="number" id="promo-max" placeholder="50000" min="0"></div>
+          <div class="input-group"><label>Đơn tối thiểu (đ)</label><input type="number" id="promo-min" placeholder="0" min="0"></div>
+          <div class="input-group"><label>Tổng lượt phát hành</label><input type="number" id="promo-limit" placeholder="100000" min="1"></div>
+          <div class="input-group"><label>Lượt / tài khoản</label><input type="number" id="promo-peruser" placeholder="4" min="1"></div>
+          <div class="input-group"><label>Bắt đầu</label><input type="date" id="promo-start"></div>
+          <div class="input-group"><label>Kết thúc</label><input type="date" id="promo-end"></div>
+          <div class="input-group span-2">
+            <label>Dịch vụ áp dụng</label>
+            <div class="promo-vt-options">
+              <label class="promo-vt-chip"><input type="checkbox" class="promo-vt" value="BIKE"> 🏍️ Xe máy</label>
+              <label class="promo-vt-chip"><input type="checkbox" class="promo-vt" value="CAR"> 🚗 Xe hơi</label>
+              <label class="promo-vt-chip"><input type="checkbox" class="promo-vt" value="INTERCITY"> 🚌 Liên tỉnh</label>
+              <label class="promo-vt-chip"><input type="checkbox" class="promo-vt" value="SERVICE_ORDER"> 📋 Đăng kiểm hộ</label>
+              <label class="promo-vt-chip"><input type="checkbox" class="promo-vt" value="MAINTENANCE_ORDER"> 🔧 Bảo dưỡng</label>
+            </div>
+          </div>
+          <div class="input-group span-2" id="promo-targets-group" style="display:none">
+            <label>Khách được áp mã <span class="text-muted" id="promo-target-count" style="font-weight:400"></span></label>
+            <div class="target-picker">
+              <div class="target-search-wrap">
+                <input type="text" id="promo-target-search" class="input" placeholder="🔍 Tìm theo tên / SĐT / mã KH rồi chọn..." autocomplete="off" oninput="promoTargetSearch()" onfocus="promoTargetSearch()" onblur="setTimeout(hidePromoTargetDropdown,150)">
+                <div class="target-dropdown" id="promo-target-dropdown" style="display:none"></div>
+              </div>
+              <div class="target-chips" id="promo-target-chips"></div>
+              <div class="target-import">
+                <label class="btn btn-outline btn-sm" style="cursor:pointer">📁 Import file<input type="file" accept=".csv,.txt" hidden onchange="importPromoTargets(this)"></label>
+                <span class="text-muted" style="font-size:12px">File .csv / .txt — mỗi dòng 1 SĐT hoặc mã KH</span>
+              </div>
+            </div>
+          </div>
+          <div class="input-group span-2"><label class="promo-vt-chip" style="width:fit-content"><input type="checkbox" id="promo-firstorder"> 🥇 Chỉ áp dụng cho đơn đầu tiên</label></div>
         </div>
       </div>
-      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('promo-modal')">Hủy</button><button class="btn btn-primary">Tạo mã</button></div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('promo-modal')">Hủy</button><button class="btn btn-primary" id="promo-save-btn" onclick="savePromo()">Tạo mã</button></div>
     </div>
   </div>
 

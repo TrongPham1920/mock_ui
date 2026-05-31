@@ -73,7 +73,10 @@ const TRANSACTION_TYPES = {
   ADJUSTMENT: { label: '🔧 Điều chỉnh', class: 'text-warning', direction: 'CREDIT' },
   SETTLEMENT: { label: '🏦 Quyết toán', class: 'text-info', direction: 'DEBIT' },
   EARNING: { label: '💰 Thu nhập', class: 'text-success', direction: 'CREDIT' },
-  WITHDRAW: { label: '🏧 Rút tiền', class: 'text-warning', direction: 'DEBIT' }
+  WITHDRAW: { label: '🏧 Rút tiền', class: 'text-warning', direction: 'DEBIT' },
+  HOLD: { label: '🔒 Tạm giữ', class: 'text-warning', direction: 'HOLD' },
+  RELEASE: { label: '🔓 Nhả tạm giữ', class: 'text-accent', direction: 'RELEASE' },
+  COMMISSION: { label: '🏢 Phí hệ thống', class: 'text-danger', direction: 'DEBIT' }
 };
 
 // ---- ROLES & PERMISSIONS (RBAC) ----
@@ -183,6 +186,76 @@ const INTERCITY_DRIVERS = [
   { id: 'IDR008', name: 'Trần Quốc Trung', phone: '0905888999', operatorId: 'PTR005', licenseClass: 'D', status: 'offline', rating: 4.6, trips: 1120, avatar: '👨', currentAssignmentId: null },
   { id: 'IDR009', name: 'Vũ Hồng Phúc', phone: '0905999000', operatorId: 'PTR001', licenseClass: 'E', status: 'online', rating: 4.5, trips: 720, avatar: '👨', currentAssignmentId: null },
   { id: 'IDR010', name: 'Lý Thị Hằng', phone: '0905000111', operatorId: 'PTR003', licenseClass: 'D', status: 'online', rating: 4.9, trips: 540, avatar: '👩', currentAssignmentId: null },
+];
+
+// ---- DRIVER_APPLICATIONS (Đơn đăng ký tài xế gửi từ app, chờ CMS xét duyệt) ----
+// applyType: 'bikecar' (Bike/Car) | 'intercity' (liên tỉnh — gồm cả đăng kiểm/bảo dưỡng hộ).
+// status: 'pending' | 'approved' | 'rejected'. Khi duyệt → tạo record vào DRIVERS / INTERCITY_DRIVERS.
+// documents: bộ giấy tờ khách upload từ app (theo đúng form đăng ký tài xế trên app).
+
+// Sinh URL ảnh placeholder cho 1 ô giấy tờ (demo — khi tích hợp app thật thay bằng link/base64 thực).
+function _docImg(label, name, color) {
+  return `https://placehold.co/600x400/${color}/ffffff.png?text=${encodeURIComponent(label)}%0A${encodeURIComponent(name)}`;
+}
+// Sinh đầy đủ bộ giấy tờ tài xế theo form app.
+function _buildDriverDocs(name) {
+  const c1 = '1e3a8a', c2 = '166534', c3 = '7c2d12', c4 = '4c1d95';
+  return {
+    avatar: _docImg('Anh 3x4', name, '475569'),
+    cccd: { front: _docImg('CCCD mat truoc', name, c1), back: _docImg('CCCD mat sau', name, c2), vnid: _docImg('Anh VNeID', name, c4) },
+    license: { front: _docImg('GPLX mat truoc', name, c1), back: _docImg('GPLX mat sau', name, c2) },
+    vehicleReg: { front: _docImg('Dang ky xe truoc', name, c1), back: _docImg('Dang ky xe sau', name, c2) },
+    health: { front: _docImg('Giay kham SK truoc', name, c3), back: _docImg('Giay kham SK sau', name, c4) },
+    criminal: { front: _docImg('Ly lich tu phap truoc', name, c3), back: _docImg('Ly lich tu phap sau', name, c4) },
+    inspection: { front: _docImg('Dang kiem truoc', name, c1), back: _docImg('Dang kiem sau', name, c2) },
+    insurance: { front: _docImg('BH TNDS truoc', name, c3), back: _docImg('BH TNDS sau', name, c4) },
+    vehiclePhotos: {
+      front: _docImg('Xe phia truoc', name, '0f766e'), rear: _docImg('Xe phia sau', name, '0f766e'),
+      right: _docImg('Xe ben phai', name, '0f766e'), left: _docImg('Xe ben trai', name, '0f766e'),
+      interior: _docImg('Noi that', name, '0f766e'), odometer: _docImg('Dong ho km Odo', name, '0f766e')
+    },
+    badge: { front: _docImg('Phu hieu truoc', name, c1), back: _docImg('Phu hieu sau', name, c2) }
+  };
+}
+
+const DRIVER_APPLICATIONS = [
+  {
+    id: 'APP001', applyType: 'bikecar', name: 'Trần Văn Lộc', phone: '0931112223', email: 'loc.tran@gmail.com',
+    address: '12 Nguyễn Trãi, P.Bến Thành, Q.1, TP.HCM',
+    vehicleType: 'BIKE', plate: '59X1-456.78', licenseClass: 'A1', avatar: '👨',
+    status: 'pending', submittedAt: '2026-05-30 08:15', documents: _buildDriverDocs('Tran Van Loc')
+  },
+  {
+    id: 'APP002', applyType: 'bikecar', name: 'Nguyễn Thị Cẩm', phone: '0932223334', email: 'cam.nguyen@gmail.com',
+    address: '88 Cách Mạng Tháng 8, P.6, Q.3, TP.HCM',
+    vehicleType: 'CAR', plate: '51K-789.01', licenseClass: 'B2', avatar: '👩',
+    status: 'pending', submittedAt: '2026-05-30 14:40', documents: _buildDriverDocs('Nguyen Thi Cam')
+  },
+  {
+    id: 'APP003', applyType: 'intercity', name: 'Phạm Hồng Sơn', phone: '0933334445', email: 'son.pham@gmail.com',
+    address: '45 Trường Chinh, P.13, Q.Tân Bình, TP.HCM',
+    operatorId: 'PTR001', licenseClass: 'E', avatar: '👨',
+    status: 'pending', submittedAt: '2026-05-31 07:50', documents: _buildDriverDocs('Pham Hong Son')
+  },
+  {
+    id: 'APP004', applyType: 'intercity', name: 'Đặng Quốc Huy', phone: '0934445556', email: 'huy.dang@gmail.com',
+    address: '202 Nguyễn Văn Linh, P.Tân Phong, Q.7, TP.HCM',
+    operatorId: 'PTR002', licenseClass: 'D', avatar: '👨',
+    status: 'pending', submittedAt: '2026-05-31 09:20', documents: _buildDriverDocs('Dang Quoc Huy')
+  },
+  // ===== Bổ sung nhiều đơn để kiểm tra hiển thị danh sách dài =====
+  { id: 'APP005', applyType: 'bikecar', name: 'Lê Minh Quân', phone: '0935556667', email: 'quan.le@gmail.com', address: '5 Lê Lợi, Q.1, TP.HCM', vehicleType: 'BIKE', plate: '59Y2-112.33', licenseClass: 'A1', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 10:05', documents: _buildDriverDocs('Le Minh Quan') },
+  { id: 'APP006', applyType: 'bikecar', name: 'Trịnh Thu Hà', phone: '0936667778', email: 'ha.trinh@gmail.com', address: '20 Hai Bà Trưng, Q.1, TP.HCM', vehicleType: 'CAR', plate: '51L-223.44', licenseClass: 'B2', avatar: '👩', status: 'pending', submittedAt: '2026-05-31 10:40', documents: _buildDriverDocs('Trinh Thu Ha') },
+  { id: 'APP007', applyType: 'bikecar', name: 'Phan Văn Đạt', phone: '0937778889', email: 'dat.phan@gmail.com', address: '77 Trần Hưng Đạo, Q.5, TP.HCM', vehicleType: 'BIKE', plate: '59Z3-334.55', licenseClass: 'A1', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 11:15', documents: _buildDriverDocs('Phan Van Dat') },
+  { id: 'APP008', applyType: 'bikecar', name: 'Võ Thị Kim Ngân', phone: '0938889990', email: 'ngan.vo@gmail.com', address: '102 Nguyễn Thị Minh Khai, Q.3, TP.HCM', vehicleType: 'CAR', plate: '51M-445.66', licenseClass: 'B2', avatar: '👩', status: 'pending', submittedAt: '2026-05-31 11:50', documents: _buildDriverDocs('Vo Thi Kim Ngan') },
+  { id: 'APP009', applyType: 'bikecar', name: 'Hoàng Anh Tú', phone: '0939990001', email: 'tu.hoang@gmail.com', address: '8 Cộng Hòa, Q.Tân Bình, TP.HCM', vehicleType: 'BIKE', plate: '59A4-556.77', licenseClass: 'A1', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 12:30', documents: _buildDriverDocs('Hoang Anh Tu') },
+  { id: 'APP010', applyType: 'bikecar', name: 'Nguyễn Hải Đăng', phone: '0931002003', email: 'dang.nguyen@gmail.com', address: '33 Phan Xích Long, Q.Phú Nhuận, TP.HCM', vehicleType: 'CAR', plate: '51N-667.88', licenseClass: 'B2', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 13:05', documents: _buildDriverDocs('Nguyen Hai Dang') },
+  { id: 'APP011', applyType: 'intercity', name: 'Bùi Tấn Phát', phone: '0935111222', email: 'phat.bui@gmail.com', address: '14 Quang Trung, Q.Gò Vấp, TP.HCM', operatorId: 'PTR001', licenseClass: 'E', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 09:45', documents: _buildDriverDocs('Bui Tan Phat') },
+  { id: 'APP012', applyType: 'intercity', name: 'Dương Văn Thắng', phone: '0935222333', email: 'thang.duong@gmail.com', address: '56 Lý Thường Kiệt, Q.10, TP.HCM', operatorId: 'PTR003', licenseClass: 'D', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 10:20', documents: _buildDriverDocs('Duong Van Thang') },
+  { id: 'APP013', applyType: 'intercity', name: 'Lý Hoàng Phúc', phone: '0935333444', email: 'phuc.ly@gmail.com', address: '90 Điện Biên Phủ, Q.Bình Thạnh, TP.HCM', operatorId: 'PTR002', licenseClass: 'E', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 11:00', documents: _buildDriverDocs('Ly Hoang Phuc') },
+  { id: 'APP014', applyType: 'intercity', name: 'Trần Thị Bích', phone: '0935444555', email: 'bich.tran@gmail.com', address: '120 Cách Mạng Tháng 8, Q.3, TP.HCM', operatorId: 'PTR005', licenseClass: 'D', avatar: '👩', status: 'pending', submittedAt: '2026-05-31 11:40', documents: _buildDriverDocs('Tran Thi Bich') },
+  { id: 'APP015', applyType: 'intercity', name: 'Ngô Quang Vinh', phone: '0935555666', email: 'vinh.ngo@gmail.com', address: '7 Nguyễn Oanh, Q.Gò Vấp, TP.HCM', operatorId: 'PTR003', licenseClass: 'E', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 12:15', documents: _buildDriverDocs('Ngo Quang Vinh') },
+  { id: 'APP016', applyType: 'intercity', name: 'Đỗ Minh Khoa', phone: '0935666777', email: 'khoa.do@gmail.com', address: '210 Phạm Văn Đồng, TP.Thủ Đức, TP.HCM', operatorId: 'PTR001', licenseClass: 'D', avatar: '👨', status: 'pending', submittedAt: '2026-05-31 12:50', documents: _buildDriverDocs('Do Minh Khoa') },
 ];
 
 // ---- CUSTOMERS ----
@@ -777,14 +850,41 @@ const PARTNERS = [
 ];
 
 // ---- PROMOS ----
+// Trường nâng cao:
+//   audience: đối tượng áp dụng — 'all' | 'new_user' (thành viên mới) | 'existing' | 'vip'
+//   perUserLimit: số lần tối đa 1 tài khoản được dùng (null = không giới hạn theo tài khoản)
+//   firstOrderOnly: chỉ áp dụng cho đơn đầu tiên (true/false)
 const PROMOS = [
-  { id: 'PM001', code: 'WELCOME50', type: 'percent', value: 50, maxDiscount: 30000, minOrder: 20000, usageLimit: 1000, used: 756, vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-03-01', endDate: '2026-03-31', status: 'active' },
-  { id: 'PM002', code: 'RIDE20K', type: 'fixed', value: 20000, maxDiscount: 20000, minOrder: 50000, usageLimit: 500, used: 423, vehicleTypes: ['CAR'], startDate: '2026-03-10', endDate: '2026-03-25', status: 'active' },
-  { id: 'PM003', code: 'INTERCITY100', type: 'fixed', value: 100000, maxDiscount: 100000, minOrder: 200000, usageLimit: 200, used: 200, vehicleTypes: ['INTERCITY'], startDate: '2026-02-15', endDate: '2026-03-15', status: 'expired' },
-  { id: 'PM004', code: 'NEWUSER', type: 'percent', value: 30, maxDiscount: 50000, minOrder: 0, usageLimit: 5000, used: 3210, vehicleTypes: ['BIKE', 'CAR', 'INTERCITY'], startDate: '2026-01-01', endDate: '2026-06-30', status: 'active' },
-  { id: 'PM005', code: 'DKFREE', type: 'fixed', value: 200000, maxDiscount: 200000, minOrder: 400000, usageLimit: 100, used: 45, vehicleTypes: ['SERVICE_ORDER'], startDate: '2026-03-01', endDate: '2026-04-30', status: 'active' },
-  { id: 'PM006', code: 'SUMMER25', type: 'percent', value: 25, maxDiscount: 40000, minOrder: 30000, usageLimit: 2000, used: 0, vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-06-01', endDate: '2026-08-31', status: 'scheduled' },
+  { id: 'PM001', code: 'WELCOME50', type: 'percent', value: 50, maxDiscount: 30000, minOrder: 20000, usageLimit: 1000, used: 756, perUserLimit: 1, audience: 'new_user', firstOrderOnly: true, vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-03-01', endDate: '2026-03-31', status: 'active' },
+  { id: 'PM002', code: 'RIDE20K', type: 'fixed', value: 20000, maxDiscount: 20000, minOrder: 50000, usageLimit: 500, used: 423, perUserLimit: 3, audience: 'all', vehicleTypes: ['CAR'], startDate: '2026-03-10', endDate: '2026-03-25', status: 'active' },
+  { id: 'PM003', code: 'INTERCITY100', type: 'fixed', value: 100000, maxDiscount: 100000, minOrder: 200000, usageLimit: 200, used: 200, perUserLimit: 1, audience: 'all', vehicleTypes: ['INTERCITY'], startDate: '2026-02-15', endDate: '2026-03-15', status: 'expired' },
+  { id: 'PM004', code: 'NEWUSER', type: 'percent', value: 30, maxDiscount: 50000, minOrder: 0, usageLimit: 5000, used: 3210, perUserLimit: 1, audience: 'new_user', firstOrderOnly: true, vehicleTypes: ['BIKE', 'CAR', 'INTERCITY'], startDate: '2026-01-01', endDate: '2026-06-30', status: 'active' },
+  { id: 'PM005', code: 'DKFREE', type: 'fixed', value: 200000, maxDiscount: 200000, minOrder: 400000, usageLimit: 100, used: 45, perUserLimit: 2, audience: 'all', vehicleTypes: ['SERVICE_ORDER'], startDate: '2026-03-01', endDate: '2026-04-30', status: 'active' },
+  { id: 'PM006', code: 'SUMMER25', type: 'percent', value: 25, maxDiscount: 40000, minOrder: 30000, usageLimit: 2000, used: 0, perUserLimit: null, audience: 'all', vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-06-01', endDate: '2026-08-31', status: 'scheduled' },
+  // Mã ưu đãi thành viên mới: 4 lần/tài khoản, giảm 75% tối đa 50k, cho liên tỉnh + đăng kiểm + bảo dưỡng
+  { id: 'PM007', code: 'TANBINHVIEN', type: 'percent', value: 75, maxDiscount: 50000, minOrder: 0, usageLimit: 100000, used: 1280, perUserLimit: 4, audience: 'new_user', firstOrderOnly: false, vehicleTypes: ['INTERCITY', 'SERVICE_ORDER', 'MAINTENANCE_ORDER'], startDate: '2026-05-01', endDate: '2026-12-31', status: 'active' },
+  // ===== Bổ sung dữ liệu phủ đủ trường hợp =====
+  { id: 'PM008', code: 'BAODUONG15', type: 'percent', value: 15, maxDiscount: 150000, minOrder: 300000, usageLimit: 500, used: 88, perUserLimit: 2, audience: 'all', firstOrderOnly: false, vehicleTypes: ['MAINTENANCE_ORDER'], startDate: '2026-05-01', endDate: '2026-07-31', status: 'active' },
+  { id: 'PM009', code: 'VIPRIDE', type: 'percent', value: 20, maxDiscount: 80000, minOrder: 0, usageLimit: 1000, used: 312, perUserLimit: null, audience: 'vip', firstOrderOnly: false, vehicleTypes: ['BIKE', 'CAR', 'INTERCITY'], startDate: '2026-04-01', endDate: '2026-12-31', status: 'active' },
+  { id: 'PM010', code: 'COMEBACK40', type: 'percent', value: 40, maxDiscount: 60000, minOrder: 30000, usageLimit: 3000, used: 1540, perUserLimit: 1, audience: 'existing', firstOrderOnly: false, vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-05-15', endDate: '2026-06-15', status: 'active' },
+  { id: 'PM011', code: 'SOLDOUT10', type: 'fixed', value: 10000, maxDiscount: 10000, minOrder: 0, usageLimit: 300, used: 300, perUserLimit: 1, audience: 'all', firstOrderOnly: false, vehicleTypes: ['BIKE'], startDate: '2026-04-01', endDate: '2026-09-30', status: 'active' },
+  { id: 'PM012', code: 'TET2026', type: 'percent', value: 30, maxDiscount: 100000, minOrder: 100000, usageLimit: 5000, used: 0, perUserLimit: 2, audience: 'all', firstOrderOnly: false, vehicleTypes: ['INTERCITY'], startDate: '2026-12-20', endDate: '2027-01-10', status: 'scheduled' },
+  { id: 'PM013', code: 'FLASH50', type: 'percent', value: 50, maxDiscount: 25000, minOrder: 0, usageLimit: 800, used: 800, perUserLimit: 1, audience: 'all', firstOrderOnly: false, vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-02-01', endDate: '2026-02-28', status: 'expired' },
+  { id: 'PM014', code: 'PAUSED5', type: 'fixed', value: 5000, maxDiscount: 5000, minOrder: 0, usageLimit: 2000, used: 640, perUserLimit: null, audience: 'all', firstOrderOnly: false, vehicleTypes: ['BIKE', 'CAR'], startDate: '2026-03-01', endDate: '2026-12-31', status: 'paused' },
+  { id: 'PM015', code: 'DKHOME', type: 'percent', value: 25, maxDiscount: 120000, minOrder: 0, usageLimit: 600, used: 210, perUserLimit: 3, audience: 'all', firstOrderOnly: false, vehicleTypes: ['SERVICE_ORDER', 'MAINTENANCE_ORDER'], startDate: '2026-05-01', endDate: '2026-08-31', status: 'active' },
+  // Mã chỉ định thủ công: chỉ áp cho danh sách khách được chọn (CSKH tặng riêng)
+  { id: 'PM016', code: 'TANGRIENG', type: 'fixed', value: 50000, maxDiscount: 50000, minOrder: 0, usageLimit: 50, used: 6, perUserLimit: 1, audience: 'manual', firstOrderOnly: false, targetCustomers: ['0901234567', '0812345678', 'KH005'], vehicleTypes: ['BIKE', 'CAR', 'INTERCITY'], startDate: '2026-05-01', endDate: '2026-09-30', status: 'active' },
 ];
+
+// Nhãn đối tượng áp dụng ưu đãi
+// manual = chỉ định thủ công danh sách khách được áp (theo SĐT / mã KH)
+const PROMO_AUDIENCE = {
+  all:       { label: 'Mọi người dùng', icon: '👥', class: 'badge-offline' },
+  new_user:  { label: 'Thành viên mới', icon: '🆕', class: 'badge-active' },
+  existing:  { label: 'Khách hiện hữu', icon: '🔁', class: 'badge-accepted' },
+  vip:       { label: 'Khách VIP', icon: '⭐', class: 'badge-scheduled' },
+  manual:    { label: 'Chỉ định thủ công', icon: '🎯', class: 'badge-pending' },
+};
 
 // ---- WALLETS (Enhanced with wallet_type, pending_balance, wallet_status) ----
 const WALLETS = [
@@ -1302,6 +1402,25 @@ const INTERCITY_TRIPS = [
       const b = BOOKINGS.find(x => x.id === o.bookingId);
       if (b && b.customerId) o.customerId = b.customerId;
     }
+  });
+
+  // (3d) Ảnh hồ sơ (mặt trước/mặt sau) khách upload từ app — dùng chung cho
+  // đăng kiểm hộ & bảo dưỡng hộ. Demo: gán ảnh placeholder cho đơn chưa huỷ.
+  REGISTRATIONS.forEach(r => {
+    if (r.status === 'cancelled' || r.docImages) return;
+    const label = encodeURIComponent(r.plate);
+    r.docImages = {
+      front: `https://placehold.co/640x400/1e3a8a/ffffff.png?text=Giay+DK+-+Mat+truoc%0A${label}`,
+      back: `https://placehold.co/640x400/166534/ffffff.png?text=Giay+DK+-+Mat+sau%0A${label}`
+    };
+  });
+  MAINTENANCE.forEach(m => {
+    if (m.status === 'cancelled' || m.docImages) return;
+    const label = encodeURIComponent(m.plate);
+    m.docImages = {
+      front: `https://placehold.co/640x400/7c2d12/ffffff.png?text=Ho+so+BD+-+Mat+truoc%0A${label}`,
+      back: `https://placehold.co/640x400/4c1d95/ffffff.png?text=Ho+so+BD+-+Mat+sau%0A${label}`
+    };
   });
 
   function nowTs() {
