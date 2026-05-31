@@ -104,6 +104,8 @@
             <span style="font-size:12px;color:var(--text-muted)">👤 <span id="current-user-name">Nguyễn Admin</span></span>
           </div>
           <button class="header-btn" onclick="navigateTo('notifications')">🔔</button>
+          <button class="header-btn" id="sim-toggle" title="Mô phỏng app Tài xế / Khách hàng" onclick="toggleSimPanel()">🎮</button>
+          <button class="header-btn" title="Khôi phục dữ liệu demo gốc (xoá thay đổi đã lưu)" onclick="if(confirm('Xoá toàn bộ thay đổi đã lưu và nạp lại dữ liệu demo gốc?'))resetStore()">♻️</button>
         </div>
       </header>
 

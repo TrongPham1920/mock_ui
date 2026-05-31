@@ -108,6 +108,7 @@ function renderPage(page) {
     audit: renderAudit, monitoring: renderMonitoring
   };
   if (renderers[page]) renderers[page]();
+  scheduleSave(); // autosave sau mỗi lần render (mọi mutation đều kết thúc bằng render)
 }
 
 // ---- Helpers ----
@@ -1704,7 +1705,16 @@ function showBookingDetail(id) {
 
   let actions = '<button class="btn btn-outline" onclick="closeModal(\'booking-detail-modal\')">Đóng</button>';
   if (canDispatch && b.bookingStatus === 'PENDING_CONFIRMATION') actions += `<button class="btn btn-primary" onclick="closeModal('booking-detail-modal');openDispatchModal('${b.id}')">📡 Điều phối</button>`;
-  if (canCancel && ['PENDING_CONFIRMATION','CONFIRMED'].includes(b.bookingStatus)) actions += `<button class="btn btn-danger" onclick="cancelBooking('${b.id}')">Hủy booking</button>`;
+  if (canDispatch && b.fulfillmentStatus === 'ASSIGNED') actions += `<button class="btn btn-primary" onclick="closeModal('booking-detail-modal');startTrip('${b.id}','master')">▶️ Bắt đầu chuyến</button>`;
+  if (canDispatch && b.fulfillmentStatus === 'IN_PROGRESS') {
+    actions += `<button class="btn btn-success" onclick="closeModal('booking-detail-modal');completeTrip('${b.id}','master')">🏁 Hoàn thành</button>`;
+    actions += `<button class="btn btn-outline" onclick="closeModal('booking-detail-modal');markNoShow('${b.id}','master')">🚫 No-show</button>`;
+  }
+  if (canDispatch && b.bookingStatus === 'RESCHEDULE_REQUESTED') {
+    actions += `<button class="btn btn-success" onclick="resolveReschedule('${b.id}',true)">✅ Duyệt đổi lịch</button>`;
+    actions += `<button class="btn btn-outline" onclick="resolveReschedule('${b.id}',false)">Từ chối</button>`;
+  }
+  if (canCancel && ['PENDING_CONFIRMATION','CONFIRMED'].includes(b.bookingStatus) && b.fulfillmentStatus !== 'IN_PROGRESS') actions += `<button class="btn btn-danger" onclick="cancelBooking('${b.id}')">Hủy booking</button>`;
   document.getElementById('booking-detail-actions').innerHTML = actions;
   openModal('booking-detail-modal');
 }
@@ -1768,6 +1778,140 @@ function cancelBooking(id, reason = 'Khách hủy') {
   closeModal('booking-detail-modal');
   renderPage(currentPage);
   updateBadges();
+}
+
+// ============================================
+// BOOKING LIFECYCLE — các bước vận hành khép kín
+// Gọi từ bảng Fulfillment (operator, sourceSite='master') hoặc panel mô phỏng
+// app Tài xế (sourceSite='driver'). Đảm bảo data lan sang ví/quyết toán/audit.
+// ============================================
+function getBookingTask(bookingId) {
+  const b = BOOKINGS.find(x => x.id === bookingId);
+  if (!b) return { b: null, t: null };
+  const t = b.fulfillmentTaskId ? FULFILLMENT_TASKS.find(x => x.id === b.fulfillmentTaskId) : null;
+  return { b, t };
+}
+
+// Đồng bộ trạng thái đơn đăng kiểm / bảo dưỡng theo vòng đời booking
+function syncServiceStatus(b, phase) {
+  const st = { in_progress: 'confirmed', completed: 'completed' }[phase];
+  if (!st) return;
+  if (b.serviceOrderId) { const r = REGISTRATIONS.find(x => x.id === b.serviceOrderId); if (r) r.status = st; }
+  if (b.maintenanceOrderId) { const m = MAINTENANCE.find(x => x.id === b.maintenanceOrderId); if (m) m.status = st; }
+}
+
+// TX nhận chuyến (app tài xế)
+function driverAcceptTask(bookingId, sourceSite = 'driver') {
+  const { b, t } = getBookingTask(bookingId);
+  if (!b || !t || t.status !== 'ASSIGNED' || t.acceptedAt) return;
+  t.acceptedAt = nowStr();
+  const traceId = newTraceId();
+  createNotification({ type: 'driver_accepted', recipient: b.customerId,
+    content: `Tài xế đã nhận chuyến ${b.bookingCode}, đang đến điểm đón` });
+  createAuditLog({ action: 'fulfillment.accept', target: t.id, traceId, sourceSite,
+    actor: b.driverId, actorRole: 'DRIVER', before: { accepted: false }, after: { accepted: true } });
+  renderPage(currentPage); updateBadges();
+}
+
+// TX từ chối → trả booking về hàng chờ phân công
+function driverRejectTask(bookingId, reason = 'Tài xế từ chối', sourceSite = 'driver') {
+  const { b, t } = getBookingTask(bookingId);
+  if (!b || !t || t.status !== 'ASSIGNED') return;
+  const traceId = newTraceId();
+  const prevDriver = b.driverId;
+  if (t.vehicleId) releaseVehicle(t.vehicleId);
+  if (prevDriver) releaseDriver(prevDriver);
+  t.status = 'CANCELLED';
+  b.driverId = null;
+  b.fulfillmentTaskId = null;
+  b.fulfillmentStatus = 'PENDING';
+  b.updatedAt = nowStr();
+  createNotification({ type: 'driver_rejected', recipient: b.customerId,
+    content: `Đang tìm tài xế khác cho chuyến ${b.bookingCode}` });
+  createAuditLog({ action: 'fulfillment.reject', target: t.id, traceId, sourceSite,
+    actor: prevDriver, actorRole: 'DRIVER', before: { driver: prevDriver }, after: { status: 'PENDING', reason } });
+  renderPage(currentPage); updateBadges();
+}
+
+// TX bắt đầu chạy → IN_PROGRESS
+function startTrip(bookingId, sourceSite = 'driver') {
+  const { b, t } = getBookingTask(bookingId);
+  if (!b || !t || t.status !== 'ASSIGNED') return;
+  const traceId = newTraceId();
+  t.status = 'IN_PROGRESS';
+  t.startedAt = nowStr();
+  if (!t.acceptedAt) t.acceptedAt = nowStr();
+  b.bookingStatus = 'IN_PROGRESS';
+  b.fulfillmentStatus = 'IN_PROGRESS';
+  b.updatedAt = nowStr();
+  const d = findDriver(b.driverId); if (d) { d.status = 'busy'; d.currentAssignmentId = t.id; }
+  if (t.vehicleId) { const v = INTERCITY_VEHICLES.find(x => x.id === t.vehicleId); if (v) { v.status = 'busy'; v.currentAssignmentId = t.id; } }
+  syncServiceStatus(b, 'in_progress');
+  createNotification({ type: 'trip_started', recipient: b.customerId,
+    content: `Chuyến ${b.bookingCode} đã bắt đầu` });
+  createAuditLog({ action: 'booking.start', target: b.id, traceId, sourceSite,
+    actor: b.driverId, actorRole: 'DRIVER', before: { status: 'CONFIRMED' }, after: { status: 'IN_PROGRESS' } });
+  renderPage(currentPage); updateBadges();
+}
+
+// TX hoàn thành → COMPLETED + quyết toán
+function completeTrip(bookingId, sourceSite = 'driver') {
+  const { b, t } = getBookingTask(bookingId);
+  if (!b || !t || t.status !== 'IN_PROGRESS') return;
+  const traceId = newTraceId();
+  t.status = 'COMPLETED';
+  t.completedAt = nowStr();
+  b.bookingStatus = 'COMPLETED';
+  b.fulfillmentStatus = 'COMPLETED';
+  b.updatedAt = nowStr();
+  completeBookingSettlement(b, traceId);   // chiết khấu + thu nhập TX + nhả tiền giữ
+  if (b.driverId) releaseDriver(b.driverId);
+  if (t.vehicleId) releaseVehicle(t.vehicleId);
+  syncServiceStatus(b, 'completed');
+  createNotification({ type: 'trip_completed', recipient: b.customerId,
+    content: `Chuyến ${b.bookingCode} đã hoàn thành. Cảm ơn bạn!` });
+  createAuditLog({ action: 'booking.complete', target: b.id, traceId, sourceSite,
+    actor: b.driverId, actorRole: 'DRIVER', before: { status: 'IN_PROGRESS' }, after: { status: 'COMPLETED' } });
+  renderPage(currentPage); updateBadges();
+}
+
+// Khách không xuất hiện → huỷ, KHÔNG hoàn tiền (giữ khoản đã thu)
+function markNoShow(bookingId, sourceSite = 'driver') {
+  const { b, t } = getBookingTask(bookingId);
+  if (!b) return;
+  const traceId = newTraceId();
+  if (t) { if (t.vehicleId) releaseVehicle(t.vehicleId); t.status = 'CANCELLED'; }
+  if (b.driverId) releaseDriver(b.driverId);
+  if (b.bookingType === 'INTERCITY' && b.tripId) {
+    const trip = INTERCITY_TRIPS.find(tr => tr.id === b.tripId);
+    if (trip) { const n = (b.passengerSnapshot && b.passengerSnapshot.length) || 1;
+      trip.seatsAvailable = Math.min(trip.seatsTotal, trip.seatsAvailable + n);
+      if (trip.seatsAvailable > 0 && trip.status === 'full') trip.status = 'available'; }
+  }
+  b.bookingStatus = 'CANCELLED';
+  b.fulfillmentStatus = 'CANCELLED';
+  b.updatedAt = nowStr();
+  createNotification({ type: 'booking_noshow', recipient: b.customerId,
+    content: `Chuyến ${b.bookingCode} bị huỷ do khách không xuất hiện (không hoàn tiền)` });
+  createAuditLog({ action: 'booking.noshow', target: b.id, traceId, sourceSite,
+    actor: b.driverId, actorRole: 'DRIVER', before: { status: b.bookingStatus }, after: { status: 'CANCELLED', reason: 'no-show' } });
+  renderPage(currentPage); updateBadges();
+}
+
+// Nút hành động theo trạng thái task trong bảng Fulfillment (operator)
+function renderFulfillmentActions(t, canAssign, isInter) {
+  if (!canAssign) return '—';
+  const reassign = `<button class="btn btn-sm btn-outline" title="Gán lại" onclick="${isInter ? `openIntercityDispatchModal('${t.bookingId}')` : `openDispatchModal('${t.bookingId}')`}">🔄</button>`;
+  if (t.status === 'ASSIGNED') {
+    return `<div style="display:flex;gap:4px;justify-content:center">
+      <button class="btn btn-sm btn-primary" title="Bắt đầu chuyến" onclick="startTrip('${t.bookingId}','master')">▶️ Bắt đầu</button>${reassign}</div>`;
+  }
+  if (t.status === 'IN_PROGRESS') {
+    return `<div style="display:flex;gap:4px;justify-content:center">
+      <button class="btn btn-sm btn-success" title="Hoàn thành" onclick="completeTrip('${t.bookingId}','master')">🏁 Xong</button>
+      <button class="btn btn-sm btn-outline" title="Khách không xuất hiện" onclick="markNoShow('${t.bookingId}','master')">🚫</button></div>`;
+  }
+  return '—';
 }
 
 // ============================================
@@ -1861,7 +2005,7 @@ function renderFulfillment() {
       <td class="text-muted">${t.assignedAt}</td>
       <td class="text-muted">${t.startedAt||'—'}</td>
       <td class="text-muted">${t.completedAt||'—'}</td>
-      <td>${canAssign && t.status==='ASSIGNED'?`<button class="btn btn-sm btn-outline" title="Gán lại" onclick="${isInter ? `openIntercityDispatchModal('${t.bookingId}')` : `openDispatchModal('${t.bookingId}')`}">🔄 Gán lại</button>`:'—'}</td>
+      <td>${renderFulfillmentActions(t, canAssign, isInter)}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">📋</div><div class="empty-state-text">Chưa có task</div></div></td></tr>`;
 }
@@ -3321,14 +3465,19 @@ function updateBadges() {
   if (el2) { el2.textContent = pending; el2.style.display = pending > 0 ? '' : 'none'; }
   const refPending = REFUNDS.filter(r => r.status === 'PENDING').length;
   if (el3) { el3.textContent = refPending; el3.style.display = refPending > 0 ? '' : 'none'; }
+  scheduleSave(); // autosave: nhiều mutation kết thúc bằng updateBadges()
 }
 
 // ============================================
 // INIT
 // ============================================
 function init() {
+  // Khôi phục dữ liệu đã lưu (nếu có) TRƯỚC khi heal — để heal làm việc trên data thật.
+  hydrateStore();
+
   // Heal & sync derived state trước khi render
   healData();
+  saveStore(); // chốt trạng thái sau heal (lần đầu tạo snapshot từ seed)
 
   // Initialize role
   switchRole('ADMIN');
@@ -4553,4 +4702,199 @@ function createIntercityBooking(tripId) {
   // Làm mới kết quả tìm chuyến phía dưới (cập nhật số vé/chỗ trống)
   const destSel = document.getElementById('intercity-destination');
   if (destSel && destSel.value) { searchIntercityTrips(); } else { renderIntercityBooking(); }
+}
+
+// ============================================
+// SIM PANEL — mô phỏng app Tài xế & app Khách hàng
+// Một mặt điều khiển để bấm chạy các sự kiện đến từ 2 app, dùng chung data
+// với màn vận hành. Mỗi sự kiện gắn sourceSite ('customer' | 'driver').
+// ============================================
+let _simTab = 'customer';
+
+function toggleSimPanel() {
+  let panel = document.getElementById('sim-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'sim-panel';
+    panel.className = 'sim-panel';
+    panel.innerHTML = `
+      <div class="sim-head">
+        <h3>🎮 Mô phỏng App</h3>
+        <button class="header-btn" onclick="toggleSimPanel()">✕</button>
+      </div>
+      <div class="sim-tabs">
+        <div class="sim-tab" id="sim-tab-customer" onclick="switchSimTab('customer')">👤 App Khách</div>
+        <div class="sim-tab" id="sim-tab-driver" onclick="switchSimTab('driver')">🧑‍✈️ App Tài xế</div>
+      </div>
+      <div class="sim-body" id="sim-body"></div>`;
+    document.body.appendChild(panel);
+  }
+  const opening = !panel.classList.contains('open');
+  panel.classList.toggle('open', opening);
+  if (opening) { switchSimTab(_simTab); }
+}
+
+function switchSimTab(tab) {
+  _simTab = tab;
+  const c = document.getElementById('sim-tab-customer');
+  const d = document.getElementById('sim-tab-driver');
+  if (c) c.classList.toggle('active', tab === 'customer');
+  if (d) d.classList.toggle('active', tab === 'driver');
+  renderSimPanel();
+}
+
+function renderSimPanel() {
+  const body = document.getElementById('sim-body');
+  if (!body) return;
+  body.innerHTML = _simTab === 'customer' ? renderSimCustomer() : renderSimDriver();
+}
+
+// ---------- TAB KHÁCH ----------
+function renderSimCustomer() {
+  const custOpts = CUSTOMERS.map(c => `<option value="${c.id}">${esc(c.name)} · ${c.phone}</option>`).join('');
+  // Đơn đang hoạt động của khách (để huỷ / đổi lịch)
+  const active = BOOKINGS.filter(b => ['PENDING_CONFIRMATION','CONFIRMED','IN_PROGRESS','RESCHEDULE_REQUESTED'].includes(b.bookingStatus));
+  const cards = active.slice(0, 30).map(b => {
+    const vt = VEHICLE_TYPES[b.bookingType];
+    const canCancel = ['PENDING_CONFIRMATION','CONFIRMED'].includes(b.bookingStatus);
+    const canReschedule = b.bookingStatus === 'CONFIRMED';
+    return `<div class="sim-card">
+      <div class="sc-top"><span class="sc-code">${vt?.icon||''} ${b.bookingCode}</span>${statusBadge(BOOKING_STATUSES, b.bookingStatus)}</div>
+      <div class="sc-route">${esc(getCustomerName(b.customerId))} · ${esc(b.pickup)} → ${esc(b.dropoff)}</div>
+      <div class="sim-actions">
+        ${canCancel ? `<button class="btn btn-sm btn-danger" onclick="simCustomerCancel('${b.id}')">Huỷ chuyến</button>` : ''}
+        ${canReschedule ? `<button class="btn btn-sm btn-outline" onclick="simCustomerReschedule('${b.id}')">Đổi lịch</button>` : ''}
+        ${b.bookingStatus === 'RESCHEDULE_REQUESTED' ? '<span class="text-muted" style="font-size:12px">Chờ vận hành duyệt…</span>' : ''}
+      </div></div>`;
+  }).join('') || '<div class="sim-empty">Chưa có đơn đang hoạt động</div>';
+
+  return `
+    <div class="sim-form sim-card">
+      <div class="sc-code" style="margin-bottom:4px">🚕 Đặt xe mới (như app khách)</div>
+      <label>Khách hàng</label>
+      <select class="input" id="sim-cust">${custOpts}</select>
+      <label>Loại xe</label>
+      <select class="input" id="sim-type">
+        <option value="BIKE">🏍️ Xe máy</option>
+        <option value="CAR">🚗 Xe hơi</option>
+      </select>
+      <label>Điểm đón</label>
+      <input class="input" id="sim-pickup" placeholder="VD: 12 Lê Lợi, Q1" value="Vị trí hiện tại của khách">
+      <label>Điểm đến</label>
+      <input class="input" id="sim-dropoff" placeholder="VD: Sân bay Tân Sơn Nhất" value="Sân bay Tân Sơn Nhất">
+      <label>Thanh toán</label>
+      <select class="input" id="sim-pay">
+        <option value="cash">💵 Tiền mặt</option>
+        <option value="wallet">💰 Ví (trừ số dư)</option>
+      </select>
+      <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="simCreateRideBooking()">📲 Khách đặt xe</button>
+    </div>
+    <div class="sc-code" style="margin:14px 0 8px">Đơn đang hoạt động</div>
+    ${cards}`;
+}
+
+function simCreateRideBooking() {
+  const custId = document.getElementById('sim-cust').value;
+  const type = document.getElementById('sim-type').value;
+  const pickup = document.getElementById('sim-pickup').value.trim() || 'Vị trí khách';
+  const dropoff = document.getElementById('sim-dropoff').value.trim() || 'Điểm đến';
+  const method = document.getElementById('sim-pay').value === 'cash' ? 'cash' : 'wallet';
+  const distance = Math.round((3 + Math.random() * 12) * 10) / 10;
+  const base = type === 'BIKE' ? 12000 : 25000;
+  const perKm = type === 'BIKE' ? 4500 : 11000;
+  const fare = Math.round((base + distance * perKm) / 1000) * 1000;
+  const traceId = newTraceId();
+  const id = genId('BK', BOOKINGS);
+  const b = {
+    id, bookingCode: 'RB-' + id.replace('BK', ''),
+    bookingType: type,
+    bookingStatus: 'PENDING_CONFIRMATION', paymentStatus: 'PENDING', fulfillmentStatus: null,
+    customerId: custId, agentId: null, driverId: null,
+    pickup, dropoff, fareSnapshot: fare, distance,
+    paymentMethod: method, paymentReference: null, fulfillmentTaskId: null,
+    createdAt: nowStr(), updatedAt: nowStr()
+  };
+  BOOKINGS.unshift(b);
+  createAuditLog({ action: 'booking.create', target: id, traceId, actor: custId, actorRole: 'CUSTOMER',
+    sourceSite: 'customer', before: null, after: { type, fare } });
+  createNotification({ type: 'booking_created', recipient: custId,
+    content: `Đã đặt ${VEHICLE_TYPES[type].label} ${b.bookingCode}, đang xử lý thanh toán...` });
+  const pay = processPayment(b, traceId);
+  if (pay.success) {
+    b.bookingStatus = 'CONFIRMED'; b.fulfillmentStatus = 'PENDING'; b.updatedAt = nowStr();
+    createAuditLog({ action: 'booking.status_change', target: id, traceId, sourceSite: 'customer',
+      before: { status: 'PENDING_CONFIRMATION' }, after: { status: 'CONFIRMED' } });
+    toast(`Đặt xe thành công: ${b.bookingCode} → vào hàng chờ phân công TX`, 'success');
+  } else {
+    toast(`Đặt ${b.bookingCode} nhưng thanh toán thất bại (ví không đủ) — nạp ví rồi thử lại`, 'warning');
+  }
+  renderPage(currentPage); updateBadges(); renderSimPanel();
+}
+
+function simCustomerCancel(bookingId) {
+  cancelBooking(bookingId, 'Khách huỷ qua app');
+  renderSimPanel();
+}
+
+function simCustomerReschedule(bookingId) {
+  const b = BOOKINGS.find(x => x.id === bookingId);
+  if (!b || b.bookingStatus !== 'CONFIRMED') return;
+  const traceId = newTraceId();
+  b.bookingStatus = 'RESCHEDULE_REQUESTED';
+  b.updatedAt = nowStr();
+  createNotification({ type: 'reschedule_requested', recipient: 'OPERATOR',
+    content: `Khách yêu cầu đổi lịch ${b.bookingCode}` });
+  createAuditLog({ action: 'booking.reschedule_request', target: b.id, traceId, actor: b.customerId,
+    actorRole: 'CUSTOMER', sourceSite: 'customer', before: { status: 'CONFIRMED' }, after: { status: 'RESCHEDULE_REQUESTED' } });
+  toast(`Đã gửi yêu cầu đổi lịch ${b.bookingCode} cho vận hành`, 'info');
+  renderPage(currentPage); updateBadges(); renderSimPanel();
+}
+
+// Vận hành duyệt/từ chối đổi lịch (gọi từ chi tiết booking)
+function resolveReschedule(bookingId, approve) {
+  const b = BOOKINGS.find(x => x.id === bookingId);
+  if (!b || b.bookingStatus !== 'RESCHEDULE_REQUESTED') return;
+  const traceId = newTraceId();
+  b.bookingStatus = 'CONFIRMED';
+  b.updatedAt = nowStr();
+  createNotification({ type: 'reschedule_resolved', recipient: b.customerId,
+    content: approve ? `Yêu cầu đổi lịch ${b.bookingCode} đã được duyệt` : `Yêu cầu đổi lịch ${b.bookingCode} bị từ chối, giữ lịch cũ` });
+  createAuditLog({ action: approve ? 'booking.reschedule_approve' : 'booking.reschedule_reject', target: b.id, traceId,
+    sourceSite: 'master', before: { status: 'RESCHEDULE_REQUESTED' }, after: { status: 'CONFIRMED', approve } });
+  closeModal('booking-detail-modal');
+  renderPage(currentPage); updateBadges();
+  if (document.getElementById('sim-panel')) renderSimPanel();
+}
+
+// ---------- TAB TÀI XẾ ----------
+function renderSimDriver() {
+  const tasks = FULFILLMENT_TASKS.filter(t => ['ASSIGNED','IN_PROGRESS'].includes(t.status));
+  if (!tasks.length) return '<div class="sim-empty">Chưa có nhiệm vụ nào được phân cho tài xế.<br>Hãy phân công đơn ở mục "Nhiệm vụ phân công".</div>';
+  return tasks.map(t => {
+    const b = BOOKINGS.find(x => x.id === t.bookingId);
+    if (!b) return '';
+    const vt = VEHICLE_TYPES[b.bookingType];
+    let acts = '';
+    if (t.status === 'ASSIGNED' && !t.acceptedAt) {
+      acts = `<button class="btn btn-sm btn-success" onclick="simDriver('accept','${b.id}')">✅ Nhận</button>
+              <button class="btn btn-sm btn-danger" onclick="simDriver('reject','${b.id}')">❌ Từ chối</button>`;
+    } else if (t.status === 'ASSIGNED') {
+      acts = `<button class="btn btn-sm btn-primary" onclick="simDriver('start','${b.id}')">▶️ Bắt đầu</button>
+              <button class="btn btn-sm btn-danger" onclick="simDriver('reject','${b.id}')">❌ Từ chối</button>`;
+    } else { // IN_PROGRESS
+      acts = `<button class="btn btn-sm btn-success" onclick="simDriver('complete','${b.id}')">🏁 Hoàn thành</button>
+              <button class="btn btn-sm btn-outline" onclick="simDriver('noshow','${b.id}')">🚫 No-show</button>`;
+    }
+    return `<div class="sim-card">
+      <div class="sc-top"><span class="sc-code">${vt?.icon||''} ${b.bookingCode}</span>${statusBadge(FULFILLMENT_STATUSES, t.status)}</div>
+      <div class="sc-route">🧑‍✈️ ${esc(getDriverName(t.driverId))}${t.vehicleId ? ' · '+esc(getVehicleName(t.vehicleId)) : ''}</div>
+      <div class="sc-route">${esc(b.pickup)} → ${esc(b.dropoff)} · ${fmt(b.fareSnapshot)}${t.acceptedAt ? ' · đã nhận' : ''}</div>
+      <div class="sim-actions">${acts}</div></div>`;
+  }).join('');
+}
+
+function simDriver(action, bookingId) {
+  ({ accept: driverAcceptTask, reject: driverRejectTask, start: startTrip,
+     complete: completeTrip, noshow: markNoShow }[action] || (() => {}))(bookingId, 'driver');
+  renderSimPanel();
 }

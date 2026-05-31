@@ -1654,3 +1654,71 @@ const PAYMENT_INTENT_STATUS = {
     });
   });
 })();
+
+// ============================================
+// LOCAL STORE — persist toàn bộ data vào localStorage
+// Cho phép thêm/xoá/sửa ở mọi module và giữ liên kết liền mạch sau khi F5.
+// Các const ở trên là SEED; Store sẽ hydrate/đè in-place khi có dữ liệu đã lưu.
+// ============================================
+const STORE_KEY = 'hahago_store_v3';
+
+// Registry các collection có thể bị thay đổi (CRUD / giao dịch).
+// Array → hydrate in-place (length=0 + push). Object → xoá key + Object.assign.
+const STORE_COLLECTIONS = {
+  PORTAL_USERS, ROLES, VEHICLE_MODELS, STOPS, ROUTES, SCHEDULES,
+  DRIVERS, INTERCITY_DRIVERS, DRIVER_APPLICATIONS, CUSTOMERS,
+  BOOKINGS, FULFILLMENT_TASKS, INTERCITY_VEHICLES, PARTNERS,
+  PROMOS, WALLETS, WALLET_TRANSACTIONS, REFUNDS, NOTIFICATIONS,
+  AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, MAINTENANCE, REGISTRATIONS,
+  INTERCITY_ROUTES, INTERCITY_TRIPS, AGENT_CUSTOMERS, PRICING
+};
+
+let _storeReady = false;        // true sau khi hydrate xong → cho phép autosave
+let _saveTimer = null;
+
+function hydrateStore() {
+  let raw = null;
+  try { raw = localStorage.getItem(STORE_KEY); } catch (e) { raw = null; }
+  if (!raw) { _storeReady = true; return false; }
+  try {
+    const saved = JSON.parse(raw);
+    Object.keys(STORE_COLLECTIONS).forEach(k => {
+      const target = STORE_COLLECTIONS[k];
+      const src = saved[k];
+      if (src == null) return;
+      if (Array.isArray(target)) {
+        target.length = 0;
+        src.forEach(item => target.push(item));
+      } else if (typeof target === 'object') {
+        Object.keys(target).forEach(key => { delete target[key]; });
+        Object.assign(target, src);
+      }
+    });
+    _storeReady = true;
+    return true;
+  } catch (e) {
+    console.warn('hydrateStore lỗi, dùng seed:', e);
+    _storeReady = true;
+    return false;
+  }
+}
+
+function saveStore() {
+  if (!_storeReady) return;            // tránh đè seed trước khi hydrate
+  const snap = {};
+  Object.keys(STORE_COLLECTIONS).forEach(k => { snap[k] = STORE_COLLECTIONS[k]; });
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(snap)); }
+  catch (e) { console.warn('saveStore lỗi:', e); }
+}
+
+// Lưu trễ (debounce) để gọi thoải mái sau mỗi mutation mà không nghẽn UI.
+function scheduleSave() {
+  if (!_storeReady) return;
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(saveStore, 150);
+}
+
+function resetStore() {
+  try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+  location.reload();
+}

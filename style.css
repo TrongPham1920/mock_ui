@@ -2567,3 +2567,27 @@ tr.row-selected { background: var(--accent-glow); }
 .cash-calc { border-top: 1px solid var(--border); padding-top: 12px; }
 .apply-rowx { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14px; }
 .apply-rowx.total { border-top: 1px dashed var(--border); margin-top: 6px; padding-top: 10px; font-size: 16px; font-weight: 700; }
+
+/* ===== SIM PANEL — mô phỏng app Tài xế / Khách hàng ===== */
+.sim-panel { position: fixed; top: 0; right: 0; height: 100vh; width: 380px; max-width: 90vw;
+  background: var(--bg-card); border-left: 1px solid var(--border-color);
+  box-shadow: -8px 0 32px rgba(0,0,0,.35); transform: translateX(105%);
+  transition: transform .25s ease; z-index: 1200; display: flex; flex-direction: column; }
+.sim-panel.open { transform: translateX(0); }
+.sim-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border-color); }
+.sim-head h3 { margin: 0; font-size: 15px; }
+.sim-tabs { display: flex; gap: 6px; padding: 10px 16px 0; }
+.sim-tab { flex: 1; padding: 8px; border-radius: 8px 8px 0 0; cursor: pointer; text-align: center;
+  font-size: 13px; font-weight: 600; background: var(--bg-secondary); color: var(--text-secondary); border: 1px solid var(--border-color); border-bottom: none; }
+.sim-tab.active { background: var(--bg-card); color: var(--text-accent); }
+.sim-body { flex: 1; overflow-y: auto; padding: 16px; }
+.sim-card { background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+.sim-card .sc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.sim-card .sc-code { font-weight: 700; font-size: 13px; }
+.sim-card .sc-route { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.sim-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.sim-form label { font-size: 12px; color: var(--text-secondary); display: block; margin: 8px 0 4px; }
+.sim-form .input, .sim-form select { width: 100%; }
+.sim-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 24px 0; }
