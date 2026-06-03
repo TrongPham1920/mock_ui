@@ -201,8 +201,18 @@ function driverBadge(status) {
 }
 
 // ---- Modal ----
-function openModal(id) { document.getElementById(id).classList.add('show'); }
-function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function openModal(id) {
+  const el = document.getElementById(id);
+  // Nâng z-index trên các modal đang mở để popup mới luôn nằm trên (vd: xem ảnh hồ sơ mở từ popup chi tiết)
+  const openCount = document.querySelectorAll('.modal-overlay.show').length;
+  el.style.zIndex = 200 + (openCount + 1) * 10;
+  el.classList.add('show');
+}
+function closeModal(id) {
+  const el = document.getElementById(id);
+  el.classList.remove('show');
+  el.style.zIndex = '';
+}
 document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
 
 // ---- Sidebar toggle ----
@@ -1622,6 +1632,19 @@ function filterBookings(type) {
   renderBookings();
 }
 
+// Lấy đơn đăng kiểm/bảo dưỡng (có ảnh hồ sơ) liên kết với 1 booking, nếu có
+function getBookingDocOrder(b) {
+  if (b.bookingType === 'SERVICE_ORDER' && b.serviceOrderId) {
+    const order = REGISTRATIONS.find(r => r.id === b.serviceOrderId);
+    if (order?.docImages && (order.docImages.front || order.docImages.back)) return { kind: 'reg', order };
+  }
+  if (b.bookingType === 'MAINTENANCE_ORDER' && b.maintenanceOrderId) {
+    const order = MAINTENANCE.find(r => r.id === b.maintenanceOrderId);
+    if (order?.docImages && (order.docImages.front || order.docImages.back)) return { kind: 'mnt', order };
+  }
+  return null;
+}
+
 function renderBookings() {
   let bookings = [...BOOKINGS];
   if (currentBookingType !== 'ALL') bookings = bookings.filter(b => b.bookingType === currentBookingType);
@@ -1686,6 +1709,7 @@ function showBookingDetail(id) {
       <div class="input-group"><label>Fulfillment Task</label><div style="padding:8px 0;font-size:13px;font-family:monospace">${b.fulfillmentTaskId||'—'}</div></div>
       ${b.seatNumbers ? `<div class="input-group"><label>Ghế</label><div style="padding:8px 0;font-size:13px">${b.seatNumbers.join(', ')}</div></div>` : ''}
       ${b.routeId ? `<div class="input-group"><label>Tuyến</label><div style="padding:8px 0;font-size:13px">${getRouteName(b.routeId)}</div></div>` : ''}
+      ${(() => { const d = getBookingDocOrder(b); return d ? `<div class="input-group full-width"><label>${d.kind === 'reg' ? 'Hồ sơ đăng kiểm' : 'Hồ sơ bảo dưỡng'}</label><div style="padding:8px 0;font-size:13px"><a href="javascript:void(0)" class="text-accent fw-600" onclick="viewOrderDocs('${d.kind}','${d.order.id}')">📷 Xem ảnh mặt trước / mặt sau</a></div></div>` : ''; })()}
     </div>
 
     <div style="margin-top:20px"><label style="font-size:12px;font-weight:500;color:var(--text-secondary);display:block;margin-bottom:12px">Booking Lifecycle</label>
@@ -4024,7 +4048,27 @@ function renderRegistrations() {
   renderRegistrationDetail(selectedRegId);
 }
 
-function createRegistrationOrder() {
+// Đọc input file ảnh → data URL (base64), trả null nếu chưa chọn
+function readFileAsDataURL(input) {
+  return new Promise(resolve => {
+    const file = input?.files?.[0];
+    if (!file) return resolve(null);
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  });
+}
+
+async function readDocImages(frontId, backId) {
+  const [front, back] = await Promise.all([
+    readFileAsDataURL(document.getElementById(frontId)),
+    readFileAsDataURL(document.getElementById(backId))
+  ]);
+  return (front || back) ? { front, back } : null;
+}
+
+async function createRegistrationOrder() {
   const plate = document.getElementById('reg-plate').value.trim();
   const ownerName = document.getElementById('reg-owner-name').value.trim();
   const ownerPhone = document.getElementById('reg-owner-phone').value.trim();
@@ -4042,6 +4086,7 @@ function createRegistrationOrder() {
   }
 
   const servicePrices = { normal: 350000, express: 500000, home: 700000 };
+  const docImages = await readDocImages('reg-doc-front', 'reg-doc-back');
 
   const traceId = newTraceId();
   const newReg = {
@@ -4052,6 +4097,7 @@ function createRegistrationOrder() {
     pickupAddress,
     bookingDate, bookingTime, service,
     expireDate, notes,
+    docImages,
     price: servicePrices[service],
     status: 'pending',
     createdAt: nowStr(),
@@ -4116,7 +4162,7 @@ function createRegistrationOrder() {
 }
 
 function clearRegistrationForm() {
-  ['reg-plate','reg-owner-name','reg-owner-phone','reg-pickup-address','reg-booking-date','reg-expire-date','reg-notes'].forEach(id => {
+  ['reg-plate','reg-owner-name','reg-owner-phone','reg-pickup-address','reg-booking-date','reg-expire-date','reg-notes','reg-doc-front','reg-doc-back'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
@@ -4208,7 +4254,7 @@ function renderMaintenance() {
   renderMaintenanceDetail(selectedMntId);
 }
 
-function createMaintenanceOrder() {
+async function createMaintenanceOrder() {
   const plate = document.getElementById('mnt-plate').value.trim();
   const ownerName = document.getElementById('mnt-owner-name').value.trim();
   const ownerPhone = document.getElementById('mnt-owner-phone').value.trim();
@@ -4225,6 +4271,7 @@ function createMaintenanceOrder() {
   }
 
   const servicePrices = { basic: 400000, full: 1200000, oil_change: 250000, tire: 800000 };
+  const docImages = await readDocImages('mnt-doc-front', 'mnt-doc-back');
   const traceId = newTraceId();
 
   const newMnt = {
@@ -4235,6 +4282,7 @@ function createMaintenanceOrder() {
     pickupAddress,
     bookingDate, bookingTime, service,
     mileage, notes,
+    docImages,
     price: servicePrices[service],
     status: 'pending',
     createdAt: nowStr(),
@@ -4299,7 +4347,7 @@ function createMaintenanceOrder() {
 }
 
 function clearMaintenanceForm() {
-  ['mnt-plate','mnt-owner-name','mnt-owner-phone','mnt-pickup-address','mnt-booking-date','mnt-notes','mnt-mileage'].forEach(id => {
+  ['mnt-plate','mnt-owner-name','mnt-owner-phone','mnt-pickup-address','mnt-booking-date','mnt-notes','mnt-mileage','mnt-doc-front','mnt-doc-back'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
