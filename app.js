@@ -1351,9 +1351,58 @@ function renderIntercityDrivers() {
       <td class="fw-600">${d.trips.toLocaleString()}</td>
       <td>${driverBadge(d.status)}</td>
       <td>${d.currentAssignmentId ? `<span class="text-muted">${d.currentAssignmentId}</span>` : '—'}</td>
-      <td><button class="btn btn-sm btn-outline">✏️</button></td>
+      <td><button class="btn btn-sm btn-outline" onclick="openIntercityDriverModal('${d.id}')">✏️</button></td>
     </tr>
   `).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy</div></div></td></tr>`;
+}
+
+// ---- Tạo / chỉnh sửa tài xế liên tỉnh ----
+let editingIntercityDriverId = null;
+
+function fillIntercityOperatorSelect(selectId) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  sel.innerHTML = PARTNERS.filter(p => p.status === 'active')
+    .map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+}
+
+function openIntercityDriverModal(id) {
+  editingIntercityDriverId = id || null;
+  fillIntercityOperatorSelect('ic-driver-operator');
+  const d = id ? INTERCITY_DRIVERS.find(x => x.id === id) : null;
+  document.getElementById('intercity-driver-modal-title').textContent =
+    d ? `Chỉnh sửa tài xế · ${d.id}` : 'Thêm tài xế liên tỉnh';
+  document.getElementById('ic-driver-name').value = d?.name || '';
+  document.getElementById('ic-driver-phone').value = d?.phone || '';
+  document.getElementById('ic-driver-email').value = d?.email || '';
+  document.getElementById('ic-driver-address').value = d?.address || '';
+  document.getElementById('ic-driver-license').value = d?.licenseClass || 'D';
+  document.getElementById('ic-driver-operator').value = d?.operatorId || (PARTNERS.find(p=>p.status==='active')?.id || '');
+  document.getElementById('ic-driver-status').value = d?.status === 'busy' ? 'busy' : (d?.status || 'offline');
+  openModal('intercity-driver-modal');
+}
+
+function saveIntercityDriver() {
+  const name = document.getElementById('ic-driver-name').value.trim();
+  const phone = document.getElementById('ic-driver-phone').value.trim();
+  const email = document.getElementById('ic-driver-email').value.trim();
+  const address = document.getElementById('ic-driver-address').value.trim();
+  const licenseClass = document.getElementById('ic-driver-license').value;
+  const operatorId = document.getElementById('ic-driver-operator').value;
+  const status = document.getElementById('ic-driver-status').value;
+  if (!name || !phone) { alert('Vui lòng nhập họ tên và số điện thoại!'); return; }
+
+  if (editingIntercityDriverId) {
+    const d = INTERCITY_DRIVERS.find(x => x.id === editingIntercityDriverId);
+    if (d) Object.assign(d, { name, phone, email, address, licenseClass, operatorId, status });
+  } else {
+    INTERCITY_DRIVERS.push({
+      id: nextDriverId('IDR', INTERCITY_DRIVERS), name, phone, email, address, operatorId, licenseClass,
+      status, rating: 5.0, trips: 0, avatar: '👤', currentAssignmentId: null
+    });
+  }
+  closeModal('intercity-driver-modal');
+  renderIntercityDrivers();
 }
 
 // ============================================
@@ -1545,9 +1594,94 @@ function renderIntercityVehicles() {
       <td>${v.mileage.toLocaleString()} km</td>
       <td><span class="badge ${VEHICLE_STATUS[v.status]?.class||'badge-offline'}">${VEHICLE_STATUS[v.status]?.label||v.status}</span></td>
       <td>${v.currentAssignmentId ? `<span class="text-muted">${v.currentAssignmentId}</span>` : '—'}</td>
-      <td><button class="btn btn-sm btn-outline">✏️</button></td>
+      <td><button class="btn btn-sm btn-outline" onclick="openIntercityVehicleModal('${v.id}')">✏️</button></td>
     </tr>
   `).join('') || `<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy xe</div></div></td></tr>`;
+}
+
+// ---- Tạo / chỉnh sửa xe liên tỉnh ----
+// Khi TẠO MỚI: ẩn các trường biển số / loại xe / số ghế / nhà xe quản lý / số km
+// (chỉ chọn trạng thái — chi tiết bổ sung sau bằng chức năng chỉnh sửa).
+let editingIntercityVehicleId = null;
+
+const IC_VEHICLE_CATEGORY_LABELS = {
+  seat: 'Ghế ngồi', sleeper: 'Giường nằm', limo_seat: 'Limousine ghế',
+  limo_sleeper: 'Limousine giường', other: 'Khác'
+};
+
+function fillIntercityVehicleModelSelect() {
+  const sel = document.getElementById('ic-vehicle-model');
+  if (!sel) return;
+  sel.innerHTML = VEHICLE_MODELS.filter(m => m.serviceType === 'INTERCITY')
+    .map(m => `<option value="${m.id}" data-seats="${m.seats}" data-category="${m.category}">${m.name}</option>`).join('');
+}
+
+// Số ghế + phân loại lấy theo loại xe đã chọn, không cho chỉnh sửa.
+function onIntercityVehicleModelChange() {
+  const sel = document.getElementById('ic-vehicle-model');
+  const opt = sel.options[sel.selectedIndex];
+  document.getElementById('ic-vehicle-seats').value = opt ? `${opt.dataset.seats} chỗ` : '';
+  document.getElementById('ic-vehicle-category').value =
+    opt ? (IC_VEHICLE_CATEGORY_LABELS[opt.dataset.category] || opt.dataset.category) : '';
+}
+
+function openIntercityVehicleModal(id) {
+  editingIntercityVehicleId = id || null;
+  const isEdit = !!id;
+  fillIntercityVehicleModelSelect();
+  fillIntercityOperatorSelect('ic-vehicle-operator');
+  const v = id ? INTERCITY_VEHICLES.find(x => x.id === id) : null;
+  document.getElementById('intercity-vehicle-modal-title').textContent =
+    v ? `Chỉnh sửa xe · ${v.id}` : 'Thêm xe liên tỉnh';
+
+  // Tạo mới chỉ ẩn "Số km" (theo yêu cầu); các trường còn lại đều có.
+  document.getElementById('ic-vehicle-mileage-row').style.display = isEdit ? '' : 'none';
+
+  document.getElementById('ic-vehicle-plate').value = v?.plate || '';
+  document.getElementById('ic-vehicle-model').value = v?.seatLayoutId || (VEHICLE_MODELS.find(m=>m.serviceType==='INTERCITY')?.id || '');
+  onIntercityVehicleModelChange();
+  document.getElementById('ic-vehicle-operator').value = v?.operatorId || (PARTNERS.find(p=>p.status==='active')?.id || '');
+  document.getElementById('ic-vehicle-mileage').value = v?.mileage ?? '';
+  document.getElementById('ic-vehicle-status').value = v?.status || 'idle';
+  openModal('intercity-vehicle-modal');
+}
+
+function nextVehicleId(prefix, arr) {
+  let n = 1;
+  while (arr.some(v => v.id === prefix + String(n).padStart(3, '0'))) n++;
+  return prefix + String(n).padStart(3, '0');
+}
+
+function saveIntercityVehicle() {
+  const status = document.getElementById('ic-vehicle-status').value;
+  const plate = document.getElementById('ic-vehicle-plate').value.trim();
+  const modelSel = document.getElementById('ic-vehicle-model');
+  const model = VEHICLE_MODELS.find(m => m.id === modelSel.value);
+  const operatorId = document.getElementById('ic-vehicle-operator').value;
+  if (!plate) { alert('Vui lòng nhập biển số!'); return; }
+
+  if (editingIntercityVehicleId) {
+    const v = INTERCITY_VEHICLES.find(x => x.id === editingIntercityVehicleId);
+    if (v) {
+      v.plate = plate;
+      v.seatLayoutId = modelSel.value;
+      v.vehicleClass = model?.name || v.vehicleClass;
+      v.category = model?.category || v.category;
+      v.operatorId = operatorId;
+      const km = parseInt(document.getElementById('ic-vehicle-mileage').value, 10);
+      v.mileage = isNaN(km) ? v.mileage : km;
+      v.status = status;
+    }
+  } else {
+    // Tạo mới: số km mặc định 0 (không nhập); số ghế/phân loại suy ra từ loại xe.
+    INTERCITY_VEHICLES.push({
+      id: nextVehicleId('IV', INTERCITY_VEHICLES), plate, vehicleClass: model?.name || 'Chưa cập nhật',
+      category: model?.category || null, seatLayoutId: modelSel.value, operatorId,
+      status, currentAssignmentId: null, mileage: 0
+    });
+  }
+  closeModal('intercity-vehicle-modal');
+  renderIntercityVehicles();
 }
 
 // ============================================

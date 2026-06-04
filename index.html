@@ -286,6 +286,7 @@
                   <select id="intercity-driver-status-filter" onchange="renderIntercityDrivers()"><option value="">Tất cả</option><option value="online">Online</option><option value="busy">Đang chạy</option><option value="offline">Offline</option></select>
                   <select id="intercity-driver-operator-filter" onchange="renderIntercityDrivers()"><option value="">Mọi nhà xe</option></select>
                   <div class="search-box"><input type="search" placeholder="Tìm tài xế..." id="intercity-driver-search" oninput="renderIntercityDrivers()"></div>
+                  <button class="btn btn-primary" onclick="openIntercityDriverModal()">➕ Thêm tài xế</button>
                 </div>
               </div>
               <div class="table-wrapper">
@@ -304,6 +305,7 @@
                   <select id="intercity-vehicle-status-filter" onchange="renderIntercityVehicles()"><option value="">Tất cả</option><option value="idle">Sẵn sàng</option><option value="busy">Đang chạy</option><option value="maintenance">Bảo dưỡng</option></select>
                   <select id="intercity-vehicle-operator-filter" onchange="renderIntercityVehicles()"><option value="">Mọi nhà xe</option></select>
                   <div class="search-box"><input type="search" placeholder="Tìm biển số..." id="intercity-vehicle-search" oninput="renderIntercityVehicles()"></div>
+                  <button class="btn btn-primary" onclick="openIntercityVehicleModal()">➕ Thêm xe</button>
                 </div>
               </div>
               <div class="table-wrapper">
@@ -822,6 +824,62 @@
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('driver-modal')">Hủy</button>
         <button class="btn btn-primary" onclick="addDriver()">Thêm tài xế</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Intercity Driver Create/Edit Modal -->
+  <div class="modal-overlay" id="intercity-driver-modal">
+    <div class="modal">
+      <div class="modal-header"><span class="modal-title" id="intercity-driver-modal-title">Thêm tài xế liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('intercity-driver-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="input-group"><label>Họ và tên</label><input type="text" id="ic-driver-name" placeholder="Nguyễn Văn A"></div>
+          <div class="input-group"><label>Số điện thoại</label><input type="text" id="ic-driver-phone" placeholder="090xxxxxxx"></div>
+          <div class="input-group"><label>Email</label><input type="email" id="ic-driver-email" placeholder="email@gmail.com"></div>
+          <div class="input-group"><label>Hạng GPLX</label>
+            <select id="ic-driver-license"><option value="D">D</option><option value="E">E</option><option value="FC">FC</option></select>
+          </div>
+          <div class="input-group full-width"><label>Địa chỉ</label><input type="text" id="ic-driver-address" placeholder="Số nhà, đường, phường, quận, tỉnh/thành"></div>
+          <div class="input-group"><label>Nhà xe quản lý</label>
+            <select id="ic-driver-operator"></select>
+          </div>
+          <div class="input-group"><label>Trạng thái</label>
+            <select id="ic-driver-status"><option value="offline">Offline</option><option value="online">Online</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('intercity-driver-modal')">Hủy</button>
+        <button class="btn btn-primary" id="ic-driver-save-btn" onclick="saveIntercityDriver()">Lưu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Intercity Vehicle Create/Edit Modal -->
+  <div class="modal-overlay" id="intercity-vehicle-modal">
+    <div class="modal">
+      <div class="modal-header"><span class="modal-title" id="intercity-vehicle-modal-title">Thêm xe liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('intercity-vehicle-modal')">✕</button></div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="input-group" id="ic-vehicle-plate-row"><label>Biển số</label><input type="text" id="ic-vehicle-plate" placeholder="51B-10001"></div>
+          <div class="input-group" id="ic-vehicle-model-row"><label>Loại xe</label>
+            <select id="ic-vehicle-model" onchange="onIntercityVehicleModelChange()"></select>
+          </div>
+          <div class="input-group" id="ic-vehicle-seats-row"><label>Số ghế (theo loại xe)</label><input type="text" id="ic-vehicle-seats" readonly placeholder="—"></div>
+          <div class="input-group" id="ic-vehicle-category-row"><label>Phân loại (theo loại xe)</label><input type="text" id="ic-vehicle-category" readonly placeholder="—"></div>
+          <div class="input-group" id="ic-vehicle-operator-row"><label>Nhà xe quản lý</label>
+            <select id="ic-vehicle-operator"></select>
+          </div>
+          <div class="input-group" id="ic-vehicle-mileage-row"><label>Số km</label><input type="number" id="ic-vehicle-mileage" placeholder="0"></div>
+          <div class="input-group"><label>Trạng thái</label>
+            <select id="ic-vehicle-status"><option value="idle">Sẵn sàng</option><option value="busy">Đang chạy</option><option value="maintenance">Bảo dưỡng</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeModal('intercity-vehicle-modal')">Hủy</button>
+        <button class="btn btn-primary" id="ic-vehicle-save-btn" onclick="saveIntercityVehicle()">Lưu</button>
       </div>
     </div>
   </div>

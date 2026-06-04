@@ -640,6 +640,8 @@ input[type="text"],
 input[type="number"],
 input[type="date"],
 input[type="search"],
+input[type="email"],
+input[type="tel"],
 textarea {
   padding: 9px 14px;
   border-radius: var(--radius-sm);
