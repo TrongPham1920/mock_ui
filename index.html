@@ -830,7 +830,7 @@
 
   <!-- Intercity Driver Create/Edit Modal -->
   <div class="modal-overlay" id="intercity-driver-modal">
-    <div class="modal">
+    <div class="modal" style="max-width:760px">
       <div class="modal-header"><span class="modal-title" id="intercity-driver-modal-title">Thêm tài xế liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('intercity-driver-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid">
@@ -848,6 +848,8 @@
             <select id="ic-driver-status"><option value="offline">Offline</option><option value="online">Online</option></select>
           </div>
         </div>
+        <div class="doc-section-title">Hình ảnh hồ sơ (không bắt buộc)</div>
+        <div id="ic-driver-docs"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('intercity-driver-modal')">Hủy</button>
@@ -858,7 +860,7 @@
 
   <!-- Intercity Vehicle Create/Edit Modal -->
   <div class="modal-overlay" id="intercity-vehicle-modal">
-    <div class="modal">
+    <div class="modal" style="max-width:760px">
       <div class="modal-header"><span class="modal-title" id="intercity-vehicle-modal-title">Thêm xe liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('intercity-vehicle-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid">
@@ -876,11 +878,22 @@
             <select id="ic-vehicle-status"><option value="idle">Sẵn sàng</option><option value="busy">Đang chạy</option><option value="maintenance">Bảo dưỡng</option></select>
           </div>
         </div>
+        <div class="doc-section-title">Hình ảnh xe (không bắt buộc)</div>
+        <div id="ic-vehicle-photos"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('intercity-vehicle-modal')">Hủy</button>
         <button class="btn btn-primary" id="ic-vehicle-save-btn" onclick="saveIntercityVehicle()">Lưu</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Intercity Driver/Vehicle Detail (View) Modal -->
+  <div class="modal-overlay" id="ic-detail-modal">
+    <div class="modal" style="max-width:760px">
+      <div class="modal-header"><span class="modal-title" id="ic-detail-title">Chi tiết</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('ic-detail-modal')">✕</button></div>
+      <div class="modal-body" id="ic-detail-body"></div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('ic-detail-modal')">Đóng</button></div>
     </div>
   </div>
 

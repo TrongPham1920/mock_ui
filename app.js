@@ -1351,13 +1351,14 @@ function renderIntercityDrivers() {
       <td class="fw-600">${d.trips.toLocaleString()}</td>
       <td>${driverBadge(d.status)}</td>
       <td>${d.currentAssignmentId ? `<span class="text-muted">${d.currentAssignmentId}</span>` : '—'}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="openIntercityDriverModal('${d.id}')">✏️</button></td>
+      <td><button class="btn btn-sm btn-outline" onclick="viewIntercityDriver('${d.id}')">👁️</button> <button class="btn btn-sm btn-outline" onclick="openIntercityDriverModal('${d.id}')">✏️</button></td>
     </tr>
   `).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy</div></div></td></tr>`;
 }
 
-// ---- Tạo / chỉnh sửa tài xế liên tỉnh ----
+// ---- Tạo / chỉnh sửa / xem tài xế liên tỉnh ----
 let editingIntercityDriverId = null;
+let _icDriverDocDraft = {}; // bản nháp ảnh đang upload trong modal tạo/sửa
 
 function fillIntercityOperatorSelect(selectId) {
   const sel = document.getElementById(selectId);
@@ -1366,10 +1367,43 @@ function fillIntercityOperatorSelect(selectId) {
     .map(p => `<option value="${p.id}">${p.name}</option>`).join('');
 }
 
+// Lưới upload ảnh (không bắt buộc) cho modal tạo/sửa tài xế
+function renderDriverDocsUpload() {
+  const cell = (path, label) => {
+    const id = path.replace(/\./g, '-');
+    const url = getNestedVal(_icDriverDocDraft, path);
+    return `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div>
+      <label class="reg-doc-upload">
+        <img class="reg-doc-img" id="dprev-${id}" src="${url || ''}" style="${url ? '' : 'display:none'}">
+        <span class="reg-doc-empty" id="dempty-${id}" style="${url ? 'display:none' : ''}">+ Chọn ảnh</span>
+        <input type="file" accept="image/*" hidden onchange="onDriverDocPicked(this,'${path}')">
+      </label></div>`;
+  };
+  return DRIVER_DOC_SECTIONS.map(s =>
+    docSectionHtml(s.no, s.title, s.cells.map(([path, label]) => cell(path, label)))
+  ).join('');
+}
+
+function onDriverDocPicked(input, path) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    setNestedVal(_icDriverDocDraft, path, e.target.result);
+    const id = path.replace(/\./g, '-');
+    const img = document.getElementById('dprev-' + id);
+    const empty = document.getElementById('dempty-' + id);
+    if (img) { img.src = e.target.result; img.style.display = ''; }
+    if (empty) empty.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
+
 function openIntercityDriverModal(id) {
   editingIntercityDriverId = id || null;
   fillIntercityOperatorSelect('ic-driver-operator');
   const d = id ? INTERCITY_DRIVERS.find(x => x.id === id) : null;
+  _icDriverDocDraft = d?.documents ? JSON.parse(JSON.stringify(d.documents)) : {};
   document.getElementById('intercity-driver-modal-title').textContent =
     d ? `Chỉnh sửa tài xế · ${d.id}` : 'Thêm tài xế liên tỉnh';
   document.getElementById('ic-driver-name').value = d?.name || '';
@@ -1379,6 +1413,7 @@ function openIntercityDriverModal(id) {
   document.getElementById('ic-driver-license').value = d?.licenseClass || 'D';
   document.getElementById('ic-driver-operator').value = d?.operatorId || (PARTNERS.find(p=>p.status==='active')?.id || '');
   document.getElementById('ic-driver-status').value = d?.status === 'busy' ? 'busy' : (d?.status || 'offline');
+  document.getElementById('ic-driver-docs').innerHTML = renderDriverDocsUpload();
   openModal('intercity-driver-modal');
 }
 
@@ -1391,18 +1426,45 @@ function saveIntercityDriver() {
   const operatorId = document.getElementById('ic-driver-operator').value;
   const status = document.getElementById('ic-driver-status').value;
   if (!name || !phone) { alert('Vui lòng nhập họ tên và số điện thoại!'); return; }
+  const documents = Object.keys(_icDriverDocDraft).length ? _icDriverDocDraft : null;
 
   if (editingIntercityDriverId) {
     const d = INTERCITY_DRIVERS.find(x => x.id === editingIntercityDriverId);
-    if (d) Object.assign(d, { name, phone, email, address, licenseClass, operatorId, status });
+    if (d) Object.assign(d, { name, phone, email, address, licenseClass, operatorId, status, documents });
   } else {
     INTERCITY_DRIVERS.push({
       id: nextDriverId('IDR', INTERCITY_DRIVERS), name, phone, email, address, operatorId, licenseClass,
-      status, rating: 5.0, trips: 0, avatar: '👤', currentAssignmentId: null
+      status, rating: 5.0, trips: 0, avatar: '👤', currentAssignmentId: null, documents
     });
   }
   closeModal('intercity-driver-modal');
   renderIntercityDrivers();
+}
+
+// Xem hồ sơ tài xế liên tỉnh (thông tin + ảnh đăng ký nếu có)
+function viewIntercityDriver(id) {
+  const d = INTERCITY_DRIVERS.find(x => x.id === id);
+  if (!d) return;
+  const row = (l, v) => `<div class="odp-cell"><div class="odp-label">${l}</div><div class="odp-value">${v}</div></div>`;
+  const rowSpan = (l, v) => `<div class="odp-cell odp-span"><div class="odp-label">${l}</div><div class="odp-value">${v}</div></div>`;
+  document.getElementById('ic-detail-title').textContent = `Hồ sơ tài xế · ${d.id}`;
+  document.getElementById('ic-detail-body').innerHTML = `
+    <div class="doc-section-title" style="margin-top:0">Thông tin tài xế</div>
+    <div class="odp-grid" style="margin-bottom:6px">
+      ${row('Họ và tên', `${d.avatar || ''} ${esc(d.name)}`)}
+      ${row('Số điện thoại', esc(d.phone))}
+      ${row('Email', esc(d.email || '—'))}
+      ${rowSpan('Địa chỉ', esc(d.address || '—'))}
+      ${row('Nhà xe quản lý', getPartnerName(d.operatorId))}
+      ${row('Hạng GPLX', `🪪 ${d.licenseClass}`)}
+      ${row('Đánh giá', `⭐ ${d.rating}`)}
+      ${row('Chuyến đã chạy', d.trips.toLocaleString())}
+      ${row('Trạng thái', driverBadge(d.status))}
+    </div>
+    <div class="doc-section-title">Hình ảnh hồ sơ đăng ký</div>
+    ${renderDriverDocsView(d.documents)}
+  `;
+  openModal('ic-detail-modal');
 }
 
 // ============================================
@@ -1457,19 +1519,46 @@ function openDriverApps(applyType) {
   openModal('driver-apps-modal');
 }
 
+// ===== Bộ giấy tờ tài xế (dùng chung: xem hồ sơ + upload khi tạo/sửa) =====
+const DRIVER_DOC_SECTIONS = [
+  { no: 1, title: 'Ảnh đại diện', cells: [['avatar', 'Ảnh 3×4']] },
+  { no: 2, title: 'Căn cước công dân / hộ chiếu', cells: [['cccd.front', 'Mặt trước'], ['cccd.back', 'Mặt sau'], ['cccd.vnid', 'Ảnh VNeID']] },
+  { no: 3, title: 'Giấy phép lái xe', cells: [['license.front', 'Mặt trước'], ['license.back', 'Mặt sau']] },
+  { no: 4, title: 'Giấy đăng ký xe', cells: [['vehicleReg.front', 'Mặt trước'], ['vehicleReg.back', 'Mặt sau']] },
+  { no: 5, title: 'Giấy khám sức khỏe (có kiểm tra Heroin)', cells: [['health.front', 'Mặt trước'], ['health.back', 'Mặt sau']] },
+  { no: 6, title: 'Lý lịch tư pháp', cells: [['criminal.front', 'Mặt trước'], ['criminal.back', 'Mặt sau']] },
+  { no: 7, title: 'Đăng kiểm xe loại kinh doanh', cells: [['inspection.front', 'Mặt trước'], ['inspection.back', 'Mặt sau']] },
+  { no: 8, title: 'Bảo hiểm bắt buộc TNDS', cells: [['insurance.front', 'Mặt trước'], ['insurance.back', 'Mặt sau']] },
+  { no: 9, title: 'Hình ảnh xe hiện tại', cells: [['vehiclePhotos.front', 'Phía trước'], ['vehiclePhotos.rear', 'Phía sau'], ['vehiclePhotos.right', 'Bên phải'], ['vehiclePhotos.left', 'Bên trái'], ['vehiclePhotos.interior', 'Nội thất'], ['vehiclePhotos.odometer', 'Đồng hồ đo km (Odo)']] },
+  { no: 10, title: 'Phù hiệu xe hợp đồng', cells: [['badge.front', 'Mặt trước'], ['badge.back', 'Mặt sau']] },
+];
+
+function getNestedVal(obj, path) { return path.split('.').reduce((o, k) => (o ? o[k] : undefined), obj); }
+function setNestedVal(obj, path, val) {
+  const keys = path.split('.'); let o = obj;
+  for (let i = 0; i < keys.length - 1; i++) { if (!o[keys[i]]) o[keys[i]] = {}; o = o[keys[i]]; }
+  o[keys[keys.length - 1]] = val;
+}
+
+const docSectionHtml = (no, title, cells) =>
+  `<div class="doc-section"><div class="doc-section-title">${no}. ${title}</div><div class="reg-doc-grid">${cells.join('')}</div></div>`;
+const docViewCell = (label, url) => url
+  ? `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${label}" class="reg-doc-img"></a></div>`
+  : `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><div class="reg-doc-empty">Chưa có ảnh</div></div>`;
+
+// Toàn bộ bộ giấy tờ ở chế độ xem
+function renderDriverDocsView(docs) {
+  const d = docs || {};
+  return DRIVER_DOC_SECTIONS.map(s =>
+    docSectionHtml(s.no, s.title, s.cells.map(([path, label]) => docViewCell(label, getNestedVal(d, path))))
+  ).join('');
+}
+
 function reviewDriverApplication(id) {
   const a = DRIVER_APPLICATIONS.find(x => x.id === id);
   if (!a) return;
   const row = (l, v) => `<div class="odp-cell"><div class="odp-label">${l}</div><div class="odp-value">${v}</div></div>`;
   const rowSpan = (l, v) => `<div class="odp-cell odp-span"><div class="odp-label">${l}</div><div class="odp-value">${v}</div></div>`;
-  const d = a.documents || {};
-  // 1 ô ảnh
-  const docCell = (label, url) => url
-    ? `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><a href="${url}" target="_blank" rel="noopener"><img src="${url}" alt="${label}" class="reg-doc-img"></a></div>`
-    : `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div><div class="reg-doc-empty">Chưa có ảnh</div></div>`;
-  // 1 mục giấy tờ: tiêu đề + lưới ảnh
-  const docSection = (no, title, cells) =>
-    `<div class="doc-section"><div class="doc-section-title">${no}. ${title}</div><div class="reg-doc-grid">${cells.join('')}</div></div>`;
 
   document.getElementById('driver-app-title').textContent = `Xét duyệt đăng ký tài xế · ${a.id}`;
   document.getElementById('driver-app-body').innerHTML = `
@@ -1486,16 +1575,7 @@ function reviewDriverApplication(id) {
       ${row('Thời gian gửi', a.submittedAt)}
     </div>
     <div class="doc-section-title">Giấy tờ cá nhân</div>
-    ${docSection(1, 'Ảnh đại diện', [docCell('Ảnh 3×4', d.avatar)])}
-    ${docSection(2, 'Căn cước công dân / hộ chiếu', [docCell('Mặt trước', d.cccd?.front), docCell('Mặt sau', d.cccd?.back), docCell('Ảnh VNeID', d.cccd?.vnid)])}
-    ${docSection(3, 'Giấy phép lái xe', [docCell('Mặt trước', d.license?.front), docCell('Mặt sau', d.license?.back)])}
-    ${docSection(4, 'Giấy đăng ký xe', [docCell('Mặt trước', d.vehicleReg?.front), docCell('Mặt sau', d.vehicleReg?.back)])}
-    ${docSection(5, 'Giấy khám sức khỏe (có kiểm tra Heroin)', [docCell('Mặt trước', d.health?.front), docCell('Mặt sau', d.health?.back)])}
-    ${docSection(6, 'Lý lịch tư pháp', [docCell('Mặt trước', d.criminal?.front), docCell('Mặt sau', d.criminal?.back)])}
-    ${docSection(7, 'Đăng kiểm xe loại kinh doanh', [docCell('Mặt trước', d.inspection?.front), docCell('Mặt sau', d.inspection?.back)])}
-    ${docSection(8, 'Bảo hiểm bắt buộc TNDS', [docCell('Mặt trước', d.insurance?.front), docCell('Mặt sau', d.insurance?.back)])}
-    ${docSection(9, 'Hình ảnh xe hiện tại', [docCell('Phía trước', d.vehiclePhotos?.front), docCell('Phía sau', d.vehiclePhotos?.rear), docCell('Bên phải', d.vehiclePhotos?.right), docCell('Bên trái', d.vehiclePhotos?.left), docCell('Nội thất', d.vehiclePhotos?.interior), docCell('Đồng hồ đo km (Odo)', d.vehiclePhotos?.odometer)])}
-    ${docSection(10, 'Phù hiệu xe hợp đồng', [docCell('Mặt trước', d.badge?.front), docCell('Mặt sau', d.badge?.back)])}
+    ${renderDriverDocsView(a.documents)}
   `;
   document.getElementById('driver-app-footer').innerHTML = `
     <button class="btn btn-danger" onclick="rejectDriverApplication('${a.id}', true)">✗ Từ chối</button>
@@ -1525,8 +1605,10 @@ function approveDriverApplication(id, fromModal) {
   } else {
     newId = nextDriverId('IDR', INTERCITY_DRIVERS);
     INTERCITY_DRIVERS.push({
-      id: newId, name: a.name, phone: a.phone, operatorId: a.operatorId, licenseClass: a.licenseClass,
-      status: 'offline', rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null
+      id: newId, name: a.name, phone: a.phone, email: a.email || '', address: a.address || '',
+      operatorId: a.operatorId, licenseClass: a.licenseClass,
+      status: 'offline', rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null,
+      documents: a.documents || null
     });
   }
   a.status = 'approved';
@@ -1594,20 +1676,53 @@ function renderIntercityVehicles() {
       <td>${v.mileage.toLocaleString()} km</td>
       <td><span class="badge ${VEHICLE_STATUS[v.status]?.class||'badge-offline'}">${VEHICLE_STATUS[v.status]?.label||v.status}</span></td>
       <td>${v.currentAssignmentId ? `<span class="text-muted">${v.currentAssignmentId}</span>` : '—'}</td>
-      <td><button class="btn btn-sm btn-outline" onclick="openIntercityVehicleModal('${v.id}')">✏️</button></td>
+      <td><button class="btn btn-sm btn-outline" onclick="viewIntercityVehicle('${v.id}')">👁️</button> <button class="btn btn-sm btn-outline" onclick="openIntercityVehicleModal('${v.id}')">✏️</button></td>
     </tr>
   `).join('') || `<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy xe</div></div></td></tr>`;
 }
 
-// ---- Tạo / chỉnh sửa xe liên tỉnh ----
-// Khi TẠO MỚI: ẩn các trường biển số / loại xe / số ghế / nhà xe quản lý / số km
-// (chỉ chọn trạng thái — chi tiết bổ sung sau bằng chức năng chỉnh sửa).
+// ---- Tạo / chỉnh sửa / xem xe liên tỉnh ----
+// Khi TẠO MỚI: ẩn "Số km" (mặc định 0); số ghế + phân loại lấy theo loại xe.
 let editingIntercityVehicleId = null;
+let _icVehiclePhotoDraft = {}; // bản nháp ảnh xe đang upload
 
 const IC_VEHICLE_CATEGORY_LABELS = {
   seat: 'Ghế ngồi', sleeper: 'Giường nằm', limo_seat: 'Limousine ghế',
   limo_sleeper: 'Limousine giường', other: 'Khác'
 };
+
+// Các góc ảnh xe (không bắt buộc)
+const VEHICLE_PHOTO_FIELDS = [
+  ['front', 'Phía trước'], ['rear', 'Phía sau'], ['right', 'Bên phải'],
+  ['left', 'Bên trái'], ['interior', 'Nội thất'], ['odometer', 'Đồng hồ đo km (Odo)']
+];
+
+function renderVehiclePhotosUpload() {
+  const cell = (path, label) => {
+    const url = _icVehiclePhotoDraft[path];
+    return `<div class="reg-doc-cell"><div class="reg-doc-cap">${label}</div>
+      <label class="reg-doc-upload">
+        <img class="reg-doc-img" id="vprev-${path}" src="${url || ''}" style="${url ? '' : 'display:none'}">
+        <span class="reg-doc-empty" id="vempty-${path}" style="${url ? 'display:none' : ''}">+ Chọn ảnh</span>
+        <input type="file" accept="image/*" hidden onchange="onVehiclePhotoPicked(this,'${path}')">
+      </label></div>`;
+  };
+  return `<div class="reg-doc-grid">${VEHICLE_PHOTO_FIELDS.map(([p, l]) => cell(p, l)).join('')}</div>`;
+}
+
+function onVehiclePhotoPicked(input, path) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    _icVehiclePhotoDraft[path] = e.target.result;
+    const img = document.getElementById('vprev-' + path);
+    const empty = document.getElementById('vempty-' + path);
+    if (img) { img.src = e.target.result; img.style.display = ''; }
+    if (empty) empty.style.display = 'none';
+  };
+  reader.readAsDataURL(file);
+}
 
 function fillIntercityVehicleModelSelect() {
   const sel = document.getElementById('ic-vehicle-model');
@@ -1643,6 +1758,8 @@ function openIntercityVehicleModal(id) {
   document.getElementById('ic-vehicle-operator').value = v?.operatorId || (PARTNERS.find(p=>p.status==='active')?.id || '');
   document.getElementById('ic-vehicle-mileage').value = v?.mileage ?? '';
   document.getElementById('ic-vehicle-status').value = v?.status || 'idle';
+  _icVehiclePhotoDraft = v?.photos ? { ...v.photos } : {};
+  document.getElementById('ic-vehicle-photos').innerHTML = renderVehiclePhotosUpload();
   openModal('intercity-vehicle-modal');
 }
 
@@ -1659,6 +1776,7 @@ function saveIntercityVehicle() {
   const model = VEHICLE_MODELS.find(m => m.id === modelSel.value);
   const operatorId = document.getElementById('ic-vehicle-operator').value;
   if (!plate) { alert('Vui lòng nhập biển số!'); return; }
+  const photos = Object.keys(_icVehiclePhotoDraft).length ? _icVehiclePhotoDraft : null;
 
   if (editingIntercityVehicleId) {
     const v = INTERCITY_VEHICLES.find(x => x.id === editingIntercityVehicleId);
@@ -1671,17 +1789,49 @@ function saveIntercityVehicle() {
       const km = parseInt(document.getElementById('ic-vehicle-mileage').value, 10);
       v.mileage = isNaN(km) ? v.mileage : km;
       v.status = status;
+      v.photos = photos;
     }
   } else {
     // Tạo mới: số km mặc định 0 (không nhập); số ghế/phân loại suy ra từ loại xe.
     INTERCITY_VEHICLES.push({
       id: nextVehicleId('IV', INTERCITY_VEHICLES), plate, vehicleClass: model?.name || 'Chưa cập nhật',
       category: model?.category || null, seatLayoutId: modelSel.value, operatorId,
-      status, currentAssignmentId: null, mileage: 0
+      status, currentAssignmentId: null, mileage: 0, photos
     });
   }
   closeModal('intercity-vehicle-modal');
   renderIntercityVehicles();
+}
+
+// Xem chi tiết xe liên tỉnh (thông tin + hình ảnh nếu có)
+function viewIntercityVehicle(id) {
+  const v = INTERCITY_VEHICLES.find(x => x.id === id);
+  if (!v) return;
+  const row = (l, val) => `<div class="odp-cell"><div class="odp-label">${l}</div><div class="odp-value">${val}</div></div>`;
+  const model = VEHICLE_MODELS.find(m => m.id === v.seatLayoutId);
+  const seats = model ? `${model.seats} chỗ` : '—';
+  const catLabel = v.category ? (IC_VEHICLE_CATEGORY_LABELS[v.category] || v.category) : '—';
+  const photos = v.photos || {};
+  const hasPhoto = Object.values(photos).some(Boolean);
+  document.getElementById('ic-detail-title').textContent = `Thông tin xe · ${v.id}`;
+  document.getElementById('ic-detail-body').innerHTML = `
+    <div class="doc-section-title" style="margin-top:0">Thông tin xe</div>
+    <div class="odp-grid" style="margin-bottom:6px">
+      ${row('Biển số', esc(v.plate))}
+      ${row('Loại xe', esc(v.vehicleClass))}
+      ${row('Số ghế', seats)}
+      ${row('Phân loại', catLabel)}
+      ${row('Nhà xe quản lý', getPartnerName(v.operatorId))}
+      ${row('Số km', `${(v.mileage || 0).toLocaleString()} km`)}
+      ${row('Trạng thái', `<span class="badge ${VEHICLE_STATUS[v.status]?.class||'badge-offline'}">${VEHICLE_STATUS[v.status]?.label||v.status}</span>`)}
+      ${row('Đang gán', v.currentAssignmentId || '—')}
+    </div>
+    <div class="doc-section-title">Hình ảnh xe</div>
+    ${hasPhoto
+      ? `<div class="reg-doc-grid">${VEHICLE_PHOTO_FIELDS.map(([p, l]) => docViewCell(l, photos[p])).join('')}</div>`
+      : `<div class="reg-doc-empty">Chưa có hình ảnh xe</div>`}
+  `;
+  openModal('ic-detail-modal');
 }
 
 // ============================================

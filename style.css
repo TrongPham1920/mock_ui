@@ -2477,12 +2477,14 @@ tr.row-selected { background: var(--accent-glow); }
 .pulse { animation: pulse 2s infinite; }
 
 /* ===== Ảnh hồ sơ đăng kiểm (xem trong modal) ===== */
-.reg-doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.reg-doc-cell { display: flex; flex-direction: column; gap: 8px; }
-.reg-doc-cap { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-.reg-doc-img { width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); display: block; }
-.reg-doc-empty { padding: 32px; text-align: center; color: var(--text-secondary); background: var(--bg-input); border-radius: var(--radius-sm); font-size: 13px; }
-@media (max-width: 640px) { .reg-doc-grid { grid-template-columns: 1fr; } }
+.reg-doc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.reg-doc-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.reg-doc-cap { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.reg-doc-img { width: 100%; height: 110px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-color); display: block; background: var(--bg-input); }
+.reg-doc-empty { height: 110px; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--text-secondary); background: var(--bg-input); border: 1px dashed var(--border-color); border-radius: var(--radius-sm); font-size: 12px; padding: 8px; }
+.reg-doc-upload { display: block; cursor: pointer; }
+.reg-doc-upload:hover .reg-doc-empty { border-color: var(--accent); color: var(--accent); }
+@media (max-width: 640px) { .reg-doc-grid { grid-template-columns: 1fr 1fr; } }
 
 /* ===== Panel đơn đăng ký tài xế chờ duyệt ===== */
 .app-panel { background: var(--bg-card, #fff); border: 1px solid var(--border); border-left: 4px solid #f59e0b; border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 16px; }
