@@ -13,6 +13,7 @@ let selectedDispatchDriverId = null;  // modal gán tài xế (bike/car/service/
 let _icDispatchVehicles = [];   // [{v, sameOp}] cho re-render card xe
 let _icDispatchDrivers = [];    // [{d, sameOp}] cho re-render card tài xế
 let _dispatchDrivers = [];      // tài xế khả dụng cho modal mặc định
+let currentNotificationTab = 'history';
 let currentRole = 'ADMIN';
 let currentUser = null;
 
@@ -430,15 +431,359 @@ function createAuditLog({ action, target, before = null, after = null, traceId, 
   return log;
 }
 
-function createNotification({ type, channel = 'push', recipient, content, status = 'delivered' }) {
+function createNotification({ type, channel = 'push', recipient, title = '', content, status = 'delivered', targetId = null, actionPage = null, readAt = null }) {
   const n = {
     id: genId('NTF', NOTIFICATIONS),
     type, channel, recipient, content, status,
+    title, targetId, actionPage, readAt,
     createdAt: nowStr()
   };
   NOTIFICATIONS.unshift(n);
   return n;
 }
+
+function getBookingServiceName(booking) {
+  if (!booking) return '—';
+  return VEHICLE_TYPES[booking.bookingType]?.label || booking.bookingType || '—';
+}
+
+function getBookingVehicleType(booking) {
+  if (!booking) return '—';
+  if (booking.bookingType === 'INTERCITY' && booking.tripId) {
+    const trip = INTERCITY_TRIPS.find(t => t.id === booking.tripId);
+    if (trip?.vehicleType) return trip.vehicleType;
+  }
+  if (booking.bookingType === 'SERVICE_ORDER' && booking.serviceOrderId) {
+    const reg = REGISTRATIONS.find(r => r.id === booking.serviceOrderId);
+    if (reg?.vehicleType) return VEHICLE_TYPES[reg.vehicleType]?.label || reg.vehicleType;
+  }
+  if (booking.bookingType === 'MAINTENANCE_ORDER' && booking.maintenanceOrderId) {
+    const mnt = MAINTENANCE.find(r => r.id === booking.maintenanceOrderId);
+    if (mnt?.vehicleType) return VEHICLE_TYPES[mnt.vehicleType]?.label || mnt.vehicleType;
+  }
+  return VEHICLE_TYPES[booking.bookingType]?.label || booking.bookingType || '—';
+}
+
+function getNotificationConfig(eventType, serviceType = 'ALL', recipientGroup = '') {
+  return NOTIFICATION_CONFIGS
+    .filter(c => c.status === 'active' && c.eventType === eventType)
+    .filter(c => {
+      const serviceOk = c.serviceType === serviceType || c.serviceType === 'ALL';
+      const groupOk = !recipientGroup || c.recipientGroup === recipientGroup || c.recipientGroup === 'ALL' || c.recipientGroup === 'all';
+      return serviceOk && groupOk;
+    })
+    .sort((a, b) => {
+      const score = c => (c.serviceType === serviceType ? 2 : 0) + (c.recipientGroup === recipientGroup ? 2 : 0);
+      return score(b) - score(a);
+    })[0];
+}
+
+function applyNotificationTemplate(template, vars) {
+  return String(template || '').replace(/\{(\w+)\}/g, (_, key) => vars[key] ?? '—');
+}
+
+function buildNotificationVars({ booking = null, driver = null, promo = null, extra = {} }) {
+  const audience = promo?.audience || extra.promoAudience || '';
+  return {
+    bookingCode: booking?.bookingCode || booking?.id || '—',
+    serviceName: getBookingServiceName(booking),
+    vehicleType: extra.vehicleType || getBookingVehicleType(booking),
+    customerName: booking ? getCustomerName(booking.customerId) : '—',
+    driverName: driver?.name || (booking?.driverId ? getDriverName(booking.driverId) : '—'),
+    pickup: booking?.pickup || '—',
+    dropoff: booking?.dropoff || '—',
+    amount: booking ? fmt(booking.fareSnapshot || 0) : (extra.amount || '—'),
+    reason: extra.reason || '—',
+    promoCode: promo?.code || extra.promoCode || '—',
+    promoAudience: PROMO_AUDIENCE[audience]?.label || audience || '—',
+    endDate: promo?.endDate || extra.endDate || '—',
+    ...extra
+  };
+}
+
+function sendConfiguredNotification({
+  eventType,
+  booking = null,
+  recipient,
+  recipientGroup = 'CUSTOMER',
+  driver = null,
+  promo = null,
+  extra = {},
+  fallbackTitle = '',
+  fallbackContent = '',
+  fallbackType = null,
+  actionPage = null,
+  targetId = null,
+  channel = null
+}) {
+  const serviceType = booking?.bookingType || extra.serviceType || 'ALL';
+  const config = getNotificationConfig(eventType, serviceType, recipientGroup) ||
+    getNotificationConfig(eventType, 'ALL', recipientGroup);
+  const vars = buildNotificationVars({ booking, driver, promo, extra });
+  return createNotification({
+    type: fallbackType || eventType,
+    channel: channel || config?.channel || 'push',
+    recipient,
+    title: applyNotificationTemplate(config?.title || fallbackTitle, vars),
+    content: applyNotificationTemplate(config?.content || fallbackContent, vars),
+    targetId: targetId || booking?.id || promo?.id || null,
+    actionPage: actionPage || (eventType.startsWith('driver_') ? 'fulfillment' : eventType.startsWith('promo_') ? 'promos' : 'bookings')
+  });
+}
+
+function ensureNotificationConfigs() {
+  if (typeof DEFAULT_NOTIFICATION_CONFIGS === 'undefined') return;
+  DEFAULT_NOTIFICATION_CONFIGS.forEach(seed => {
+    if (!NOTIFICATION_CONFIGS.some(c => c.id === seed.id)) {
+      NOTIFICATION_CONFIGS.push({ ...seed });
+    }
+  });
+}
+
+const HEADER_NOTIFICATION_RECIPIENTS = ['ADMIN', 'OPERATOR', 'OPS'];
+const HEADER_NOTIFICATION_TYPES = {
+  admin_intercity_task_created: { label: 'Liên tỉnh', page: 'fulfillment', tab: 'intercity' },
+  admin_service_task_created: { label: 'Đăng kiểm/Bảo dưỡng hộ', page: 'fulfillment', tab: 'service' },
+  admin_maintenance_task_created: { label: 'Đăng kiểm/Bảo dưỡng hộ', page: 'fulfillment', tab: 'maintenance' },
+  admin_driver_application_pending: { label: 'Tài xế mới', page: 'partners' },
+  reschedule_requested: { label: 'Đổi lịch', page: 'bookings' }
+};
+
+function isHeaderNotification(n) {
+  return HEADER_NOTIFICATION_RECIPIENTS.includes(n.recipient) || HEADER_NOTIFICATION_TYPES[n.type];
+}
+
+function isBookingWaitingAssignment(b) {
+  return b &&
+    b.bookingStatus === 'CONFIRMED' &&
+    (b.paymentStatus === 'CONFIRMED' || b.paymentStatus === 'CASH') &&
+    (!b.fulfillmentStatus || b.fulfillmentStatus === 'PENDING');
+}
+
+function isHeaderNotificationStillOpen(n) {
+  if (n.type === 'admin_intercity_task_created') {
+    const tripId = String(n.targetId || '').replace('TRIP-', '');
+    return BOOKINGS.some(b =>
+      b.bookingType === 'INTERCITY' &&
+      String(b.tripId || b.id) === tripId &&
+      isBookingWaitingAssignment(b)
+    );
+  }
+  if (n.type === 'admin_service_task_created') {
+    return isBookingWaitingAssignment(BOOKINGS.find(b => b.id === n.targetId && b.bookingType === 'SERVICE_ORDER'));
+  }
+  if (n.type === 'admin_maintenance_task_created') {
+    return isBookingWaitingAssignment(BOOKINGS.find(b => b.id === n.targetId && b.bookingType === 'MAINTENANCE_ORDER'));
+  }
+  if (n.type === 'admin_driver_application_pending') {
+    return DRIVER_APPLICATIONS.some(a => a.id === n.targetId && a.status === 'pending');
+  }
+  if (n.type === 'reschedule_requested') {
+    return BOOKINGS.some(b => b.id === n.targetId && b.bookingStatus === 'RESCHEDULE_REQUESTED');
+  }
+  return true;
+}
+
+function createAdminNotification({ type, content, targetId = null, actionPage = null }) {
+  const meta = HEADER_NOTIFICATION_TYPES[type] || {};
+  const duplicate = targetId && NOTIFICATIONS.find(n =>
+    n.type === type && n.targetId === targetId && HEADER_NOTIFICATION_RECIPIENTS.includes(n.recipient)
+  );
+  if (duplicate) {
+    duplicate.content = content;
+    duplicate.actionPage = actionPage || meta.page || duplicate.actionPage || 'notifications';
+    duplicate.updatedAt = nowStr();
+    return duplicate;
+  }
+  const n = createNotification({
+    type,
+    recipient: 'ADMIN',
+    content,
+    targetId,
+    actionPage: actionPage || meta.page || 'notifications'
+  });
+  renderHeaderNotifications();
+  return n;
+}
+
+function seedHeaderNotifications() {
+  const pendingIntercityTrips = new Map();
+  BOOKINGS
+    .filter(b => b.bookingType === 'INTERCITY' && isBookingWaitingAssignment(b))
+    .forEach(b => {
+      const key = String(b.tripId || b.id);
+      if (!pendingIntercityTrips.has(key)) pendingIntercityTrips.set(key, []);
+      pendingIntercityTrips.get(key).push(b);
+    });
+
+  pendingIntercityTrips.forEach((items, tripKey) => {
+    const first = items[0];
+    const trip = INTERCITY_TRIPS.find(t => t.id === first.tripId);
+    const route = trip
+      ? INTERCITY_ROUTES.find(r => r.id === trip.routeId)
+      : INTERCITY_ROUTES.find(r => r.id === first.routeId);
+    const vehicleType = trip?.vehicleType || getBookingVehicleType(first);
+
+    createAdminNotification({
+      type: 'admin_intercity_task_created',
+      targetId: `TRIP-${tripKey}`,
+      actionPage: 'fulfillment',
+      content: `Chuyến liên tỉnh ${route?.origin || first.pickup || '—'} → ${route?.destination || first.dropoff || '—'}${trip ? ` ngày ${trip.date} lúc ${trip.departureTime}` : ''} đang chờ phân công. Loại xe: ${vehicleType}.`
+    });
+  });
+
+  BOOKINGS
+    .filter(b => b.bookingType === 'SERVICE_ORDER' && isBookingWaitingAssignment(b))
+    .forEach(b => {
+      const order = REGISTRATIONS.find(r => r.id === b.serviceOrderId);
+      createAdminNotification({
+        type: 'admin_service_task_created',
+        targetId: b.id,
+        actionPage: 'fulfillment',
+        content: `Đơn đăng kiểm hộ ${order?.id || b.bookingCode}${order?.plate ? ` (${order.plate})` : ''} đang chờ gán tài xế. Lịch hẹn ${order?.bookingDate || '—'} ${order?.bookingTime || ''}.`
+      });
+    });
+
+  BOOKINGS
+    .filter(b => b.bookingType === 'MAINTENANCE_ORDER' && isBookingWaitingAssignment(b))
+    .forEach(b => {
+      const order = MAINTENANCE.find(r => r.id === b.maintenanceOrderId);
+      createAdminNotification({
+        type: 'admin_maintenance_task_created',
+        targetId: b.id,
+        actionPage: 'fulfillment',
+        content: `Đơn bảo dưỡng hộ ${order?.id || b.bookingCode}${order?.plate ? ` (${order.plate})` : ''} đang chờ gán tài xế. Lịch hẹn ${order?.bookingDate || '—'} ${order?.bookingTime || ''}.`
+      });
+    });
+
+  DRIVER_APPLICATIONS
+    .filter(a => a.status === 'pending')
+    .forEach(a => createAdminNotification({
+      type: 'admin_driver_application_pending',
+      targetId: a.id,
+      actionPage: 'partners',
+      content: `Tài xế ${a.name} gửi hồ sơ ${a.applyType === 'bikecar' ? 'Bike/Car' : 'Liên tỉnh'} cần admin phê duyệt.`
+    }));
+}
+
+function getHeaderNotifications() {
+  const groups = [
+    ['admin_driver_application_pending'],
+    ['admin_intercity_task_created'],
+    ['admin_service_task_created', 'admin_maintenance_task_created']
+  ];
+  const activeItems = NOTIFICATIONS
+    .filter(n => isHeaderNotification(n) && isHeaderNotificationStillOpen(n))
+    .slice()
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+
+  return groups.flatMap(types =>
+    activeItems
+      .filter(n => types.includes(n.type))
+      .slice(0, 4)
+  );
+}
+
+function renderHeaderNotifications() {
+  const countEl = document.getElementById('notification-count');
+  const listEl = document.getElementById('notification-dropdown-list');
+  const subEl = document.getElementById('notification-dropdown-sub');
+  const markBtn = document.querySelector('.notification-mark-read');
+  if (!countEl || !listEl) return;
+
+  const items = getHeaderNotifications();
+  const unread = items.filter(n => !n.readAt).length;
+  countEl.textContent = unread > 9 ? '9+' : String(unread);
+  countEl.style.display = unread ? '' : 'none';
+  if (subEl) subEl.textContent = unread ? `${unread} thông báo chưa đọc` : 'Không có thông báo mới';
+  if (markBtn) markBtn.disabled = unread === 0;
+
+  if (!items.length) {
+    listEl.innerHTML = '<div class="notification-empty">Chưa có thông báo vận hành</div>';
+    return;
+  }
+
+  listEl.innerHTML = items.map(n => {
+    const meta = HEADER_NOTIFICATION_TYPES[n.type] || { label: n.type };
+    return `<button class="notification-item ${n.readAt ? '' : 'is-unread'}" type="button" onclick="openHeaderNotification('${n.id}', event)">
+      <span class="notification-item-dot" aria-hidden="true"></span>
+      <span class="notification-item-top">
+        <span class="notification-chip">${esc(meta.label || n.type)}</span>
+        <span class="notification-item-time">${esc(n.createdAt || '')}</span>
+      </span>
+      <span class="notification-item-title">${esc(headerNotificationTitle(n))}</span>
+      <span class="notification-item-content">${esc(n.content || '')}</span>
+    </button>`;
+  }).join('');
+}
+
+function headerNotificationTitle(n) {
+  if (n.type === 'admin_intercity_task_created') return 'Chuyến mới cần phân công';
+  if (n.type === 'admin_service_task_created') return 'Đơn đăng kiểm tạo nhiệm vụ mới';
+  if (n.type === 'admin_maintenance_task_created') return 'Đơn bảo dưỡng tạo nhiệm vụ mới';
+  if (n.type === 'admin_driver_application_pending') return 'Tài xế mới chờ duyệt';
+  if (n.type === 'reschedule_requested') return 'Khách yêu cầu đổi lịch';
+  return 'Thông báo vận hành';
+}
+
+function toggleNotificationDropdown(event) {
+  event.stopPropagation();
+  const dropdown = document.getElementById('notification-dropdown');
+  const trigger = document.getElementById('notification-trigger');
+  if (!dropdown || !trigger) return;
+  const willOpen = dropdown.style.display === 'none';
+  dropdown.style.display = willOpen ? 'block' : 'none';
+  trigger.setAttribute('aria-expanded', String(willOpen));
+  if (willOpen) renderHeaderNotifications();
+}
+
+function closeNotificationDropdown() {
+  const dropdown = document.getElementById('notification-dropdown');
+  const trigger = document.getElementById('notification-trigger');
+  if (!dropdown || !trigger) return;
+  dropdown.style.display = 'none';
+  trigger.setAttribute('aria-expanded', 'false');
+}
+
+function markHeaderNotificationRead(n) {
+  if (!n.readAt) n.readAt = nowStr();
+}
+
+function markAllHeaderNotificationsRead(event) {
+  if (event) event.stopPropagation();
+  getHeaderNotifications().forEach(markHeaderNotificationRead);
+  renderHeaderNotifications();
+  scheduleSave();
+}
+
+function openHeaderNotification(id, event) {
+  if (event) event.stopPropagation();
+  const n = NOTIFICATIONS.find(x => x.id === id);
+  if (!n) return;
+  markHeaderNotificationRead(n);
+  renderHeaderNotifications();
+  scheduleSave();
+  closeNotificationDropdown();
+
+  const meta = HEADER_NOTIFICATION_TYPES[n.type] || {};
+  const page = n.actionPage || meta.page || 'notifications';
+  if (page === 'fulfillment') {
+    navigateTo('fulfillment');
+    if (meta.tab) switchFulfillmentTab(meta.tab);
+    return;
+  }
+  if (n.type === 'admin_driver_application_pending' && n.targetId) {
+    navigateTo('partners');
+    setTimeout(() => reviewDriverApplication(n.targetId), 0);
+    return;
+  }
+  navigateTo(page);
+}
+
+document.addEventListener('click', closeNotificationDropdown);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeNotificationDropdown();
+});
 
 function createWalletTxn({ walletId, direction, type, amount, referenceType, referenceId, note }) {
   const wallet = WALLETS.find(w => w.id === walletId);
@@ -504,9 +849,25 @@ function processPayment(booking, traceId) {
       refType: 'booking', refId: booking.id, note: `Giữ tiền ${booking.bookingCode} chờ quyết toán` });
   }
   booking.paymentStatus = 'CONFIRMED';
-  createNotification({
-    type: 'payment_confirmed', recipient: booking.customerId,
-    content: `${booking.bookingCode}: thanh toán ${fmt(booking.fareSnapshot)} thành công`
+  sendConfiguredNotification({
+    eventType: 'payment_hold_user',
+    booking,
+    recipient: booking.customerId,
+    fallbackType: 'payment_hold',
+    fallbackTitle: 'Đã tạm giữ tiền',
+    fallbackContent: `Hệ thống đã tạm giữ ${fmt(booking.fareSnapshot)} cho ${booking.bookingCode}`,
+    actionPage: 'wallets',
+    targetId: booking.id
+  });
+  sendConfiguredNotification({
+    eventType: 'payment_confirmed_user',
+    booking,
+    recipient: booking.customerId,
+    fallbackType: 'payment_confirmed',
+    fallbackTitle: 'Thanh toán thành công',
+    fallbackContent: `${booking.bookingCode}: thanh toán ${fmt(booking.fareSnapshot)} thành công`,
+    actionPage: 'wallets',
+    targetId: booking.id
   });
   createAuditLog({
     action: 'payment.confirm', target: booking.paymentReference, traceId,
@@ -580,9 +941,15 @@ function refundBooking(booking, reason = 'Khách hủy', traceId) {
   };
   REFUNDS.unshift(refund);
   booking.paymentStatus = 'CANCELLED';
-  createNotification({
-    type: 'refund_completed', channel: 'sms', recipient: booking.customerId,
-    content: `Hoàn tiền ${fmt(booking.fareSnapshot)} cho ${booking.bookingCode} thành công`
+  sendConfiguredNotification({
+    eventType: 'refund_completed_user',
+    booking,
+    recipient: booking.customerId,
+    fallbackType: 'refund_completed',
+    fallbackTitle: 'Hoàn tiền thành công',
+    fallbackContent: `Hoàn tiền ${fmt(booking.fareSnapshot)} cho ${booking.bookingCode} thành công`,
+    actionPage: 'refunds',
+    targetId: refund.id
   });
   createAuditLog({
     action: 'refund.create', target: refund.id, traceId,
@@ -2074,9 +2441,16 @@ function cancelBooking(id, reason = 'Khách hủy') {
     if (mnt) mnt.status = 'cancelled';
   }
 
-  createNotification({
-    type: 'booking_cancelled', recipient: b.customerId,
-    content: `Booking ${b.bookingCode} đã bị hủy. Lý do: ${reason}`
+  sendConfiguredNotification({
+    eventType: 'fulfillment_cancelled_user',
+    booking: b,
+    recipient: b.customerId,
+    fallbackType: 'booking_cancelled',
+    fallbackTitle: 'Đơn đã bị huỷ',
+    fallbackContent: `Booking ${b.bookingCode} đã bị hủy. Lý do: ${reason}`,
+    extra: { reason },
+    actionPage: 'bookings',
+    targetId: b.id
   });
   createAuditLog({
     action: 'booking.cancel', target: b.id, traceId,
@@ -2134,8 +2508,17 @@ function driverRejectTask(bookingId, reason = 'Tài xế từ chối', sourceSit
   b.fulfillmentTaskId = null;
   b.fulfillmentStatus = 'PENDING';
   b.updatedAt = nowStr();
-  createNotification({ type: 'driver_rejected', recipient: b.customerId,
-    content: `Đang tìm tài xế khác cho chuyến ${b.bookingCode}` });
+  sendConfiguredNotification({
+    eventType: 'fulfillment_cancelled_user',
+    booking: b,
+    recipient: b.customerId,
+    fallbackType: 'driver_rejected',
+    fallbackTitle: 'Tài xế từ chối đơn',
+    fallbackContent: `Đang tìm tài xế khác cho chuyến ${b.bookingCode}`,
+    extra: { reason },
+    actionPage: 'bookings',
+    targetId: b.id
+  });
   createAuditLog({ action: 'fulfillment.reject', target: t.id, traceId, sourceSite,
     actor: prevDriver, actorRole: 'DRIVER', before: { driver: prevDriver }, after: { status: 'PENDING', reason } });
   renderPage(currentPage); updateBadges();
@@ -2155,8 +2538,16 @@ function startTrip(bookingId, sourceSite = 'driver') {
   const d = findDriver(b.driverId); if (d) { d.status = 'busy'; d.currentAssignmentId = t.id; }
   if (t.vehicleId) { const v = INTERCITY_VEHICLES.find(x => x.id === t.vehicleId); if (v) { v.status = 'busy'; v.currentAssignmentId = t.id; } }
   syncServiceStatus(b, 'in_progress');
-  createNotification({ type: 'trip_started', recipient: b.customerId,
-    content: `Chuyến ${b.bookingCode} đã bắt đầu` });
+  sendConfiguredNotification({
+    eventType: 'fulfillment_in_progress_user',
+    booking: b,
+    recipient: b.customerId,
+    fallbackType: 'trip_started',
+    fallbackTitle: 'Chuyến đã bắt đầu',
+    fallbackContent: `Chuyến ${b.bookingCode} đã bắt đầu`,
+    actionPage: 'bookings',
+    targetId: b.id
+  });
   createAuditLog({ action: 'booking.start', target: b.id, traceId, sourceSite,
     actor: b.driverId, actorRole: 'DRIVER', before: { status: 'CONFIRMED' }, after: { status: 'IN_PROGRESS' } });
   renderPage(currentPage); updateBadges();
@@ -2176,8 +2567,16 @@ function completeTrip(bookingId, sourceSite = 'driver') {
   if (b.driverId) releaseDriver(b.driverId);
   if (t.vehicleId) releaseVehicle(t.vehicleId);
   syncServiceStatus(b, 'completed');
-  createNotification({ type: 'trip_completed', recipient: b.customerId,
-    content: `Chuyến ${b.bookingCode} đã hoàn thành. Cảm ơn bạn!` });
+  sendConfiguredNotification({
+    eventType: 'fulfillment_completed_user',
+    booking: b,
+    recipient: b.customerId,
+    fallbackType: 'trip_completed',
+    fallbackTitle: 'Đơn đã hoàn thành',
+    fallbackContent: `Chuyến ${b.bookingCode} đã hoàn thành. Cảm ơn bạn!`,
+    actionPage: 'bookings',
+    targetId: b.id
+  });
   createAuditLog({ action: 'booking.complete', target: b.id, traceId, sourceSite,
     actor: b.driverId, actorRole: 'DRIVER', before: { status: 'IN_PROGRESS' }, after: { status: 'COMPLETED' } });
   renderPage(currentPage); updateBadges();
@@ -2199,8 +2598,17 @@ function markNoShow(bookingId, sourceSite = 'driver') {
   b.bookingStatus = 'CANCELLED';
   b.fulfillmentStatus = 'CANCELLED';
   b.updatedAt = nowStr();
-  createNotification({ type: 'booking_noshow', recipient: b.customerId,
-    content: `Chuyến ${b.bookingCode} bị huỷ do khách không xuất hiện (không hoàn tiền)` });
+  sendConfiguredNotification({
+    eventType: 'fulfillment_cancelled_user',
+    booking: b,
+    recipient: b.customerId,
+    fallbackType: 'booking_noshow',
+    fallbackTitle: 'Đơn đã bị huỷ',
+    fallbackContent: `Chuyến ${b.bookingCode} bị huỷ do khách không xuất hiện (không hoàn tiền)`,
+    extra: { reason: 'Khách không xuất hiện' },
+    actionPage: 'bookings',
+    targetId: b.id
+  });
   createAuditLog({ action: 'booking.noshow', target: b.id, traceId, sourceSite,
     actor: b.driverId, actorRole: 'DRIVER', before: { status: b.bookingStatus }, after: { status: 'CANCELLED', reason: 'no-show' } });
   renderPage(currentPage); updateBadges();
@@ -2661,13 +3069,28 @@ function assignDriver() {
     driver.currentAssignmentId = b.fulfillmentTaskId;
   }
 
-  createNotification({
-    type: 'driver_assigned', recipient: driverId,
-    content: `Bạn được gán chuyến ${b.bookingCode} (${b.pickup} → ${b.dropoff})`
+  sendConfiguredNotification({
+    eventType: 'driver_new_task',
+    booking: b,
+    recipient: driverId,
+    recipientGroup: 'DRIVER',
+    driver,
+    fallbackType: 'driver_assigned',
+    fallbackTitle: 'Có đơn mới',
+    fallbackContent: `Bạn được gán chuyến ${b.bookingCode} (${b.pickup} → ${b.dropoff})`,
+    actionPage: 'fulfillment',
+    targetId: b.id
   });
-  createNotification({
-    type: 'driver_assigned', recipient: b.customerId,
-    content: `Tài xế ${driver.name}${driver.plate ? ' (' + driver.plate + ')' : ''} sẽ phục vụ chuyến ${b.bookingCode}`
+  sendConfiguredNotification({
+    eventType: 'fulfillment_assigned_user',
+    booking: b,
+    recipient: b.customerId,
+    driver,
+    fallbackType: 'driver_assigned',
+    fallbackTitle: 'Đơn đã có tài xế',
+    fallbackContent: `Tài xế ${driver.name}${driver.plate ? ' (' + driver.plate + ')' : ''} sẽ phục vụ chuyến ${b.bookingCode}`,
+    actionPage: 'bookings',
+    targetId: b.id
   });
 
   closeModal('dispatch-modal');
@@ -2728,17 +3151,37 @@ function assignIntercityDispatch() {
     vehicle.currentAssignmentId = ft.id;
   }
 
-  createNotification({
-    type: 'driver_assigned', recipient: driverId,
-    content: `Bạn được gán chuyến ${b.bookingCode} — lái xe ${vehicle.plate} (${vehicle.vehicleClass})`
+  sendConfiguredNotification({
+    eventType: 'driver_new_task',
+    booking: b,
+    recipient: driverId,
+    recipientGroup: 'DRIVER',
+    driver,
+    fallbackType: 'driver_assigned',
+    fallbackTitle: 'Có chuyến liên tỉnh mới',
+    fallbackContent: `Bạn được gán chuyến ${b.bookingCode} — lái xe ${vehicle.plate} (${vehicle.vehicleClass})`,
+    extra: { vehicleType: vehicle.vehicleClass },
+    actionPage: 'fulfillment',
+    targetId: b.id
   });
   createNotification({
     type: 'vehicle_assigned', recipient: vehicle.operatorId,
-    content: `Xe ${vehicle.plate} được gán chuyến ${b.bookingCode}`
+    title: 'Xe được gán chuyến',
+    content: `Xe ${vehicle.plate} được gán chuyến ${b.bookingCode}`,
+    targetId: b.id,
+    actionPage: 'fulfillment'
   });
-  createNotification({
-    type: 'driver_assigned', recipient: b.customerId,
-    content: `Tài xế ${driver.name} sẽ phục vụ chuyến ${b.bookingCode} (xe ${vehicle.plate})`
+  sendConfiguredNotification({
+    eventType: 'fulfillment_assigned_user',
+    booking: b,
+    recipient: b.customerId,
+    driver,
+    fallbackType: 'driver_assigned',
+    fallbackTitle: 'Đơn đã có tài xế',
+    fallbackContent: `Tài xế ${driver.name} sẽ phục vụ chuyến ${b.bookingCode} (xe ${vehicle.plate})`,
+    extra: { vehicleType: vehicle.vehicleClass },
+    actionPage: 'bookings',
+    targetId: b.id
   });
   createAuditLog({
     action: 'fulfillment.assign_intercity', target: ft.id, traceId,
@@ -3683,6 +4126,120 @@ function deletePricingRow(type, kind, id) {
 // ============================================
 // NOTIFICATIONS
 // ============================================
+function notificationTypeLabel(type) {
+  const typeLabels = {
+    booking_created: '📋 Booking tạo',
+    payment_cash: '💵 Tiền mặt',
+    payment_hold: '🔒 Tạm giữ tiền',
+    payment_confirmed: '💳 Payment OK',
+    payment_failed: '❌ Payment lỗi',
+    driver_assigned: '👤 Gán TX',
+    vehicle_assigned: '🚌 Gán xe',
+    driver_accepted: '✅ TX nhận chuyến',
+    driver_rejected: '↩️ TX từ chối',
+    trip_started: '▶️ Bắt đầu',
+    trip_completed: '🏁 Hoàn thành',
+    booking_noshow: '🚫 No-show',
+    booking_cancelled: '❌ Hủy',
+    refund_completed: '↩️ Hoàn tiền',
+    admin_intercity_task_created: '🚌 Chuyến cần phân công',
+    admin_service_task_created: '📋 Đăng kiểm cần phân công',
+    admin_maintenance_task_created: '🔧 Bảo dưỡng cần phân công',
+    admin_driver_application_pending: '🧑‍✈️ Tài xế chờ duyệt',
+    reschedule_requested: '🔁 Yêu cầu đổi lịch',
+    fulfillment_assigned_user: '📌 Fulfillment assigned',
+    fulfillment_in_progress_user: '▶️ Fulfillment progress',
+    fulfillment_completed_user: '🏁 Fulfillment completed',
+    fulfillment_cancelled_user: '❌ Fulfillment cancelled',
+    driver_new_task: '🧑‍✈️ Tài xế nhận đơn',
+    payment_hold_user: '🔒 Tạm giữ tiền',
+    payment_confirmed_user: '💳 Đã thanh toán',
+    refund_completed_user: '↩️ Hoàn tiền',
+    promo_audience: '🎁 Ưu đãi'
+  };
+  return typeLabels[type] || type;
+}
+
+function serviceTypeLabel(type) {
+  if (type === 'ALL') return 'Tất cả';
+  return VEHICLE_TYPES[type]?.label || type || '—';
+}
+
+function recipientGroupLabel(group) {
+  const map = {
+    CUSTOMER: 'User trong đơn',
+    DRIVER: 'Tài xế',
+    ADMIN: 'Admin',
+    all: 'Mọi người dùng',
+    new_user: 'Thành viên mới',
+    existing: 'Khách hiện hữu',
+    vip: 'Khách VIP',
+    manual: 'Chỉ định thủ công'
+  };
+  return map[group] || PROMO_AUDIENCE[group]?.label || group || '—';
+}
+
+function inferNotificationBookingId(n) {
+  if (n.targetId && BOOKINGS.some(b => b.id === n.targetId)) return n.targetId;
+  const text = `${n.title || ''} ${n.content || ''}`;
+  const byId = text.match(/\bBK[\w-]*/);
+  if (byId && BOOKINGS.some(b => b.id === byId[0])) return byId[0];
+  const byCode = BOOKINGS.find(b => text.includes(b.bookingCode));
+  return byCode?.id || null;
+}
+
+function fulfillmentTabForBooking(booking) {
+  if (!booking) return 'all';
+  if (booking.bookingType === 'BIKE' || booking.bookingType === 'CAR') return 'bikecar';
+  if (booking.bookingType === 'INTERCITY') return 'intercity';
+  if (booking.bookingType === 'SERVICE_ORDER') return 'service';
+  if (booking.bookingType === 'MAINTENANCE_ORDER') return 'maintenance';
+  return 'all';
+}
+
+function getNotificationAction(n) {
+  const meta = HEADER_NOTIFICATION_TYPES[n.type] || {};
+  const bookingId = inferNotificationBookingId(n);
+  const booking = BOOKINGS.find(b => b.id === bookingId);
+  if (n.type === 'admin_driver_application_pending') return { page: 'partners', label: 'Mở hồ sơ', targetId: n.targetId };
+  if (meta.page === 'fulfillment') return { page: 'fulfillment', label: 'Mở nhiệm vụ', tab: meta.tab, targetId: n.targetId };
+  if (n.actionPage) {
+    return {
+      page: n.actionPage,
+      label: n.actionPage === 'fulfillment' ? 'Mở nhiệm vụ' : n.actionPage === 'bookings' ? 'Mở booking' : 'Mở',
+      tab: n.actionPage === 'fulfillment' ? fulfillmentTabForBooking(booking) : meta.tab,
+      bookingId,
+      targetId: n.targetId
+    };
+  }
+  if (bookingId) return { page: 'bookings', label: 'Mở booking', bookingId };
+  if (n.type.includes('refund')) return { page: 'refunds', label: 'Mở hoàn tiền', targetId: n.targetId };
+  if (n.type.includes('payment') || n.type.includes('wallet')) return { page: 'wallets', label: 'Mở ví', targetId: n.targetId };
+  if (n.type.includes('promo')) return { page: 'promos', label: 'Mở ưu đãi', targetId: n.targetId };
+  return null;
+}
+
+function openNotificationAction(id) {
+  const n = NOTIFICATIONS.find(x => x.id === id);
+  if (!n) return;
+  markHeaderNotificationRead(n);
+  const action = getNotificationAction(n);
+  renderNotifications();
+  scheduleSave();
+  if (!action) return;
+  navigateTo(action.page);
+  if (action.page === 'fulfillment' && action.tab) setTimeout(() => switchFulfillmentTab(action.tab), 0);
+  if (action.page === 'bookings' && action.bookingId) setTimeout(() => showBookingDetail(action.bookingId), 0);
+  if (action.page === 'partners' && action.targetId) setTimeout(() => reviewDriverApplication(action.targetId), 0);
+}
+
+function switchNotificationTab(tab, btn) {
+  currentNotificationTab = tab;
+  document.querySelectorAll('#notification-tabs .tab-btn').forEach(b => b.classList.remove('active'));
+  (btn || document.querySelector(`#notification-tabs .tab-btn[data-ntab="${tab}"]`))?.classList.add('active');
+  renderNotifications();
+}
+
 function renderNotifications() {
   const delivered = NOTIFICATIONS.filter(n => n.status === 'delivered').length;
   const failed = NOTIFICATIONS.filter(n => n.status === 'failed').length;
@@ -3693,18 +4250,78 @@ function renderNotifications() {
     <div class="stat-card danger"><div class="stat-card-header"><div class="stat-card-icon danger">❌</div><span class="stat-card-label">Failed</span></div><div class="stat-card-value">${failed}</div></div>
     <div class="stat-card warning"><div class="stat-card-header"><div class="stat-card-icon warning">⏳</div><span class="stat-card-label">Pending</span></div><div class="stat-card-value">${pending}</div></div>
   `;
-  const typeLabels = { booking_created: '📋 Booking tạo', payment_confirmed: '💳 Payment OK', driver_assigned: '👤 Gán TX', trip_completed: '🏁 Hoàn thành', booking_cancelled: '❌ Hủy', refund_completed: '↩️ Hoàn tiền' };
-  const statusBadges = { delivered: 'badge-completed', failed: 'badge-cancelled', pending: 'badge-pending' };
 
-  document.getElementById('notifications-table-body').innerHTML = NOTIFICATIONS.map(n => `<tr>
+  document.querySelectorAll('#notification-tabs .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.ntab === currentNotificationTab));
+  document.getElementById('notification-panel-history').style.display = currentNotificationTab === 'history' ? '' : 'none';
+  document.getElementById('notification-panel-config').style.display = currentNotificationTab === 'config' ? '' : 'none';
+  if (currentNotificationTab === 'config') renderNotificationConfig();
+  else renderNotificationHistory();
+}
+
+function renderNotificationHistory() {
+  const statusBadges = { delivered: 'badge-completed', failed: 'badge-cancelled', pending: 'badge-pending' };
+  document.getElementById('notifications-table-body').innerHTML = NOTIFICATIONS.map(n => {
+    const action = getNotificationAction(n);
+    const title = n.title ? `<div class="fw-600">${esc(n.title)}</div>` : '';
+    return `<tr>
     <td class="text-muted">${n.id}</td>
-    <td>${typeLabels[n.type]||n.type}</td>
+    <td>${notificationTypeLabel(n.type)}</td>
     <td><span class="badge badge-accepted">${n.channel.toUpperCase()}</span></td>
     <td class="fw-600">${n.recipient}</td>
-    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${n.content}</td>
+    <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${title}${esc(n.content)}</td>
     <td><span class="badge ${statusBadges[n.status]||'badge-expired'}">${n.status}${n.retryCount?' (retry:'+n.retryCount+')':''}</span></td>
     <td class="text-muted">${n.createdAt}</td>
+    <td>${action ? `<button class="btn btn-sm btn-outline" onclick="openNotificationAction('${n.id}')">${esc(action.label)}</button>` : '<span class="text-muted">—</span>'}</td>
+  </tr>`;
+  }).join('');
+}
+
+function renderNotificationConfig() {
+  const statusBadges = { active: 'badge-completed', paused: 'badge-pending' };
+  document.getElementById('notification-config-table-body').innerHTML = NOTIFICATION_CONFIGS.map(c => `<tr>
+    <td class="text-muted">${esc(c.id)}</td>
+    <td>${notificationTypeLabel(c.eventType)}</td>
+    <td>${esc(serviceTypeLabel(c.serviceType))}</td>
+    <td>${esc(recipientGroupLabel(c.recipientGroup))}</td>
+    <td class="fw-600">${esc(c.title)}</td>
+    <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.content)}</td>
+    <td><span class="badge badge-accepted">${esc(String(c.channel || 'push').toUpperCase())}</span></td>
+    <td><span class="badge ${statusBadges[c.status] || 'badge-expired'}">${esc(c.status)}</span></td>
+    <td><button class="btn btn-sm btn-outline" onclick="toggleNotificationConfig('${c.id}')">${c.status === 'active' ? 'Tạm dừng' : 'Bật'}</button></td>
   </tr>`).join('');
+}
+
+function addNotificationConfig() {
+  const eventType = document.getElementById('notif-config-event').value;
+  const serviceType = document.getElementById('notif-config-service').value;
+  const recipientGroup = document.getElementById('notif-config-recipient').value;
+  const channel = document.getElementById('notif-config-channel').value;
+  const title = document.getElementById('notif-config-title').value.trim();
+  const content = document.getElementById('notif-config-content').value.trim();
+  if (!title || !content) {
+    alert('Vui lòng nhập title và nội dung config thông báo.');
+    return;
+  }
+  NOTIFICATION_CONFIGS.unshift({
+    id: genId('NC', NOTIFICATION_CONFIGS),
+    eventType, serviceType, recipientGroup, channel,
+    title, content,
+    status: 'active',
+    updatedAt: nowStr()
+  });
+  document.getElementById('notif-config-title').value = '';
+  document.getElementById('notif-config-content').value = '';
+  renderNotificationConfig();
+  scheduleSave();
+}
+
+function toggleNotificationConfig(id) {
+  const cfg = NOTIFICATION_CONFIGS.find(c => c.id === id);
+  if (!cfg) return;
+  cfg.status = cfg.status === 'active' ? 'paused' : 'active';
+  cfg.updatedAt = nowStr();
+  renderNotificationConfig();
+  scheduleSave();
 }
 
 // ============================================
@@ -3773,6 +4390,7 @@ function updateBadges() {
   if (el2) { el2.textContent = pending; el2.style.display = pending > 0 ? '' : 'none'; }
   const refPending = REFUNDS.filter(r => r.status === 'PENDING').length;
   if (el3) { el3.textContent = refPending; el3.style.display = refPending > 0 ? '' : 'none'; }
+  renderHeaderNotifications();
   scheduleSave(); // autosave: nhiều mutation kết thúc bằng updateBadges()
 }
 
@@ -3782,9 +4400,11 @@ function updateBadges() {
 function init() {
   // Khôi phục dữ liệu đã lưu (nếu có) TRƯỚC khi heal — để heal làm việc trên data thật.
   hydrateStore();
+  ensureNotificationConfigs();
 
   // Heal & sync derived state trước khi render
   healData();
+  seedHeaderNotifications();
   saveStore(); // chốt trạng thái sau heal (lần đầu tạo snapshot từ seed)
 
   // Initialize role
@@ -4436,6 +5056,12 @@ async function createRegistrationOrder() {
   if (pay.success) {
     booking.bookingStatus = 'CONFIRMED';
     booking.fulfillmentStatus = 'PENDING';
+    createAdminNotification({
+      type: 'admin_service_task_created',
+      targetId: booking.id,
+      actionPage: 'fulfillment',
+      content: `Đơn đăng kiểm ${newReg.id} (${plate}) của ${ownerName} đã tạo nhiệm vụ phân công riêng, lịch ${bookingDate} ${bookingTime}.`
+    });
   }
 
   clearRegistrationForm();
@@ -4621,6 +5247,12 @@ async function createMaintenanceOrder() {
   if (pay.success) {
     booking.bookingStatus = 'CONFIRMED';
     booking.fulfillmentStatus = 'PENDING';
+    createAdminNotification({
+      type: 'admin_maintenance_task_created',
+      targetId: booking.id,
+      actionPage: 'fulfillment',
+      content: `Đơn bảo dưỡng ${newMnt.id} (${plate}) của ${ownerName} đã tạo nhiệm vụ phân công riêng, lịch ${bookingDate} ${bookingTime}.`
+    });
   }
 
   clearMaintenanceForm();
@@ -4965,6 +5597,9 @@ function createIntercityBooking(tripId) {
 
   const traceId = newTraceId();
   const route = INTERCITY_ROUTES.find(r => r.id === trip.routeId);
+  const isFirstBookingForTrip = !BOOKINGS.some(b =>
+    b.tripId === trip.id && b.bookingStatus !== 'CANCELLED'
+  );
 
   const newBooking = {
     id: genId('BK', BOOKINGS),
@@ -5011,6 +5646,14 @@ function createIntercityBooking(tripId) {
     newBooking.bookingStatus = 'CONFIRMED';
     newBooking.fulfillmentStatus = 'PENDING';
     newBooking.updatedAt = nowStr();
+    if (isFirstBookingForTrip) {
+      createAdminNotification({
+        type: 'admin_intercity_task_created',
+        targetId: `TRIP-${trip.id}`,
+        actionPage: 'fulfillment',
+        content: `Chuyến ${route?.origin || '—'} → ${route?.destination || '—'} ngày ${trip.date} lúc ${trip.departureTime} vừa có vé đầu tiên. Đã tạo nhiệm vụ phân công. Loại xe: ${trip.vehicleType || getBookingVehicleType(newBooking)}.`
+      });
+    }
     createAuditLog({
       action: 'booking.status_change', target: newBooking.id, traceId,
       before: { status: 'PENDING_CONFIRMATION' }, after: { status: 'CONFIRMED' }

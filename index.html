@@ -103,7 +103,23 @@
           <div class="user-info" id="user-info" style="display:flex;align-items:center;gap:8px">
             <span style="font-size:12px;color:var(--text-muted)">👤 <span id="current-user-name">Nguyễn Admin</span></span>
           </div>
-          <button class="header-btn" onclick="navigateTo('notifications')">🔔</button>
+          <div class="notification-menu" id="notification-menu">
+            <button class="header-btn notification-trigger" id="notification-trigger" type="button" aria-label="Mở thông báo" aria-expanded="false" onclick="toggleNotificationDropdown(event)">
+              🔔
+              <span class="notification-count" id="notification-count" style="display:none">0</span>
+            </button>
+            <div class="notification-dropdown" id="notification-dropdown" aria-label="Thông báo vận hành" style="display:none" onclick="event.stopPropagation()">
+              <div class="notification-dropdown-head">
+                <div>
+                  <div class="notification-dropdown-title">Thông báo</div>
+                  <div class="notification-dropdown-sub" id="notification-dropdown-sub">Đơn mới & hồ sơ cần xử lý</div>
+                </div>
+                <button class="notification-mark-read" type="button" onclick="markAllHeaderNotificationsRead(event)">Đã đọc</button>
+              </div>
+              <div class="notification-dropdown-list" id="notification-dropdown-list"></div>
+              <button class="notification-view-all" type="button" onclick="event.stopPropagation();closeNotificationDropdown();navigateTo('notifications')">Xem lịch sử thông báo</button>
+            </div>
+          </div>
           <button class="header-btn" id="sim-toggle" title="Mô phỏng app Tài xế / Khách hàng" onclick="toggleSimPanel()">🎮</button>
           <button class="header-btn" title="Khôi phục dữ liệu demo gốc (xoá thay đổi đã lưu)" onclick="if(confirm('Xoá toàn bộ thay đổi đã lưu và nạp lại dữ liệu demo gốc?'))resetStore()">♻️</button>
         </div>
@@ -601,11 +617,76 @@
         <!-- ===== NOTIFICATIONS ===== -->
         <div class="page" id="page-notifications">
           <div class="stats-grid" id="notification-stats"></div>
-          <div class="table-container">
+          <div class="tabs" id="notification-tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-ntab="history" onclick="switchNotificationTab('history', this)">🔔 Tất cả thông báo</button>
+            <button class="tab-btn" data-ntab="config" onclick="switchNotificationTab('config', this)">⚙️ Config thông báo</button>
+          </div>
+
+          <div class="table-container notification-tab-panel" id="notification-panel-history">
             <div class="table-header"><span class="table-title">Notification History</span></div>
             <div class="table-wrapper">
-              <table><thead><tr><th>ID</th><th>Loại</th><th>Channel</th><th>Người nhận</th><th>Nội dung</th><th>Trạng thái</th><th>Thời gian</th></tr></thead>
+              <table><thead><tr><th>ID</th><th>Loại</th><th>Channel</th><th>Người nhận</th><th>Nội dung</th><th>Trạng thái</th><th>Thời gian</th><th>Vị trí</th></tr></thead>
               <tbody id="notifications-table-body"></tbody></table>
+            </div>
+          </div>
+
+          <div class="notification-tab-panel" id="notification-panel-config" style="display:none">
+            <div class="form-card" style="margin-bottom:20px">
+              <div class="form-grid" style="grid-template-columns:repeat(4,1fr)">
+                <div class="input-group"><label>Loại thông báo</label>
+                  <select id="notif-config-event" class="input">
+                    <option value="fulfillment_assigned_user">Fulfillment - Đã phân công</option>
+                    <option value="fulfillment_in_progress_user">Fulfillment - Đang thực hiện</option>
+                    <option value="fulfillment_completed_user">Fulfillment - Hoàn thành</option>
+                    <option value="fulfillment_cancelled_user">Fulfillment - Huỷ</option>
+                    <option value="driver_new_task">Tài xế nhận đơn mới</option>
+                    <option value="payment_hold_user">Tạm giữ tiền</option>
+                    <option value="payment_confirmed_user">Đã thanh toán</option>
+                    <option value="refund_completed_user">Hoàn tiền</option>
+                    <option value="promo_audience">Ưu đãi theo nhóm user</option>
+                  </select>
+                </div>
+                <div class="input-group"><label>Dịch vụ</label>
+                  <select id="notif-config-service" class="input">
+                    <option value="ALL">Tất cả</option>
+                    <option value="BIKE">Bike</option>
+                    <option value="CAR">Car</option>
+                    <option value="INTERCITY">Liên tỉnh</option>
+                    <option value="SERVICE_ORDER">Đăng kiểm hộ</option>
+                    <option value="MAINTENANCE_ORDER">Bảo dưỡng hộ</option>
+                  </select>
+                </div>
+                <div class="input-group"><label>Nhóm nhận</label>
+                  <select id="notif-config-recipient" class="input">
+                    <option value="CUSTOMER">User trong đơn</option>
+                    <option value="DRIVER">Tài xế</option>
+                    <option value="all">Mọi người dùng</option>
+                    <option value="new_user">Thành viên mới</option>
+                    <option value="existing">Khách hiện hữu</option>
+                    <option value="vip">Khách VIP</option>
+                    <option value="manual">Chỉ định thủ công</option>
+                  </select>
+                </div>
+                <div class="input-group"><label>Channel</label>
+                  <select id="notif-config-channel" class="input">
+                    <option value="push">Push</option>
+                    <option value="sms">SMS</option>
+                    <option value="email">Email</option>
+                  </select>
+                </div>
+              </div>
+              <div class="form-grid" style="grid-template-columns:1fr 2fr auto;align-items:end">
+                <div class="input-group"><label>Title</label><input id="notif-config-title" class="input" placeholder="VD: Đơn đã được phân công"></div>
+                <div class="input-group"><label>Nội dung</label><input id="notif-config-content" class="input" placeholder="VD: Đơn {bookingCode} đã có tài xế {driverName}"></div>
+                <button class="btn btn-primary" onclick="addNotificationConfig()">Thêm config</button>
+              </div>
+            </div>
+            <div class="table-container">
+              <div class="table-header"><span class="table-title">Notification Config</span></div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>ID</th><th>Loại</th><th>Dịch vụ</th><th>Nhóm nhận</th><th>Title</th><th>Nội dung</th><th>Channel</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="notification-config-table-body"></tbody></table>
+              </div>
             </div>
           </div>
         </div>
@@ -1140,7 +1221,7 @@
     </div>
   </div>
 
-  <script src="data.js"></script>
-  <script src="app.js"></script>
+  <script src="data.js?v=noti-config-20260611"></script>
+  <script src="app.js?v=noti-config-20260611"></script>
 </body>
 </html>

@@ -931,6 +931,24 @@ const NOTIFICATIONS = [
   { id: 'NTF008', type: 'booking_created', channel: 'push', recipient: 'KH006', content: 'Booking BK006 đã được tạo', status: 'pending', createdAt: '2026-03-18 15:35' },
 ];
 
+const NOTIFICATION_CONFIGS = [
+  { id: 'NC001', eventType: 'fulfillment_assigned_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'push', title: 'Đơn đã được phân công', content: 'Đơn {bookingCode} đã có tài xế {driverName}. Dịch vụ: {serviceName}.', status: 'active', updatedAt: '2026-06-10 09:00' },
+  { id: 'NC002', eventType: 'fulfillment_in_progress_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'push', title: 'Tài xế đã bắt đầu thực hiện', content: 'Đơn {bookingCode} đang được thực hiện. Bạn có thể theo dõi trạng thái trong ứng dụng.', status: 'active', updatedAt: '2026-06-10 09:05' },
+  { id: 'NC003', eventType: 'fulfillment_completed_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'push', title: 'Đơn đã hoàn thành', content: 'Đơn {bookingCode} đã hoàn thành. Cảm ơn bạn đã sử dụng dịch vụ {serviceName}.', status: 'active', updatedAt: '2026-06-10 09:10' },
+  { id: 'NC004', eventType: 'fulfillment_cancelled_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'push', title: 'Đơn đã bị huỷ', content: 'Đơn {bookingCode} đã bị huỷ. Lý do: {reason}.', status: 'active', updatedAt: '2026-06-10 09:15' },
+  { id: 'NC005', eventType: 'driver_new_task', serviceType: 'BIKE', recipientGroup: 'DRIVER', channel: 'push', title: 'Có chuyến Bike mới', content: 'Bạn được gán chuyến {bookingCode}: {pickup} → {dropoff}.', status: 'active', updatedAt: '2026-06-10 09:20' },
+  { id: 'NC006', eventType: 'driver_new_task', serviceType: 'CAR', recipientGroup: 'DRIVER', channel: 'push', title: 'Có chuyến Car mới', content: 'Bạn được gán chuyến {bookingCode}: {pickup} → {dropoff}.', status: 'active', updatedAt: '2026-06-10 09:25' },
+  { id: 'NC007', eventType: 'driver_new_task', serviceType: 'INTERCITY', recipientGroup: 'DRIVER', channel: 'push', title: 'Có chuyến liên tỉnh mới', content: 'Bạn được gán chuyến {bookingCode}. Loại xe: {vehicleType}.', status: 'active', updatedAt: '2026-06-10 09:30' },
+  { id: 'NC008', eventType: 'driver_new_task', serviceType: 'SERVICE_ORDER', recipientGroup: 'DRIVER', channel: 'push', title: 'Có đơn đăng kiểm hộ mới', content: 'Bạn được gán đơn {bookingCode}. Nhận xe tại {pickup}.', status: 'active', updatedAt: '2026-06-10 09:35' },
+  { id: 'NC009', eventType: 'driver_new_task', serviceType: 'MAINTENANCE_ORDER', recipientGroup: 'DRIVER', channel: 'push', title: 'Có đơn bảo dưỡng hộ mới', content: 'Bạn được gán đơn {bookingCode}. Nhận xe tại {pickup}.', status: 'active', updatedAt: '2026-06-10 09:40' },
+  { id: 'NC010', eventType: 'payment_hold_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'push', title: 'Đã tạm giữ tiền', content: 'Hệ thống đã tạm giữ {amount} cho đơn {bookingCode} đến khi dịch vụ hoàn tất.', status: 'active', updatedAt: '2026-06-10 09:45' },
+  { id: 'NC011', eventType: 'payment_confirmed_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'sms', title: 'Thanh toán thành công', content: 'Bạn đã thanh toán {amount} cho đơn {bookingCode}.', status: 'active', updatedAt: '2026-06-10 09:50' },
+  { id: 'NC012', eventType: 'refund_completed_user', serviceType: 'ALL', recipientGroup: 'CUSTOMER', channel: 'sms', title: 'Hoàn tiền thành công', content: 'Hoàn tiền {amount} cho đơn {bookingCode} đã hoàn tất.', status: 'active', updatedAt: '2026-06-10 09:55' },
+  { id: 'NC013', eventType: 'promo_audience', serviceType: 'ALL', recipientGroup: 'all', channel: 'push', title: 'Ưu đãi dành cho bạn', content: 'Mã {promoCode} đang áp dụng cho nhóm {promoAudience}. Dùng ngay trước {endDate}.', status: 'active', updatedAt: '2026-06-10 10:00' },
+  { id: 'NC014', eventType: 'promo_audience', serviceType: 'INTERCITY', recipientGroup: 'vip', channel: 'push', title: 'Ưu đãi VIP liên tỉnh', content: 'Khách VIP nhận mã {promoCode} cho tuyến liên tỉnh. Ưu đãi áp dụng theo nhóm người dùng của mã.', status: 'active', updatedAt: '2026-06-10 10:05' }
+];
+const DEFAULT_NOTIFICATION_CONFIGS = NOTIFICATION_CONFIGS.map(c => ({ ...c }));
+
 // ---- AUDIT LOGS ----
 const AUDIT_LOGS = [
   { id: 'AL001', action: 'booking.create', actor: 'USR003', actorRole: 'AGENT', target: 'BK001', sourceSite: 'agent', traceId: 'tr-001', before: null, after: '{"status":"DRAFT"}', timestamp: '2026-03-18 14:30' },
@@ -1669,7 +1687,7 @@ const STORE_COLLECTIONS = {
   DRIVERS, INTERCITY_DRIVERS, DRIVER_APPLICATIONS, CUSTOMERS,
   BOOKINGS, FULFILLMENT_TASKS, INTERCITY_VEHICLES, PARTNERS,
   PROMOS, WALLETS, WALLET_TRANSACTIONS, REFUNDS, NOTIFICATIONS,
-  AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, MAINTENANCE, REGISTRATIONS,
+  NOTIFICATION_CONFIGS, AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, MAINTENANCE, REGISTRATIONS,
   INTERCITY_ROUTES, INTERCITY_TRIPS, AGENT_CUSTOMERS, PRICING
 };
 
