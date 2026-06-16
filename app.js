@@ -3405,7 +3405,7 @@ function logTx(w, { direction, type, amount, note, refType = 'trip', refId = '',
   });
 }
 
-// ===== Quyết toán chuyến liên tỉnh TIỀN MẶT (tạm giữ + xử lý khách vắng) =====
+// ===== Quyết toán chuyến liên tỉnh TIỀN MẶT (tạm giữ + chỉ trừ chiết khấu) =====
 let cashTrip = null; // { walletId, seats, price, rate, held, tripId }
 
 function openCashSettle(walletId) {
@@ -3422,15 +3422,20 @@ function toggleCashNoShow(i) {
   renderCashSettle();
 }
 
-// Tính các bút toán theo số khách vắng đã lưu trong state
+// Tính các bút toán theo số khách vắng đã lưu trong state.
+// Với tiền mặt, hold chỉ khóa khả dụng. Khi hoàn tất phải release hold,
+// rồi ví tài xế chỉ bị trừ phí hệ thống trên số khách thật sự lên xe.
 function cashSettleCalc() {
   const noShow = cashTrip.noShow.slice(0, cashTrip.seats).filter(Boolean).length;
   const boarded = cashTrip.seats - noShow;
-  const bookedFare = cashTrip.seats * cashTrip.price;
-  const refund = noShow * cashTrip.price;
+  const holdAmount = cashTrip.seats * cashTrip.price;
+  const collected = boarded * cashTrip.price;
+  const uncollected = noShow * cashTrip.price;
   const commission = Math.round(boarded * cashTrip.price * cashTrip.rate / 100);
-  const finalDebit = boarded * cashTrip.price * (1 + cashTrip.rate / 100); // = bookedFare - refund + commission
-  return { noShow, boarded, bookedFare, refund, commission, finalDebit };
+  const walletDebit = commission;
+  const availableRestoredOnFinalize = holdAmount - commission;
+  const netIncome = collected - commission;
+  return { noShow, boarded, holdAmount, collected, uncollected, commission, walletDebit, availableRestoredOnFinalize, netIncome };
 }
 
 function renderCashSettle() {
@@ -3440,26 +3445,28 @@ function renderCashSettle() {
   const seatRows = Array.from({ length: cashTrip.seats }, (_, i) => `
     <label class="cash-seat"><input type="checkbox" class="cash-noshow" ${cashTrip.noShow[i] ? 'checked' : ''} onchange="toggleCashNoShow(${i})"> Khách ${i + 1} <span class="text-muted">(${fmt(cashTrip.price)})</span> — <span class="cash-seat-state">${cashTrip.noShow[i] ? '⛔ không lên xe' : 'không lên xe'}</span></label>
   `).join('');
+  const lockedInput = cashTrip.held ? 'disabled' : '';
   document.getElementById('cash-settle-body').innerHTML = `
     <div class="form-grid" style="margin-bottom:12px">
-      <div class="input-group"><label>Số ghế đặt</label><input type="number" id="cash-seats" class="input" value="${cashTrip.seats}" min="1" max="45" onchange="cashTrip.seats=Math.max(1,parseInt(this.value)||1);cashTrip.noShow=[];cashTrip.held=false;renderCashSettle()"></div>
-      <div class="input-group"><label>Giá / ghế (đ)</label><input type="number" id="cash-price" class="input" value="${cashTrip.price}" min="0" onchange="cashTrip.price=parseInt(this.value)||0;cashTrip.held=false;renderCashSettle()"></div>
-      <div class="input-group"><label>Phí hệ thống (%)</label><input type="number" id="cash-rate" class="input" value="${cashTrip.rate}" min="0" max="100" onchange="cashTrip.rate=parseInt(this.value)||0;renderCashSettle()"></div>
+      <div class="input-group"><label>Số ghế đặt</label><input type="number" id="cash-seats" class="input" value="${cashTrip.seats}" min="1" max="45" ${lockedInput} onchange="cashTrip.seats=Math.max(1,parseInt(this.value)||1);cashTrip.noShow=[];renderCashSettle()"></div>
+      <div class="input-group"><label>Giá / ghế (đ)</label><input type="number" id="cash-price" class="input" value="${cashTrip.price}" min="0" ${lockedInput} onchange="cashTrip.price=parseInt(this.value)||0;renderCashSettle()"></div>
+      <div class="input-group"><label>Phí hệ thống (%)</label><input type="number" id="cash-rate" class="input" value="${cashTrip.rate}" min="0" max="100" ${lockedInput} onchange="cashTrip.rate=parseInt(this.value)||0;renderCashSettle()"></div>
     </div>
     <div class="doc-section-title" style="margin-top:0">Tích khách KHÔNG lên xe</div>
     <div class="cash-seats">${seatRows}</div>
     <div class="cash-calc">
-      <div class="apply-rowx"><span>🔒 Tạm giữ khi nhận chuyến (${cashTrip.seats}×${fmt(cashTrip.price)})</span><b>${fmt(c.bookedFare)}</b></div>
-      <div class="apply-rowx"><span>🔓 Trừ tạm giữ ban đầu khi hoàn tất</span><b class="text-danger">− ${fmt(c.bookedFare)}</b></div>
-      <div class="apply-rowx"><span>↩️ Hoàn ${c.noShow} khách không lên xe</span><b class="text-success">+ ${fmt(c.refund)}</b></div>
+      <div class="apply-rowx"><span>🔒 Tạm giữ khi nhận chuyến (${cashTrip.seats}×${fmt(cashTrip.price)})</span><b>${fmt(c.holdAmount)}</b></div>
+      <div class="apply-rowx"><span>🔓 Nhả lại toàn bộ tạm giữ khi hoàn tất</span><b class="text-success">+ ${fmt(c.holdAmount)} khả dụng</b></div>
+      <div class="apply-rowx"><span>💵 Tài xế thu tiền mặt ${c.boarded} khách lên xe</span><b>${fmt(c.collected)}</b></div>
+      <div class="apply-rowx"><span>🚫 ${c.noShow} khách vắng, không thu tiền mặt</span><b class="text-muted">${fmt(c.uncollected)}</b></div>
       <div class="apply-rowx"><span>🏢 Phí hệ thống ${cashTrip.rate}% × ${c.boarded} khách lên xe</span><b class="text-danger">− ${fmt(c.commission)}</b></div>
-      <div class="apply-rowx total"><span>Trừ ví thực tế (${c.boarded} khách)</span><b>− ${fmt(c.finalDebit)}</b></div>
-      <div class="text-muted" style="font-size:12px;margin-top:6px">Tài xế thu tiền mặt ${fmt(c.boarded * cashTrip.price)} · thực nhận ròng ${fmt(c.boarded * cashTrip.price - c.commission)}</div>
+      <div class="apply-rowx total"><span>Trừ ví thực tế</span><b>− ${fmt(c.walletDebit)}</b></div>
+      <div class="text-muted" style="font-size:12px;margin-top:6px">Sau khi hoàn tất: khả dụng tăng lại ${fmt(c.availableRestoredOnFinalize)} so với lúc đang hold · thực nhận ròng ${fmt(c.netIncome)}</div>
     </div>
   `;
   document.getElementById('cash-settle-footer').innerHTML = `
     <button class="btn btn-outline" onclick="closeModal('cash-settle-modal')">Đóng</button>
-    <button class="btn ${cashTrip.held ? 'btn-outline' : 'btn-primary'}" onclick="cashHold()" ${cashTrip.held ? 'disabled' : ''}>1️⃣ Nhận chuyến (tạm giữ ${fmt(c.bookedFare)})</button>
+    <button class="btn ${cashTrip.held ? 'btn-outline' : 'btn-primary'}" onclick="cashHold()" ${cashTrip.held ? 'disabled' : ''}>1️⃣ Nhận chuyến (tạm giữ ${fmt(c.holdAmount)})</button>
     <button class="btn btn-primary" onclick="cashFinalize()" ${cashTrip.held ? '' : 'disabled'}>2️⃣ Hoàn tất & quyết toán</button>
   `;
 }
@@ -3467,7 +3474,12 @@ function renderCashSettle() {
 function cashHold() {
   const w = WALLETS.find(x => x.id === cashTrip.walletId);
   const c = cashSettleCalc();
-  logTx(w, { direction: 'HOLD', type: 'HOLD', amount: c.bookedFare, pendingDelta: c.bookedFare,
+  const available = w.balance - w.pendingBalance;
+  if (available < c.holdAmount) {
+    alert(`Số dư khả dụng không đủ để tạm giữ.\nKhả dụng: ${fmt(available)}\nCần giữ: ${fmt(c.holdAmount)}`);
+    return;
+  }
+  logTx(w, { direction: 'HOLD', type: 'HOLD', amount: c.holdAmount, pendingDelta: c.holdAmount,
     note: `Tạm giữ 100% khi nhận chuyến (${cashTrip.seats} ghế)`, refId: cashTrip.tripId });
   cashTrip.held = true;
   renderCashSettle();
@@ -3476,21 +3488,19 @@ function cashHold() {
 
 function cashFinalize() {
   const w = WALLETS.find(x => x.id === cashTrip.walletId);
+  if (!cashTrip.held) { alert('Cần tạm giữ chuyến trước khi quyết toán.'); return; }
   const c = cashSettleCalc();
-  // 1) Nhả tạm giữ + trừ phần giữ ban đầu vào số dư
-  logTx(w, { direction: 'RELEASE', type: 'RELEASE', amount: c.bookedFare, pendingDelta: -c.bookedFare, balanceDelta: -c.bookedFare,
-    note: 'Hoàn tất chuyến — trừ tạm giữ ban đầu', refId: cashTrip.tripId });
-  // 2) Hoàn lại khách không lên xe
-  if (c.refund) logTx(w, { direction: 'CREDIT', type: 'REFUND', amount: c.refund, balanceDelta: c.refund,
-    note: `Hoàn ${c.noShow} khách không lên xe`, refId: cashTrip.tripId });
-  // 3) Phí hệ thống trên khách lên xe
+  // 1) Nhả tạm giữ: hoàn lại khả dụng, không đổi số dư.
+  logTx(w, { direction: 'RELEASE', type: 'RELEASE', amount: c.holdAmount, pendingDelta: -c.holdAmount,
+    note: 'Hoàn tất chuyến — nhả lại tạm giữ ban đầu', refId: cashTrip.tripId });
+  // 2) Phí hệ thống trên khách lên xe.
   if (c.commission) logTx(w, { direction: 'DEBIT', type: 'COMMISSION', amount: c.commission, balanceDelta: -c.commission,
     note: `Phí hệ thống ${cashTrip.rate}% × ${c.boarded} khách`, refId: cashTrip.tripId });
   closeModal('cash-settle-modal');
   selectedWalletId = cashTrip.walletId;
   cashTrip = null;
   renderWallets();
-  alert(`✅ Đã quyết toán chuyến.\nTrừ ví thực tế: ${fmt(c.finalDebit)} (${c.boarded} khách lên xe).`);
+  alert(`✅ Đã quyết toán chuyến.\nĐã nhả tạm giữ: ${fmt(c.holdAmount)}\nTrừ ví thực tế: ${fmt(c.walletDebit)} (${c.boarded} khách lên xe).`);
 }
 
 // ============================================
