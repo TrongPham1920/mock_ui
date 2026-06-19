@@ -976,7 +976,7 @@ const COMMISSIONS = [
 // - km[]: khung cây số áp dụng giá/km (km0 = giá mở cửa cho 1km đầu)
 // - timeSlot[]: phụ phí theo khung giờ trong ngày (HH:MM)
 // - period[]: phụ phí theo thời điểm/ngày đặc biệt (lễ, cuối tuần, ngày cụ thể)
-// - basePrice: giá gốc dịch vụ (cho REGISTRATION/MAINTENANCE theo từng loại service)
+// - services[]: giá gốc dịch vụ. SERVICE_ORDER chỉ có 1 dòng giá đăng kiểm hộ.
 const PRICING = {
   BIKE: {
     label: 'Xe máy', icon: '🏍️', mode: 'km',
@@ -1027,9 +1027,7 @@ const PRICING = {
   SERVICE_ORDER: {
     label: 'Đăng kiểm hộ', icon: '📋', mode: 'service',
     services: [
-      { id: 'SV-R1', code: 'normal', name: 'Đăng kiểm thường', price: 350000 },
-      { id: 'SV-R2', code: 'express', name: 'Đăng kiểm nhanh', price: 550000 },
-      { id: 'SV-R3', code: 'truck', name: 'Đăng kiểm xe tải', price: 700000 },
+      { id: 'SV-R1', code: 'registration', name: 'Đăng kiểm hộ', price: 350000 },
     ],
     timeSlot: [
       { id: 'TS-R1', from: '07:00', to: '09:00', surcharge: 30000, note: 'Khung sớm' },
@@ -1077,14 +1075,14 @@ const MAINTENANCE = [
 
 // ---- REGISTRATIONS (Đăng kiểm hộ) — pickupAddress = địa chỉ cá nhân của khách, kèm engineType ----
 const REGISTRATIONS = [
-  { id: 'REG001', plate: '51A-123.45', ownerName: 'Nguyễn Văn Minh', ownerPhone: '0901234567', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '123 Lê Lợi, P.Bến Thành, Q.1, TP.HCM', bookingDate: '2026-03-20', bookingTime: '08:00', service: 'normal', price: 350000, status: 'pending', createdAt: '2026-03-18 10:30', docImages: { front: 'https://placehold.co/640x400/1e3a8a/ffffff.png?text=REG001+Mat+truoc', back: 'https://placehold.co/640x400/172554/ffffff.png?text=REG001+Mat+sau' } },
-  { id: 'REG002', plate: '51B-678.90', ownerName: 'Trần Thị Hương', ownerPhone: '0912345678', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '456 Nguyễn Trãi, P.8, Q.5, TP.HCM', bookingDate: '2026-03-19', bookingTime: '09:00', service: 'express', price: 500000, status: 'confirmed', createdAt: '2026-03-18 11:00', docImages: { front: 'https://placehold.co/640x400/1e3a8a/ffffff.png?text=REG002+Mat+truoc', back: 'https://placehold.co/640x400/172554/ffffff.png?text=REG002+Mat+sau' } },
-  { id: 'REG003', plate: '52C-111.22', ownerName: 'Lê Hoàng Nam', ownerPhone: '0923456789', vehicleType: 'car', engineType: 'electric', pickupAddress: '789 Pasteur, P.Võ Thị Sáu, Q.3, TP.HCM', bookingDate: '2026-03-21', bookingTime: '10:00', service: 'normal', price: 350000, status: 'pending', createdAt: '2026-03-18 14:15' },
-  { id: 'REG004', plate: '60D-333.44', ownerName: 'Phạm Thị Mai', ownerPhone: '0934567890', vehicleType: 'truck', engineType: 'diesel', pickupAddress: '321 Quang Trung, P.10, Q.Gò Vấp, TP.HCM', bookingDate: '2026-03-19', bookingTime: '07:00', service: 'home', price: 700000, status: 'completed', createdAt: '2026-03-17 16:00' },
-  { id: 'REG005', plate: '65E-555.66', ownerName: 'Võ Văn Hùng', ownerPhone: '0945678901', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '555 Lý Thường Kiệt, P.7, Q.Tân Bình, TP.HCM', bookingDate: '2026-03-22', bookingTime: '13:00', service: 'express', price: 500000, status: 'pending', createdAt: '2026-03-18 09:45' },
-  { id: 'REG006', plate: '43F-777.88', ownerName: 'Ngô Thị Lan', ownerPhone: '0956789012', vehicleType: 'bus', engineType: 'diesel', pickupAddress: '100 Điện Biên Phủ, P.15, Q.Bình Thạnh, TP.HCM', bookingDate: '2026-03-20', bookingTime: '14:00', service: 'normal', price: 350000, status: 'cancelled', createdAt: '2026-03-16 11:30' },
-  { id: 'REG007', plate: '51K-888.11', ownerName: 'Đào Văn Quân', ownerPhone: '0921110011', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '88 Trần Hưng Đạo, P.Cô Giang, Q.1, TP.HCM', bookingDate: '2026-03-21', bookingTime: '08:00', service: 'express', price: 500000, status: 'confirmed', createdAt: '2026-03-18 14:00' },
-  { id: 'REG008', plate: '51L-222.33', ownerName: 'Tô Mỹ Linh', ownerPhone: '0922220022', vehicleType: 'car', engineType: 'electric', pickupAddress: '55 Võ Văn Tần, P.Võ Thị Sáu, Q.3, TP.HCM', bookingDate: '2026-03-22', bookingTime: '09:00', service: 'home', price: 700000, status: 'confirmed', createdAt: '2026-03-18 15:30' },
+  { id: 'REG001', plate: '51A-123.45', ownerName: 'Nguyễn Văn Minh', ownerPhone: '0901234567', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '123 Lê Lợi, P.Bến Thành, Q.1, TP.HCM', bookingDate: '2026-03-20', bookingTime: '08:00', service: 'registration', price: 350000, status: 'pending', createdAt: '2026-03-18 10:30', docImages: { front: 'https://placehold.co/640x400/1e3a8a/ffffff.png?text=REG001+Mat+truoc', back: 'https://placehold.co/640x400/172554/ffffff.png?text=REG001+Mat+sau' } },
+  { id: 'REG002', plate: '51B-678.90', ownerName: 'Trần Thị Hương', ownerPhone: '0912345678', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '456 Nguyễn Trãi, P.8, Q.5, TP.HCM', bookingDate: '2026-03-19', bookingTime: '09:00', service: 'registration', price: 350000, status: 'confirmed', createdAt: '2026-03-18 11:00', docImages: { front: 'https://placehold.co/640x400/1e3a8a/ffffff.png?text=REG002+Mat+truoc', back: 'https://placehold.co/640x400/172554/ffffff.png?text=REG002+Mat+sau' } },
+  { id: 'REG003', plate: '52C-111.22', ownerName: 'Lê Hoàng Nam', ownerPhone: '0923456789', vehicleType: 'car', engineType: 'electric', pickupAddress: '789 Pasteur, P.Võ Thị Sáu, Q.3, TP.HCM', bookingDate: '2026-03-21', bookingTime: '10:00', service: 'registration', price: 350000, status: 'pending', createdAt: '2026-03-18 14:15' },
+  { id: 'REG004', plate: '60D-333.44', ownerName: 'Phạm Thị Mai', ownerPhone: '0934567890', vehicleType: 'truck', engineType: 'diesel', pickupAddress: '321 Quang Trung, P.10, Q.Gò Vấp, TP.HCM', bookingDate: '2026-03-19', bookingTime: '07:00', service: 'registration', price: 350000, status: 'completed', createdAt: '2026-03-17 16:00' },
+  { id: 'REG005', plate: '65E-555.66', ownerName: 'Võ Văn Hùng', ownerPhone: '0945678901', vehicleType: 'car', engineType: 'gasoline', pickupAddress: '555 Lý Thường Kiệt, P.7, Q.Tân Bình, TP.HCM', bookingDate: '2026-03-22', bookingTime: '13:00', service: 'registration', price: 350000, status: 'pending', createdAt: '2026-03-18 09:45' },
+  { id: 'REG006', plate: '43F-777.88', ownerName: 'Ngô Thị Lan', ownerPhone: '0956789012', vehicleType: 'bus', engineType: 'diesel', pickupAddress: '100 Điện Biên Phủ, P.15, Q.Bình Thạnh, TP.HCM', bookingDate: '2026-03-20', bookingTime: '14:00', service: 'registration', price: 350000, status: 'cancelled', createdAt: '2026-03-16 11:30' },
+  { id: 'REG007', plate: '51K-888.11', ownerName: 'Đào Văn Quân', ownerPhone: '0921110011', vehicleType: 'car', engineType: 'hybrid', pickupAddress: '88 Trần Hưng Đạo, P.Cô Giang, Q.1, TP.HCM', bookingDate: '2026-03-21', bookingTime: '08:00', service: 'registration', price: 350000, status: 'confirmed', createdAt: '2026-03-18 14:00' },
+  { id: 'REG008', plate: '51L-222.33', ownerName: 'Tô Mỹ Linh', ownerPhone: '0922220022', vehicleType: 'car', engineType: 'electric', pickupAddress: '55 Võ Văn Tần, P.Võ Thị Sáu, Q.3, TP.HCM', bookingDate: '2026-03-22', bookingTime: '09:00', service: 'registration', price: 350000, status: 'confirmed', createdAt: '2026-03-18 15:30' },
 ];
 
 const COMMISSION_HISTORY = [
@@ -1371,7 +1369,7 @@ const INTERCITY_TRIPS = [
 
   // (3b) REG/MNT tĩnh còn lại → tạo booking liên kết + khách
   let bkSeq = 900;
-  const REG_PRICE = { normal: 350000, express: 500000, home: 700000 };
+  const REG_PRICE = PRICING.SERVICE_ORDER.services[0]?.price || 350000;
   const MNT_PRICE = { basic: 400000, full: 1200000, oil_change: 250000, tire: 800000 };
   REGISTRATIONS.filter(r => !r.bookingId).forEach(r => {
     const cust = findOrCreateCustomer(r.ownerName, r.ownerPhone);
@@ -1384,7 +1382,7 @@ const INTERCITY_TRIPS = [
       fulfillmentStatus: r.status === 'completed' ? 'COMPLETED' : (paid ? 'PENDING' : null),
       customerId: cust.id, agentId: 'USR003', driverId: null,
       pickup: r.pickupAddress, dropoff: r.pickupAddress,
-      fareSnapshot: r.price || REG_PRICE[r.service] || 0, distance: 0,
+      fareSnapshot: r.price || REG_PRICE, distance: 0,
       paymentMethod: 'cash', paymentReference: paid ? 'CASH-' + r.id : null,
       fulfillmentTaskId: null, serviceOrderId: r.id,
       createdAt: r.createdAt || nowTs(), updatedAt: r.createdAt || nowTs()

@@ -281,7 +281,7 @@ function isWindowCurrent(window) {
 // TIME-WINDOW HELPERS — phân công có ý thức về lịch
 // TX/xe đang trong chuyến hiện tại VẪN có thể nhận chuyến tương lai nếu không xung đột thời gian.
 // ============================================
-const SERVICE_DURATION_HOURS = { normal: 2, express: 1.5, home: 3, basic: 2, full: 4, oil_change: 1, tire: 3 };
+const SERVICE_DURATION_HOURS = { registration: 2, normal: 2, express: 1.5, home: 3, basic: 2, full: 4, oil_change: 1, tire: 3 };
 const DEFAULT_TRIP_DURATION_HRS = 1; // BIKE/CAR fallback
 
 function parseDateTime(dateStr, timeStr) {
@@ -1052,6 +1052,8 @@ function generateTripsFromSchedule(schedule, opts = {}) {
 
 // ---- Heal data trên init: sync các derived state ----
 function healData() {
+  normalizeRegistrationPricing();
+
   // 1. currentAssignmentId trỏ về FT IN_PROGRESS (đang chạy thực), không tính FT ASSIGNED tương lai
   DRIVERS.forEach(d => { d.currentAssignmentId = null; });
   if (typeof INTERCITY_DRIVERS !== 'undefined') {
@@ -1146,7 +1148,7 @@ function healData() {
       centerName: b.dropoff,
       bookingDate: b.createdAt ? b.createdAt.slice(0, 10) : '',
       bookingTime: b.createdAt ? b.createdAt.slice(11, 16) : '',
-      service: b.fareSnapshot >= 700000 ? 'home' : (b.fareSnapshot >= 500000 ? 'express' : 'normal'),
+      service: getRegistrationServiceCode(),
       price: b.fareSnapshot,
       status: regStatusMap[b.bookingStatus] || 'pending',
       createdAt: b.createdAt,
@@ -2283,17 +2285,67 @@ function filterBookings(type) {
   renderBookings();
 }
 
-// Lấy đơn đăng kiểm/bảo dưỡng (có ảnh hồ sơ) liên kết với 1 booking, nếu có
-function getBookingDocOrder(b) {
+const SERVICE_VEHICLE_LABELS = {
+  car_4: 'Ô tô 4 chỗ', car_7: 'Ô tô 7 chỗ', car_16: 'Ô tô 16 chỗ',
+  // Tương thích dữ liệu demo cũ.
+  car: 'Ô tô 4 chỗ', truck: 'Ô tô 7 chỗ', bus: 'Ô tô 16 chỗ'
+};
+const SERVICE_ENGINE_LABELS = { gasoline: 'Xăng', electric: 'Điện', diesel: 'Dầu', hybrid: 'Hybrid' };
+
+// Lấy thông tin đơn đăng kiểm/bảo dưỡng liên kết với booking.
+function getBookingServiceOrder(b) {
   if (b.bookingType === 'SERVICE_ORDER' && b.serviceOrderId) {
     const order = REGISTRATIONS.find(r => r.id === b.serviceOrderId);
-    if (order?.docImages && (order.docImages.front || order.docImages.back)) return { kind: 'reg', order };
+    if (order) return { kind: 'reg', order };
   }
   if (b.bookingType === 'MAINTENANCE_ORDER' && b.maintenanceOrderId) {
     const order = MAINTENANCE.find(r => r.id === b.maintenanceOrderId);
-    if (order?.docImages && (order.docImages.front || order.docImages.back)) return { kind: 'mnt', order };
+    if (order) return { kind: 'mnt', order };
   }
   return null;
+}
+
+// Lấy đơn đăng kiểm/bảo dưỡng có ảnh hồ sơ liên kết với booking, nếu có.
+function getBookingDocOrder(b) {
+  const linked = getBookingServiceOrder(b);
+  return linked?.order?.docImages && (linked.order.docImages.front || linked.order.docImages.back) ? linked : null;
+}
+
+function getServiceVehicleLabel(order) {
+  return SERVICE_VEHICLE_LABELS[order?.vehicleType] || order?.vehicleType || '—';
+}
+
+function getServiceEngineLabel(order) {
+  return SERVICE_ENGINE_LABELS[order?.engineType] || order?.engineType || '—';
+}
+
+function formatServiceReceiveDate(order) {
+  if (!order?.bookingDate) return '—';
+  const parts = order.bookingDate.split('-');
+  const date = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : order.bookingDate;
+  return `${date}${order.bookingTime ? ` · ${order.bookingTime}` : ''}`;
+}
+
+function getIntercityBookingInfo(booking) {
+  if (booking?.bookingType !== 'INTERCITY') return null;
+  const trip = booking.tripId ? INTERCITY_TRIPS.find(t => t.id === booking.tripId) : null;
+  const schedule = booking.scheduleId ? SCHEDULES.find(s => s.id === booking.scheduleId) : null;
+  const seatLayout = schedule
+    ? SEAT_LAYOUTS.find(l => l.id === (schedule.seatLayoutId || schedule.vehicleModelId))
+    : null;
+  const operatorId = trip?.operatorId || schedule?.operatorId;
+  const seatCount = booking.seatNumbers?.length || booking.passengerSnapshot?.length || 0;
+  const departureTime = trip?.departureTime || schedule?.departureTime;
+  const arrivalTime = trip?.arrivalTime || schedule?.arrivalTime;
+  const runTime = departureTime
+    ? `${trip?.date ? `${trip.date} · ` : ''}${departureTime}${arrivalTime ? ` – ${arrivalTime}` : ''}`
+    : '—';
+  return {
+    operatorName: trip?.operatorName || getPartnerName(operatorId),
+    vehicleType: trip?.vehicleType || seatLayout?.name || '—',
+    seatCount,
+    runTime
+  };
 }
 
 function renderBookings() {
@@ -2331,7 +2383,9 @@ function showBookingDetail(id) {
   if (!b) return;
   const vt = VEHICLE_TYPES[b.bookingType];
   const customer = getCustomer(b.customerId);
-  const driver = b.driverId ? DRIVERS.find(d => d.id === b.driverId) : null;
+  const driver = b.driverId ? findDriver(b.driverId) : null;
+  const intercity = getIntercityBookingInfo(b);
+  const serviceOrder = getBookingServiceOrder(b)?.order;
 
   // Build state timeline
   const bookingStates = ['DRAFT', 'PENDING_CONFIRMATION', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED'];
@@ -2352,13 +2406,22 @@ function showBookingDetail(id) {
     <div class="form-grid" style="gap:12px">
       <div class="input-group"><label>Khách hàng</label><div style="padding:8px 0;font-size:13px">${customer ? customer.name+' · '+customer.phone : '—'}</div></div>
       <div class="input-group"><label>Tài xế</label><div style="padding:8px 0;font-size:13px">${driver ? driver.name+' · '+driver.phone : '<span class="text-warning">Chưa gán</span>'}</div></div>
+      ${intercity ? `
+      <div class="input-group"><label>Nhà xe</label><div style="padding:8px 0;font-size:13px">${esc(intercity.operatorName)}</div></div>
+      <div class="input-group"><label>Loại xe</label><div style="padding:8px 0;font-size:13px">${esc(intercity.vehicleType)}</div></div>
+      <div class="input-group"><label>Số lượng ghế đã đặt</label><div style="padding:8px 0;font-size:13px">${intercity.seatCount} ghế</div></div>
+      <div class="input-group"><label>Thời gian chạy</label><div style="padding:8px 0;font-size:13px">${esc(intercity.runTime)}</div></div>` : ''}
+      ${serviceOrder ? `
+      <div class="input-group"><label>Loại xe</label><div style="padding:8px 0;font-size:13px">${esc(getServiceVehicleLabel(serviceOrder))}</div></div>
+      <div class="input-group"><label>Động cơ</label><div style="padding:8px 0;font-size:13px">${esc(getServiceEngineLabel(serviceOrder))}</div></div>
+      <div class="input-group"><label>Ngày nhận xe</label><div style="padding:8px 0;font-size:13px">${esc(formatServiceReceiveDate(serviceOrder))}</div></div>
+      <div class="input-group full-width"><label>📍 Điểm nhận xe</label><div style="padding:8px 0;font-size:13px">${esc(serviceOrder.pickupAddress || b.pickup || '—')}</div></div>` : `
       <div class="input-group full-width"><label>📍 Điểm đón</label><div style="padding:8px 0;font-size:13px">${b.pickup}</div></div>
-      <div class="input-group full-width"><label>🏁 Điểm đến</label><div style="padding:8px 0;font-size:13px">${b.dropoff}</div></div>
+      <div class="input-group full-width"><label>🏁 Điểm đến</label><div style="padding:8px 0;font-size:13px">${b.dropoff}</div></div>`}
       <div class="input-group"><label>Giá</label><div style="padding:8px 0;font-size:16px;font-weight:700;color:var(--success)">${fmt(b.fareSnapshot)}</div></div>
-      <div class="input-group"><label>Khoảng cách</label><div style="padding:8px 0;font-size:13px">${b.distance} km</div></div>
+      ${serviceOrder ? '' : `<div class="input-group"><label>Khoảng cách</label><div style="padding:8px 0;font-size:13px">${b.distance} km</div></div>`}
       <div class="input-group"><label>Payment Ref</label><div style="padding:8px 0;font-size:13px;font-family:monospace">${b.paymentReference}</div></div>
       <div class="input-group"><label>Fulfillment Task</label><div style="padding:8px 0;font-size:13px;font-family:monospace">${b.fulfillmentTaskId||'—'}</div></div>
-      ${b.seatNumbers ? `<div class="input-group"><label>Ghế</label><div style="padding:8px 0;font-size:13px">${b.seatNumbers.join(', ')}</div></div>` : ''}
       ${b.routeId ? `<div class="input-group"><label>Tuyến</label><div style="padding:8px 0;font-size:13px">${getRouteName(b.routeId)}</div></div>` : ''}
       ${(() => { const d = getBookingDocOrder(b); return d ? `<div class="input-group full-width"><label>${d.kind === 'reg' ? 'Hồ sơ đăng kiểm' : 'Hồ sơ bảo dưỡng'}</label><div style="padding:8px 0;font-size:13px"><a href="javascript:void(0)" class="text-accent fw-600" onclick="viewOrderDocs('${d.kind}','${d.order.id}')">📷 Xem ảnh mặt trước / mặt sau</a></div></div>` : ''; })()}
     </div>
@@ -2730,9 +2793,20 @@ function renderFulfillmentDefault(allPending, availableDrivers, canAssign) {
   document.getElementById('dispatch-pending-count').textContent = `${allPending.length} chuyến`;
   document.getElementById('dispatch-pending-list').innerHTML = allPending.length ? allPending.map(b => {
     const vt = VEHICLE_TYPES[b.bookingType];
+    const serviceOrder = getBookingServiceOrder(b)?.order;
+    const serviceInfo = serviceOrder ? `
+      <div class="dispatch-service-meta">
+        <span>🔢 Biển số: ${esc(serviceOrder.plate || '—')}</span>
+        <span>🚗 ${esc(getServiceVehicleLabel(serviceOrder))}</span>
+        <span>⛽ ${esc(getServiceEngineLabel(serviceOrder))}</span>
+        <span class="dispatch-service-meta-date">📅 Nhận xe: ${esc(formatServiceReceiveDate(serviceOrder))}</span>
+      </div>` : '';
+    const routeInfo = serviceOrder
+      ? `<div class="dispatch-item-route dispatch-item-pickup-only"><span class="pickup">${esc(serviceOrder.pickupAddress || b.pickup || '—')}</span></div>`
+      : `<div class="dispatch-item-route"><span class="pickup">${esc(b.pickup)}</span><span class="dropoff">${esc(b.dropoff)}</span></div>`;
     return `<div class="dispatch-item" ${canAssign ? `onclick="openDispatchModal('${b.id}')"` : ''}>
       <div class="dispatch-item-header"><span class="dispatch-item-id">${b.bookingCode}</span><span class="dispatch-item-type">${vt?.icon||'🚗'}</span></div>
-      <div class="dispatch-item-route"><span class="pickup">${b.pickup}</span><span class="dropoff">${b.dropoff}</span></div>
+      ${routeInfo}${serviceInfo}
       <div class="dispatch-item-footer"><span class="dispatch-item-price">${fmt(b.fareSnapshot)}</span>${canAssign ? `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDispatchModal('${b.id}')">Gán tài xế</button>` : '<span class="text-muted" style="font-size:12px">Chỉ xem</span>'}</div>
     </div>`;
   }).join('') : '<div class="empty-state"><div class="empty-state-icon">🎉</div><div class="empty-state-text">Tất cả đã được gán</div></div>';
@@ -2790,13 +2864,23 @@ function openDispatchModal(bookingId) {
   selectedDispatchBooking = b;
   selectedDispatchDriverId = null;
   const vt = VEHICLE_TYPES[b.bookingType];
+  const serviceOrder = getBookingServiceOrder(b)?.order;
   const window = getBookingTimeWindow(b);
   const scheduleHtml = window
     ? `<div style="font-size:12px;color:var(--accent);margin-top:6px">🕐 Khung giờ: ${fmtBookingWindow(window)}</div>`
     : '';
+  const locationHtml = serviceOrder
+    ? `<div class="dispatch-modal-pickup"><span>📍 Địa chỉ nhận xe</span><strong>${esc(serviceOrder.pickupAddress || b.pickup || '—')}</strong></div>
+       <div class="dispatch-service-meta dispatch-service-meta-modal">
+         <span><small>Biển số</small>🔢 ${esc(serviceOrder.plate || '—')}</span>
+         <span><small>Loại xe</small>🚗 ${esc(getServiceVehicleLabel(serviceOrder))}</span>
+         <span><small>Động cơ</small>⛽ ${esc(getServiceEngineLabel(serviceOrder))}</span>
+         <span class="dispatch-service-meta-date"><small>Ngày nhận xe</small>📅 ${esc(formatServiceReceiveDate(serviceOrder))}</span>
+       </div>`
+    : `<div style="font-size:12px;color:var(--text-secondary)">📍 ${esc(b.pickup)}<br>🏁 ${esc(b.dropoff)}</div>`;
   document.getElementById('dispatch-trip-info').innerHTML = `
     <div class="flex-center" style="margin-bottom:8px"><span style="font-size:20px">${vt?.icon||'🚗'}</span><span class="fw-600">${b.bookingCode}</span><span class="text-muted">·</span><span>${vt?.label||''}</span><span class="recent-trip-price" style="margin-left:auto">${fmt(b.fareSnapshot)}</span></div>
-    <div style="font-size:12px;color:var(--text-secondary)">📍 ${b.pickup}<br>🏁 ${b.dropoff}</div>${scheduleHtml}`;
+    ${locationHtml}${scheduleHtml}`;
   // Pool tài xế phù hợp với loại booking
   const pool = getDriverPoolForBooking(b.bookingType);
   // SERVICE/MAINTENANCE dùng chung pool INTERCITY_DRIVERS → logic hiển thị giống liên tỉnh:
@@ -3910,14 +3994,15 @@ function renderPricingPanel(type) {
 
   const rowActions = (kind, id) => `
     <button class="btn btn-outline btn-sm" onclick="openPricingForm('${type}','${kind}','${id}')">✏️</button>
-    <button class="btn btn-outline btn-sm" onclick="deletePricingRow('${type}','${kind}','${id}')">🗑️</button>`;
+    ${type === 'SERVICE_ORDER' && kind === 'services' ? '' : `<button class="btn btn-outline btn-sm" onclick="deletePricingRow('${type}','${kind}','${id}')">🗑️</button>`}`;
 
   // 1) Giá gốc theo dịch vụ (chỉ với SERVICE/MAINTENANCE)
   if (p.mode === 'service') {
+    const servicePriceTitle = type === 'SERVICE_ORDER' ? '💰 Giá đăng kiểm hộ' : '💰 Giá mỗi dịch vụ';
     html += `<div class="table-container" style="margin-bottom:20px">
       <div class="table-header">
-        <span class="table-title">💰 Giá mỗi dịch vụ</span>
-        <div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${type}','services')">➕ Thêm dịch vụ</button></div>
+        <span class="table-title">${servicePriceTitle}</span>
+        ${type === 'SERVICE_ORDER' ? '' : `<div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${type}','services')">➕ Thêm dịch vụ</button></div>`}
       </div>
       <div class="table-wrapper">
         <table><thead><tr><th>Mã</th><th>Tên dịch vụ</th><th>Giá (đ)</th><th>Thao tác</th></tr></thead>
@@ -4009,9 +4094,14 @@ function genPricingId(type, kind) {
   return `${prefix}-${tcode}${n}`;
 }
 
-function buildPricingFormBody(kind, item) {
+function buildPricingFormBody(kind, item, type) {
   const v = item || {};
   if (kind === 'services') {
+    if (type === 'SERVICE_ORDER') {
+      return `
+        <div class="input-group mb-20"><label>Dịch vụ</label><div style="padding:12px;background:var(--bg-input);border-radius:var(--radius-sm);font-weight:600">📋 Đăng kiểm hộ</div></div>
+        <div class="input-group mb-20"><label>Giá đăng kiểm hộ (đ)</label><input type="number" id="pf-price" min="0" step="1000" placeholder="350000" value="${v.price||DEFAULT_REGISTRATION_SERVICE_PRICE}"></div>`;
+    }
     return `
       <div class="input-group mb-20"><label>Mã code</label><input type="text" id="pf-code" placeholder="basic" value="${v.code||''}"></div>
       <div class="input-group mb-20"><label>Tên dịch vụ</label><input type="text" id="pf-name" placeholder="Bảo dưỡng cơ bản" value="${v.name||''}"></div>
@@ -4055,13 +4145,17 @@ function togglePricingPeriodRange() {
 }
 
 function openPricingForm(type, kind, id) {
+  if (type === 'SERVICE_ORDER' && kind === 'services' && !id) {
+    alert('Đăng kiểm hộ chỉ có một loại dịch vụ. Vui lòng sửa giá ở dòng hiện có.');
+    return;
+  }
   const meta = PRICING_KIND_META[kind];
   const item = id ? PRICING[type][kind].find(x => x.id === id) : null;
   document.getElementById('pf-type-input').value = type;
   document.getElementById('pf-kind-input').value = kind;
   document.getElementById('pf-id-input').value = id || '';
   document.getElementById('pf-title').textContent = `${meta.icon} ${id ? 'Sửa' : 'Thêm'} ${meta.title} — ${PRICING[type].label}`;
-  document.getElementById('pf-body').innerHTML = buildPricingFormBody(kind, item);
+  document.getElementById('pf-body').innerHTML = buildPricingFormBody(kind, item, type);
   openModal('pricing-form-modal');
 }
 
@@ -4073,8 +4167,8 @@ function savePricingForm() {
   const get = (k) => document.getElementById('pf-' + k);
   let payload = {};
   if (kind === 'services') {
-    const code = get('code').value.trim();
-    const name = get('name').value.trim();
+    const code = type === 'SERVICE_ORDER' ? REGISTRATION_SERVICE_CODE : get('code').value.trim();
+    const name = type === 'SERVICE_ORDER' ? 'Đăng kiểm hộ' : get('name').value.trim();
     const price = parseInt(get('price').value, 10);
     if (!code || !name || isNaN(price) || price < 0) return alert('Nhập đủ Mã, Tên và Giá hợp lệ.');
     payload = { code, name, price };
@@ -4115,11 +4209,16 @@ function savePricingForm() {
   if (typeof createAuditLog === 'function') {
     createAuditLog({ action: 'pricing.' + (id ? 'update' : 'create'), target: `${type}.${kind}.${id || '(new)'}`, before: null, after: payload });
   }
+  if (type === 'SERVICE_ORDER' && kind === 'services') normalizeRegistrationPricing();
   closeModal('pricing-form-modal');
   renderPricingPanel(type);
 }
 
 function deletePricingRow(type, kind, id) {
+  if (type === 'SERVICE_ORDER' && kind === 'services') {
+    alert('Không thể xoá dịch vụ đăng kiểm mặc định.');
+    return;
+  }
   const arr = PRICING[type][kind];
   const idx = arr.findIndex(x => x.id === id);
   if (idx < 0) return;
@@ -4759,7 +4858,15 @@ function switchBookingTab(tab, btn) {
 let selectedRegId = null;
 let selectedMntId = null;
 
-const REG_SERVICE_LABELS = { normal: 'Đăng kiểm thường', express: 'Đăng kiểm nhanh', home: 'Đăng kiểm tại nhà' };
+const REGISTRATION_SERVICE_CODE = 'registration';
+const DEFAULT_REGISTRATION_SERVICE_PRICE = 350000;
+const REG_SERVICE_LABELS = {
+  registration: 'Đăng kiểm hộ',
+  normal: 'Đăng kiểm hộ',
+  express: 'Đăng kiểm hộ',
+  home: 'Đăng kiểm hộ',
+  truck: 'Đăng kiểm hộ'
+};
 const MNT_SERVICE_LABELS = { basic: 'Bảo dưỡng cơ bản', full: 'Bảo dưỡng toàn diện', oil_change: 'Thay nhớt', tire: 'Lốp & cân chỉnh' };
 const ORDER_ENGINE_LABELS = { gasoline: '⛽ Xăng', electric: '🔋 Điện', diesel: '🛢️ Dầu', hybrid: '⚡ Hybrid' };
 const ORDER_STATUS_LABELS = {
@@ -4768,6 +4875,37 @@ const ORDER_STATUS_LABELS = {
   completed: { label: 'Hoàn thành', class: 'badge-success' },
   cancelled: { label: 'Đã hủy', class: 'badge-cancelled' }
 };
+
+function getRegistrationServiceConfig() {
+  const services = PRICING?.SERVICE_ORDER?.services;
+  if (Array.isArray(services) && services.length) return services[0];
+  return { id: 'SV-R1', code: REGISTRATION_SERVICE_CODE, name: 'Đăng kiểm hộ', price: DEFAULT_REGISTRATION_SERVICE_PRICE };
+}
+
+function getRegistrationServiceCode() {
+  return getRegistrationServiceConfig().code || REGISTRATION_SERVICE_CODE;
+}
+
+function getRegistrationServicePrice() {
+  const price = parseInt(getRegistrationServiceConfig().price, 10);
+  return Number.isFinite(price) && price >= 0 ? price : DEFAULT_REGISTRATION_SERVICE_PRICE;
+}
+
+function normalizeRegistrationPricing() {
+  if (!PRICING?.SERVICE_ORDER) return;
+  const current = getRegistrationServiceConfig();
+  PRICING.SERVICE_ORDER.mode = 'service';
+  PRICING.SERVICE_ORDER.services = [{
+    id: current.id || 'SV-R1',
+    code: REGISTRATION_SERVICE_CODE,
+    name: 'Đăng kiểm hộ',
+    price: getRegistrationServicePrice()
+  }];
+  REGISTRATIONS.forEach(r => {
+    r.service = REGISTRATION_SERVICE_CODE;
+    if (!Number.isFinite(parseInt(r.price, 10))) r.price = getRegistrationServicePrice();
+  });
+}
 
 function orderDetailEmpty(icon, text) {
   return `<div class="odp-empty"><div class="odp-empty-icon">${icon}</div>${text}</div>`;
@@ -4939,7 +5077,7 @@ function renderRegistrations() {
     completed: { label: 'Hoàn thành', class: 'badge-success' },
     cancelled: { label: 'Đã hủy', class: 'badge-cancelled' }
   };
-  const serviceLabels = { normal: 'Thường', express: 'Nhanh', home: 'Tại nhà' };
+  const serviceLabels = { registration: 'Đăng kiểm hộ', normal: 'Đăng kiểm hộ', express: 'Đăng kiểm hộ', home: 'Đăng kiểm hộ', truck: 'Đăng kiểm hộ' };
   const engineLabels = { gasoline: '⛽ Xăng', electric: '🔋 Điện', diesel: '🛢️ Dầu', hybrid: '⚡ Hybrid' };
 
   document.getElementById('registrations-table-body').innerHTML = regs.map(r => `
@@ -4951,7 +5089,7 @@ function renderRegistrations() {
       <td>${esc(r.pickupAddress || r.centerName || '—')}</td>
       <td>${engineLabels[r.engineType] || '—'}</td>
       <td>${r.bookingDate} ${r.bookingTime}</td>
-      <td>${serviceLabels[r.service]}</td>
+      <td>${serviceLabels[r.service] || 'Đăng kiểm hộ'}</td>
       <td class="fw-600 text-success">${fmt(r.price)}</td>
       <td><span class="badge ${statusMap[r.status]?.class || ''}">${statusMap[r.status]?.label || r.status}</span></td>
       <td>
@@ -4990,7 +5128,8 @@ async function createRegistrationOrder() {
   const engineType = document.getElementById('reg-engine-type').value;
   const bookingDate = document.getElementById('reg-booking-date').value;
   const bookingTime = document.getElementById('reg-booking-time').value;
-  const service = document.getElementById('reg-service').value;
+  const service = getRegistrationServiceCode();
+  const servicePrice = getRegistrationServicePrice();
   const expireDate = document.getElementById('reg-expire-date')?.value || '';
   const notes = document.getElementById('reg-notes')?.value.trim() || '';
 
@@ -4999,7 +5138,6 @@ async function createRegistrationOrder() {
     return;
   }
 
-  const servicePrices = { normal: 350000, express: 500000, home: 700000 };
   const docImages = await readDocImages('reg-doc-front', 'reg-doc-back');
 
   const traceId = newTraceId();
@@ -5012,7 +5150,7 @@ async function createRegistrationOrder() {
     bookingDate, bookingTime, service,
     expireDate, notes,
     docImages,
-    price: servicePrices[service],
+    price: servicePrice,
     status: 'pending',
     createdAt: nowStr(),
     bookingId: null
@@ -5042,8 +5180,8 @@ async function createRegistrationOrder() {
     customerId: cust.id, agentId: currentUser?.id || null,
     driverId: null,
     pickup: pickupAddress, dropoff: pickupAddress,
-    fareSnapshot: servicePrices[service], distance: 0,
-    paymentMethod: 'cash',  // đăng kiểm thường thu khi hoàn tất
+    fareSnapshot: servicePrice, distance: 0,
+    paymentMethod: 'cash',  // đăng kiểm hộ thu khi hoàn tất
     paymentReference: null,
     fulfillmentTaskId: null,
     serviceOrderId: newReg.id,
@@ -5087,8 +5225,7 @@ function clearRegistrationForm() {
   });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('reg-engine-type', 'gasoline');
-  set('reg-vehicle-type', 'car');
-  set('reg-service', 'normal');
+  set('reg-vehicle-type', 'car_4');
   set('reg-booking-time', '07:00');
 }
 
@@ -5279,7 +5416,7 @@ function clearMaintenanceForm() {
   });
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
   set('mnt-engine-type', 'gasoline');
-  set('mnt-vehicle-type', 'car');
+  set('mnt-vehicle-type', 'car_4');
   set('mnt-service', 'basic');
   set('mnt-booking-time', '07:00');
 }
