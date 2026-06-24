@@ -16,6 +16,9 @@ let _dispatchDrivers = [];      // tài xế khả dụng cho modal mặc địn
 let currentNotificationTab = 'history';
 let currentRole = 'ADMIN';
 let currentUser = null;
+const OTP_VALIDITY_SECONDS = 300;
+const OTP_BACKEND_ENDPOINT = window.HAHAGO_OTP_ENDPOINT || '';
+let otpCountdownTimer = null;
 
 // Role configurations
 const ROLE_CONFIG = {
@@ -214,7 +217,14 @@ function closeModal(id) {
   el.classList.remove('show');
   el.style.zIndex = '';
 }
-document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => { if (e.target === o) o.classList.remove('show'); }));
+document.querySelectorAll('.modal-overlay').forEach(o => o.addEventListener('click', e => {
+  if (e.target !== o) return;
+  if (o.id === 'user-otp-modal') {
+    closeOtpModal();
+    return;
+  }
+  o.classList.remove('show');
+}));
 
 // ---- Sidebar toggle ----
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
@@ -1333,6 +1343,208 @@ function createUser() {
   document.getElementById('new-user-phone').value = '';
   renderUsers();
   alert('Tạo user thành công!');
+}
+
+function normalizeOtpPhone(value) {
+  return String(value || '').replace(/\D/g, '').slice(0, 11);
+}
+
+function isValidOtpPhone(phone) {
+  return /^\d{10,11}$/.test(phone);
+}
+
+function setOtpPhoneNote(message = 'Nhập 10-11 chữ số', isError = false) {
+  const note = document.getElementById('otp-phone-note');
+  if (!note) return;
+  note.textContent = message;
+  note.classList.toggle('is-error', isError);
+}
+
+function clearOtpCountdown() {
+  if (otpCountdownTimer) {
+    clearInterval(otpCountdownTimer);
+    otpCountdownTimer = null;
+  }
+}
+
+function renderOtpEmpty() {
+  clearOtpCountdown();
+  const result = document.getElementById('otp-result');
+  if (!result) return;
+  result.className = 'otp-result is-empty';
+  result.innerHTML = '<div class="otp-empty-state">OTP và countdown sẽ hiển thị tại đây.</div>';
+}
+
+function renderOtpLoading(phone) {
+  clearOtpCountdown();
+  const result = document.getElementById('otp-result');
+  if (!result) return;
+  result.className = 'otp-result is-empty';
+  result.innerHTML = `<div class="otp-empty-state">Đang lấy OTP cho ${esc(phone)}...</div>`;
+}
+
+function renderOtpError(message) {
+  clearOtpCountdown();
+  const result = document.getElementById('otp-result');
+  if (!result) return;
+  result.className = 'otp-result is-error';
+  result.innerHTML = `
+    <div class="otp-error-title">Không lấy được OTP</div>
+    <div class="otp-error-message">${esc(message || 'BE chưa trả OTP hợp lệ.')}</div>
+  `;
+}
+
+function formatOtpDuration(seconds) {
+  const safeSeconds = Math.max(0, Math.floor(seconds || 0));
+  const mins = String(Math.floor(safeSeconds / 60)).padStart(2, '0');
+  const secs = String(safeSeconds % 60).padStart(2, '0');
+  return `${mins}:${secs}`;
+}
+
+function startOtpCountdown(expiresAt) {
+  clearOtpCountdown();
+  const countdown = document.getElementById('otp-countdown');
+  if (!countdown) return;
+  const tick = () => {
+    const remaining = Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 1000));
+    countdown.textContent = remaining > 0 ? `Hiệu lực ${formatOtpDuration(remaining)}` : 'Đã hết hạn';
+    countdown.style.background = remaining > 0 ? 'var(--success-bg)' : 'rgba(100, 116, 139, 0.15)';
+    countdown.style.color = remaining > 0 ? 'var(--success)' : 'var(--text-muted)';
+    if (remaining <= 0) clearOtpCountdown();
+  };
+  tick();
+  otpCountdownTimer = setInterval(tick, 1000);
+}
+
+function renderOtpResult(data) {
+  const result = document.getElementById('otp-result');
+  if (!result) return;
+  const expiresAt = data.expiresAt instanceof Date ? data.expiresAt : new Date(data.expiresAt);
+  result.className = 'otp-result';
+  result.innerHTML = `
+    <div class="otp-code-row">
+      <div class="otp-code-block">
+        <div class="otp-code-label">OTP</div>
+        <div class="otp-code">${esc(data.otp)}</div>
+      </div>
+      <div class="otp-status" id="otp-countdown">Hiệu lực ${formatOtpDuration(data.expiresInSeconds)}</div>
+    </div>
+  `;
+  startOtpCountdown(expiresAt);
+}
+
+function setOtpSubmitLoading(isLoading) {
+  const btn = document.getElementById('otp-submit-btn');
+  if (!btn) return;
+  btn.disabled = isLoading;
+  btn.textContent = isLoading ? 'Đang lấy...' : 'Lấy OTP';
+}
+
+function buildDemoOtpResponse(phone) {
+  const seed = phone.split('').reduce((sum, digit, index) => sum + Number(digit) * (index + 3), 0);
+  const otp = String(100000 + (seed % 900000)).padStart(6, '0');
+  const expiresAt = new Date(Date.now() + OTP_VALIDITY_SECONDS * 1000);
+  return {
+    otp,
+    expiresAt,
+    expiresInSeconds: OTP_VALIDITY_SECONDS
+  };
+}
+
+function normalizeOtpBackendResponse(payload) {
+  const data = payload && typeof payload.data === 'object'
+    ? { ...payload.data, ...payload }
+    : (payload || {});
+  const otp = data.otp ?? data.code ?? data.otpCode;
+  if (!otp) throw new Error('BE chưa trả field otp/code.');
+
+  const expiresAt = new Date(Date.now() + OTP_VALIDITY_SECONDS * 1000);
+
+  return {
+    otp: String(otp),
+    expiresAt,
+    expiresInSeconds: OTP_VALIDITY_SECONDS
+  };
+}
+
+async function requestOtpFromBackend(phone) {
+  if (!OTP_BACKEND_ENDPOINT) {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return buildDemoOtpResponse(phone);
+  }
+
+  const response = await fetch(OTP_BACKEND_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone })
+  });
+  let payload = null;
+  try { payload = await response.json(); } catch (e) { payload = null; }
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || `BE trả lỗi ${response.status}`);
+  }
+  return normalizeOtpBackendResponse(payload);
+}
+
+function openOtpModal(phone = '') {
+  const input = document.getElementById('otp-phone');
+  if (input) input.value = normalizeOtpPhone(phone);
+  setOtpPhoneNote();
+  renderOtpEmpty();
+  setOtpSubmitLoading(false);
+  openModal('user-otp-modal');
+  setTimeout(() => input?.focus(), 50);
+}
+
+function closeOtpModal() {
+  clearOtpCountdown();
+  closeModal('user-otp-modal');
+}
+
+function handleOtpPhoneInput() {
+  const input = document.getElementById('otp-phone');
+  if (!input) return;
+  const phone = normalizeOtpPhone(input.value);
+  if (input.value !== phone) input.value = phone;
+  if (!phone) {
+    setOtpPhoneNote();
+  } else if (!isValidOtpPhone(phone)) {
+    setOtpPhoneNote('SĐT phải gồm 10-11 chữ số.', true);
+  } else {
+    setOtpPhoneNote('SĐT hợp lệ.');
+  }
+}
+
+function handleOtpPhoneKeydown(event) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  submitOtpRequest();
+}
+
+async function submitOtpRequest() {
+  const input = document.getElementById('otp-phone');
+  const phone = normalizeOtpPhone(input?.value);
+  if (input) input.value = phone;
+  if (!isValidOtpPhone(phone)) {
+    setOtpPhoneNote('SĐT phải gồm 10-11 chữ số.', true);
+    renderOtpEmpty();
+    input?.focus();
+    return;
+  }
+
+  setOtpPhoneNote('SĐT hợp lệ.');
+  setOtpSubmitLoading(true);
+  renderOtpLoading(phone);
+  try {
+    const otpData = await requestOtpFromBackend(phone);
+    renderOtpResult(otpData);
+    alert('Lấy OTP thành công!');
+  } catch (error) {
+    renderOtpError(error?.message || 'Không kết nối được BE lấy OTP.');
+    alert('Không lấy được OTP.');
+  } finally {
+    setOtpSubmitLoading(false);
+  }
 }
 
 function createRole() {

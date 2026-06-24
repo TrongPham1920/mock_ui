@@ -166,7 +166,10 @@
             <div class="stats-grid" id="user-stats"></div>
             <div class="table-container">
               <div class="table-header"><span class="table-title">Danh sách người dùng</span>
-                <div class="table-actions"><button class="btn btn-primary" onclick="openModal('user-create-modal')">➕ Thêm user</button></div>
+                <div class="table-actions">
+                  <button class="btn btn-outline" onclick="openOtpModal()">🔐 Lấy OTP</button>
+                  <button class="btn btn-primary" onclick="openModal('user-create-modal')">➕ Thêm user</button>
+                </div>
               </div>
               <div class="table-wrapper">
                 <table><thead><tr><th>ID</th><th>Tên</th><th>Email</th><th>SĐT</th><th>Vai trò</th><th>Đăng nhập cuối</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
@@ -1046,6 +1049,29 @@
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('user-create-modal')">Hủy</button>
         <button class="btn btn-primary" onclick="createUser()">Tạo user</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User OTP Modal -->
+  <div class="modal-overlay" id="user-otp-modal">
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header"><span class="modal-title">🔐 Lấy OTP</span><button class="modal-close" aria-label="Đóng" onclick="closeOtpModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="otp-panel">
+          <div class="input-group">
+            <label>SĐT *</label>
+            <input type="tel" class="input otp-phone-input" id="otp-phone" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="0901234567" oninput="handleOtpPhoneInput()" onkeydown="handleOtpPhoneKeydown(event)">
+            <div class="otp-field-note" id="otp-phone-note">Nhập 10-11 chữ số</div>
+          </div>
+          <div class="otp-result is-empty" id="otp-result" aria-live="polite">
+            <div class="otp-empty-state">OTP và countdown sẽ hiển thị tại đây.</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeOtpModal()">Đóng</button>
+        <button class="btn btn-primary" id="otp-submit-btn" onclick="submitOtpRequest()">Lấy OTP</button>
       </div>
     </div>
   </div>

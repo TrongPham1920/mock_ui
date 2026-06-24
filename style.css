@@ -790,6 +790,12 @@ tbody tr:last-child td {
   box-shadow: 0 4px 12px rgba(79, 140, 255, 0.3);
 }
 
+.btn:disabled {
+  opacity: 0.58;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .btn-outline {
   background: transparent;
   color: var(--text-secondary);
@@ -1035,6 +1041,122 @@ select {
 
 .form-grid .full-width {
   grid-column: 1 / -1;
+}
+
+/* ---- User OTP Modal ---- */
+.otp-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.otp-phone-input {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.otp-field-note {
+  min-height: 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.otp-field-note.is-error {
+  color: var(--danger);
+}
+
+.otp-result {
+  display: grid;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.otp-result.is-empty {
+  place-items: center;
+  border-style: dashed;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.otp-empty-state {
+  font-size: 13px;
+}
+
+.otp-result.is-error {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.otp-error-title {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.otp-error-message {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.otp-code-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.otp-code-block {
+  min-width: 0;
+}
+
+.otp-code-label {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.otp-code {
+  padding: 10px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 32px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.otp-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 118px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--success-bg);
+  color: var(--success);
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .otp-code-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .otp-status {
+    justify-content: center;
+  }
 }
 
 /* ---- Chart ---- */
