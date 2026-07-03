@@ -964,8 +964,8 @@ const AUDIT_LOGS = [
 
 // ---- COMMISSIONS ----
 const COMMISSIONS = [
-  { id: 'CM001', vehicleType: 'BIKE', rate: 20, description: 'Chiết khấu xe máy tiêu chuẩn' },
-  { id: 'CM002', vehicleType: 'CAR', rate: 22, description: 'Chiết khấu xe hơi tiêu chuẩn' },
+  { id: 'CM001', vehicleType: 'BIKE', rate: 20, description: 'Chiết khấu áp dụng chung cho tất cả loại Bike' },
+  { id: 'CM002', vehicleType: 'CAR', rate: 22, description: 'Chiết khấu áp dụng chung cho tất cả loại Car' },
   { id: 'CM003', vehicleType: 'INTERCITY', rate: 15, description: 'Chiết khấu xe khách liên tỉnh' },
   { id: 'CM004', vehicleType: 'SERVICE_ORDER', rate: 10, description: 'Chiết khấu dịch vụ đăng kiểm' },
   { id: 'CM005', vehicleType: 'MAINTENANCE_ORDER', rate: 12, description: 'Chiết khấu dịch vụ bảo dưỡng' },
@@ -1055,6 +1055,42 @@ const PRICING = {
       { id: 'PR-M2', name: 'Lễ Tết', type: 'date_range', from: '2026-02-15', to: '2026-02-22', surcharge: 120000 },
     ],
   },
+};
+
+// ---- BIKE/CAR SERVICE TYPES ----
+// Mỗi loại dịch vụ có profile giá riêng; chiết khấu kế thừa theo nhóm BIKE/CAR.
+// Driver có thể được cấp quyền chạy nhiều loại qua serviceTypeIds.
+const SERVICE_TYPES = [
+  {
+    id: 'SVT001', code: 'BIKE_STANDARD', name: 'Bike Phổ thông', icon: '🏍️',
+    vehicleType: 'BIKE', seats: 1, description: 'Xe máy tiêu chuẩn, phù hợp nhu cầu di chuyển hằng ngày',
+    pricingKey: 'BIKE', matchingRadius: { initialKm: 2, expandStepKm: 2, maxKm: 10 }, status: 'active'
+  },
+  {
+    id: 'SVT002', code: 'BIKE_ECONOMY', name: 'Bike Tiết kiệm', icon: '🛵',
+    vehicleType: 'BIKE', seats: 1, description: 'Lựa chọn tiết kiệm, thời gian đón có thể lâu hơn',
+    pricingKey: 'BIKE_ECONOMY', matchingRadius: { initialKm: 3, expandStepKm: 2, maxKm: 10 }, status: 'active'
+  },
+  {
+    id: 'SVT003', code: 'CAR_4_SEAT', name: 'Car 4 chỗ', icon: '🚗',
+    vehicleType: 'CAR', seats: 4, description: 'Xe 4 chỗ cho tối đa 4 hành khách',
+    pricingKey: 'CAR', matchingRadius: { initialKm: 3, expandStepKm: 3, maxKm: 15 }, status: 'active'
+  },
+  {
+    id: 'SVT004', code: 'CAR_7_SEAT', name: 'Car 7 chỗ', icon: '🚙',
+    vehicleType: 'CAR', seats: 7, description: 'Xe 7 chỗ cho nhóm đông hoặc nhiều hành lý',
+    pricingKey: 'CAR_7', matchingRadius: { initialKm: 5, expandStepKm: 5, maxKm: 20 }, status: 'active'
+  }
+];
+
+// Các profile mới khởi tạo từ bảng giá Bike/Car hiện tại và có thể chỉnh độc lập trên UI.
+PRICING.BIKE_ECONOMY = {
+  ...JSON.parse(JSON.stringify(PRICING.BIKE)),
+  label: 'Bike Tiết kiệm', icon: '🛵'
+};
+PRICING.CAR_7 = {
+  ...JSON.parse(JSON.stringify(PRICING.CAR)),
+  label: 'Car 7 chỗ', icon: '🚙'
 };
 
 // ---- MAINTENANCE (Bảo dưỡng hộ) — pickupAddress = địa chỉ cá nhân của khách, kèm engineType ----
@@ -1685,7 +1721,7 @@ const STORE_COLLECTIONS = {
   DRIVERS, INTERCITY_DRIVERS, DRIVER_APPLICATIONS, CUSTOMERS,
   BOOKINGS, FULFILLMENT_TASKS, INTERCITY_VEHICLES, PARTNERS,
   PROMOS, WALLETS, WALLET_TRANSACTIONS, REFUNDS, NOTIFICATIONS,
-  NOTIFICATION_CONFIGS, AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, MAINTENANCE, REGISTRATIONS,
+  NOTIFICATION_CONFIGS, AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, SERVICE_TYPES, MAINTENANCE, REGISTRATIONS,
   INTERCITY_ROUTES, INTERCITY_TRIPS, AGENT_CUSTOMERS, PRICING
 };
 

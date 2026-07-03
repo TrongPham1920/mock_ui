@@ -22,8 +22,8 @@ let otpCountdownTimer = null;
 
 // Role configurations
 const ROLE_CONFIG = {
-  ADMIN: { name: 'Quản trị viên', permissions: ['*'], pages: ['dashboard','users','routes','partners','bookings','fulfillment','intercity','wallets','refunds','promos','commissions','notifications','audit','monitoring'] },
-  OPERATOR: { name: 'Điều hành', permissions: ['booking.view','booking.cancel','fulfillment.assign','wallet.view','refund.process','master.view','partner.view','driver.view'], pages: ['dashboard','routes','partners','bookings','fulfillment','wallets','refunds','promos','notifications','monitoring'] },
+  ADMIN: { name: 'Quản trị viên', permissions: ['*'], pages: ['dashboard','users','routes','service-types','partners','bookings','fulfillment','intercity','wallets','refunds','promos','commissions','notifications','audit','monitoring'] },
+  OPERATOR: { name: 'Điều hành', permissions: ['booking.view','booking.cancel','fulfillment.assign','wallet.view','refund.process','master.view','partner.view','driver.view'], pages: ['dashboard','routes','service-types','partners','bookings','fulfillment','wallets','refunds','promos','notifications','monitoring'] },
   AGENT: { name: 'Đại lý', permissions: ['booking.create','booking.view','customer.manage','wallet.view','driver.view','driver.manage'], pages: ['dashboard','bookings','intercity','partners','wallets'] },
   FINANCE: { name: 'Tài chính', permissions: ['wallet.view','wallet.adjust','refund.process','settlement.manage','report.view','commission.view','audit.view','booking.view','system.view'], pages: ['dashboard','bookings','wallets','refunds','commissions','audit','monitoring'] },
   VIEWER: { name: 'Người xem', permissions: ['booking.view','wallet.view','report.view','system.view'], pages: ['dashboard','bookings','wallets','monitoring'] }
@@ -89,13 +89,14 @@ function navigateTo(page) {
   currentPage = page;
   document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
   document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
+  if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
 
   const titles = {
-    dashboard: 'Tổng quan', users: 'Người dùng & Vai trò', routes: 'Tuyến & Lịch Chạy',
+    dashboard: 'Tổng quan', users: 'Người dùng & Vai trò', routes: 'Tuyến & Lịch Chạy', 'service-types': 'Loại dịch vụ Bike/Car',
     partners: 'Nhà xe & Tài xế',
     bookings: 'Giám sát đơn hàng', fulfillment: 'Nhiệm vụ phân công', intercity: 'Đặt vé',
     wallets: 'Ví & Thanh toán', refunds: 'Hoàn tiền', promos: 'Mã Ưu Đãi',
-    commissions: 'Chiết Khấu', notifications: 'Thông báo',
+    commissions: 'Chiết khấu & Giá tiền', notifications: 'Thông báo',
     audit: 'Nhật ký hoạt động', monitoring: 'Giám sát hệ thống'
   };
   document.getElementById('page-title').textContent = titles[page] || page;
@@ -104,7 +105,7 @@ function navigateTo(page) {
 
 function renderPage(page) {
   const renderers = {
-    dashboard: renderDashboard, users: renderUsers, routes: renderRoutes,
+    dashboard: renderDashboard, users: renderUsers, routes: renderRoutes, 'service-types': renderServiceTypes,
     partners: renderPartners, drivers: renderDrivers, bookings: renderBookings,
     fulfillment: renderFulfillment, intercity: renderBookingTabs,
     wallets: renderWallets, refunds: renderRefunds,
@@ -273,8 +274,66 @@ function getSystemHoldingWallet() {
   return WALLETS.find(w => w.ownerType === 'SYSTEM' && w.walletType === 'HOLDING');
 }
 
+function getServiceType(id) {
+  return SERVICE_TYPES.find(s => s.id === id) || null;
+}
+
+function getServiceTypesForVehicle(vehicleType, activeOnly = false) {
+  return SERVICE_TYPES.filter(s => s.vehicleType === vehicleType && (!activeOnly || s.status === 'active'));
+}
+
+function getDefaultMatchingRadius(vehicleType, seats = 1, serviceCode = '') {
+  if (vehicleType === 'BIKE') {
+    return serviceCode === 'BIKE_ECONOMY'
+      ? { initialKm: 3, expandStepKm: 2, maxKm: 10 }
+      : { initialKm: 2, expandStepKm: 2, maxKm: 10 };
+  }
+  return seats >= 7
+    ? { initialKm: 5, expandStepKm: 5, maxKm: 20 }
+    : { initialKm: 3, expandStepKm: 3, maxKm: 15 };
+}
+
+function getMatchingRadiusConfig(serviceType) {
+  const fallback = getDefaultMatchingRadius(serviceType?.vehicleType, serviceType?.seats, serviceType?.code);
+  const config = serviceType?.matchingRadius || fallback;
+  return {
+    initialKm: Number(config.initialKm) || fallback.initialKm,
+    expandStepKm: Number(config.expandStepKm) || fallback.expandStepKm,
+    maxKm: Number(config.maxKm) || fallback.maxKm
+  };
+}
+
+function buildMatchingRadiusRounds(config) {
+  const initial = Math.max(0.1, Number(config?.initialKm) || 0.1);
+  const step = Math.max(0.1, Number(config?.expandStepKm) || 0.1);
+  const max = Math.max(initial, Number(config?.maxKm) || initial);
+  const rounds = [];
+  for (let radius = initial; radius < max && rounds.length < 50; radius += step) {
+    rounds.push(Math.round(radius * 10) / 10);
+  }
+  if (!rounds.length || rounds[rounds.length - 1] !== max) rounds.push(Math.round(max * 10) / 10);
+  return rounds;
+}
+
+function getDriverServiceTypeIds(driver) {
+  return Array.isArray(driver?.serviceTypeIds) ? driver.serviceTypeIds : [];
+}
+
+function driverCanRunServiceType(driver, serviceTypeId) {
+  if (!serviceTypeId) return true;
+  return getDriverServiceTypeIds(driver).includes(serviceTypeId);
+}
+
+function getServiceTypeAvailableDrivers(serviceTypeId) {
+  return DRIVERS.filter(driver =>
+    driver.status === 'online' &&
+    !driver.currentAssignmentId &&
+    driverCanRunServiceType(driver, serviceTypeId)
+  );
+}
+
 function getCommissionRate(vehicleType) {
-  const c = COMMISSIONS.find(c => c.vehicleType === vehicleType);
+  const c = COMMISSIONS.find(x => x.vehicleType === vehicleType);
   return c ? c.rate : 20;
 }
 
@@ -1060,8 +1119,58 @@ function generateTripsFromSchedule(schedule, opts = {}) {
   return out;
 }
 
+// Bổ sung/migrate dữ liệu loại dịch vụ Bike/Car cho các localStorage snapshot cũ.
+function ensureBikeCarServiceTypeData() {
+  if (!PRICING.BIKE_ECONOMY && PRICING.BIKE) {
+    PRICING.BIKE_ECONOMY = { ...JSON.parse(JSON.stringify(PRICING.BIKE)), label: 'Bike Tiết kiệm', icon: '🛵' };
+  }
+  if (!PRICING.CAR_7 && PRICING.CAR) {
+    PRICING.CAR_7 = { ...JSON.parse(JSON.stringify(PRICING.CAR)), label: 'Car 7 chỗ', icon: '🚙' };
+  }
+
+  // Chiết khấu chỉ có 1 cấu hình chung cho BIKE và 1 cấu hình chung cho CAR.
+  for (let i = COMMISSIONS.length - 1; i >= 0; i--) {
+    if (['CM006', 'CM007'].includes(COMMISSIONS[i].id)) COMMISSIONS.splice(i, 1);
+  }
+  const commissionSeeds = [
+    { id: 'CM001', vehicleType: 'BIKE', rate: 20, description: 'Chiết khấu áp dụng chung cho tất cả loại Bike' },
+    { id: 'CM002', vehicleType: 'CAR', rate: 22, description: 'Chiết khấu áp dụng chung cho tất cả loại Car' }
+  ];
+  commissionSeeds.forEach(seed => {
+    const existing = COMMISSIONS.find(c => c.id === seed.id);
+    if (existing) {
+      delete existing.serviceTypeId;
+      existing.description = seed.description;
+    } else {
+      COMMISSIONS.push({ ...seed });
+    }
+  });
+  SERVICE_TYPES.forEach(s => { delete s.commissionId; });
+  SERVICE_TYPES.forEach(s => {
+    if (!s.matchingRadius) s.matchingRadius = getDefaultMatchingRadius(s.vehicleType, s.seats, s.code);
+  });
+
+  const sevenSeatDriverIds = new Set(['DRV004', 'DRV007']);
+  DRIVERS.forEach(d => {
+    if (!d.vehicleSeats) d.vehicleSeats = d.vehicleType === 'CAR' ? (sevenSeatDriverIds.has(d.id) ? 7 : 4) : 1;
+    if (!Array.isArray(d.serviceTypeIds)) {
+      d.serviceTypeIds = SERVICE_TYPES
+        .filter(s => s.vehicleType === d.vehicleType && (s.vehicleType !== 'CAR' || s.seats <= d.vehicleSeats))
+        .map(s => s.id);
+    } else {
+      d.serviceTypeIds = d.serviceTypeIds.filter(id => SERVICE_TYPES.some(s => s.id === id));
+    }
+  });
+
+  BOOKINGS.forEach(b => {
+    if (b.serviceTypeId || (b.bookingType !== 'BIKE' && b.bookingType !== 'CAR')) return;
+    b.serviceTypeId = b.bookingType === 'BIKE' ? 'SVT001' : 'SVT003';
+  });
+}
+
 // ---- Heal data trên init: sync các derived state ----
 function healData() {
+  ensureBikeCarServiceTypeData();
   normalizeRegistrationPricing();
 
   // 1. currentAssignmentId trỏ về FT IN_PROGRESS (đang chạy thực), không tính FT ASSIGNED tương lai
@@ -1617,7 +1726,7 @@ function populateScheduleOptions() {
   const vmSelect = document.getElementById('schedule-vehicle-model');
   if (vmSelect) {
     vmSelect.innerHTML = '<option value="">Chọn loại xe</option>' +
-      VEHICLE_MODELS.filter(v => v.status === 'active').map(v => {
+      VEHICLE_MODELS.filter(v => v.status === 'active' && v.serviceType === 'INTERCITY').map(v => {
         const cat = VEHICLE_CATEGORIES[v.category]?.label || v.category;
         return `<option value="${v.id}">${v.name} — ${cat} (${v.seats} chỗ)</option>`;
       }).join('');
@@ -1713,7 +1822,7 @@ function renderVehicleModels() {
   const body = document.getElementById('vehicle-models-table-body');
   if (!body) return;
   const serviceLabels = { BIKE: '🏍️ Xe máy', CAR: '🚗 Xe hơi', INTERCITY: '🚌 Liên tỉnh' };
-  body.innerHTML = VEHICLE_MODELS.map(v => {
+  body.innerHTML = VEHICLE_MODELS.filter(v => v.serviceType === 'INTERCITY').map(v => {
     const cat = VEHICLE_CATEGORIES[v.category] || { label: v.category, icon: '' };
     return `<tr>
       <td><span class="text-accent fw-600">${v.id}</span></td>
@@ -2179,8 +2288,13 @@ function approveDriverApplication(id, fromModal) {
   let newId;
   if (a.applyType === 'bikecar') {
     newId = nextDriverId('DRV', DRIVERS);
+    const vehicleSeats = a.vehicleType === 'CAR' ? 4 : 1;
+    const serviceTypeIds = SERVICE_TYPES
+      .filter(s => s.vehicleType === a.vehicleType && (a.vehicleType !== 'CAR' || s.seats <= vehicleSeats))
+      .map(s => s.id);
     DRIVERS.push({
       id: newId, name: a.name, phone: a.phone, vehicleType: a.vehicleType, plate: a.plate,
+      vehicleSeats, serviceTypeIds,
       status: 'offline', operatorId: null, rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null
     });
   } else {
@@ -2422,8 +2536,19 @@ function renderDrivers() {
   let drivers = [...DRIVERS];
   const sf = document.getElementById('driver-status-filter')?.value;
   if (sf) drivers = drivers.filter(d => d.status === sf);
+  const serviceFilter = document.getElementById('driver-service-filter');
+  if (serviceFilter) {
+    const currentValue = serviceFilter.value;
+    serviceFilter.innerHTML = '<option value="">Mọi loại dịch vụ</option>' + SERVICE_TYPES.map(s =>
+      `<option value="${s.id}">${s.icon || ''} ${esc(s.name)}</option>`).join('');
+    serviceFilter.value = currentValue;
+    if (serviceFilter.value) drivers = drivers.filter(d => driverCanRunServiceType(d, serviceFilter.value));
+  }
   const search = document.getElementById('driver-search')?.value?.toLowerCase();
-  if (search) drivers = drivers.filter(d => d.name.toLowerCase().includes(search) || d.id.toLowerCase().includes(search) || d.plate.toLowerCase().includes(search));
+  if (search) drivers = drivers.filter(d => {
+    const services = getDriverServiceTypeIds(d).map(id => getServiceType(id)?.name || '').join(' ').toLowerCase();
+    return d.name.toLowerCase().includes(search) || d.id.toLowerCase().includes(search) || d.plate.toLowerCase().includes(search) || services.includes(search);
+  });
 
   document.getElementById('driver-stats').innerHTML = `
     <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon accent">👥</div><span class="stat-card-label">Tổng tài xế</span></div><div class="stat-card-value">${DRIVERS.length}</div></div>
@@ -2436,55 +2561,92 @@ function renderDrivers() {
   document.getElementById('drivers-table-body').innerHTML = drivers.map(d => `<tr>
     <td><span class="text-accent fw-600">${d.id}</span></td>
     <td><div class="flex-center"><div class="driver-avatar" style="width:28px;height:28px;font-size:14px">${d.avatar}</div><span class="fw-600">${d.name}</span></div></td>
-    <td>${d.phone}</td><td>${VEHICLE_TYPES[d.vehicleType]?.icon||''} ${VEHICLE_TYPES[d.vehicleType]?.label||d.vehicleType}</td>
-    <td class="fw-600">${d.plate}</td><td>${getPartnerName(d.operatorId)}</td><td>⭐ ${d.rating}</td><td class="fw-600">${d.trips.toLocaleString()}</td>
+    <td>${d.phone}</td><td><div class="fw-600">${VEHICLE_TYPES[d.vehicleType]?.icon||''} ${VEHICLE_TYPES[d.vehicleType]?.label||d.vehicleType}</div><div class="text-muted" style="font-size:11px">${d.vehicleSeats || (d.vehicleType === 'CAR' ? 4 : 1)} chỗ</div></td>
+    <td class="fw-600">${d.plate}</td><td><div class="service-chip-list">${getDriverServiceTypeIds(d).map(id => {
+      const st = getServiceType(id);
+      return st ? `<span class="service-chip">${st.icon || ''} ${esc(st.name)}</span>` : '';
+    }).join('') || '<span class="text-warning">Chưa được cấp dịch vụ</span>'}</div></td><td>⭐ ${d.rating}</td><td class="fw-600">${d.trips.toLocaleString()}</td>
     <td>${driverBadge(d.status)}</td>
     <td><button class="btn btn-sm btn-outline" onclick="editDriver('${d.id}')">✏️</button></td>
   </tr>`).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy tài xế</div></div></td></tr>`;
 }
 
 function editDriver(driverId) {
-  const driver = DRIVERS.find(d => d.id === driverId);
-  if (!driver) return;
-  alert('Chỉnh sửa tài xế: ' + driver.name);
+  openDriverModal(driverId);
 }
 
-function addDriver() {
-  const name = document.getElementById('driver-name').value;
-  const phone = document.getElementById('driver-phone').value;
+function onDriverVehicleTypeChange() {
   const vehicleType = document.getElementById('driver-vehicle-type').value;
-  const plate = document.getElementById('driver-plate').value;
-  const operatorId = document.getElementById('driver-operator').value;
-  const status = document.getElementById('driver-status').value;
+  const seats = document.getElementById('driver-vehicle-seats');
+  if (vehicleType === 'BIKE') seats.value = 1;
+  else if (parseInt(seats.value, 10) < 4) seats.value = 4;
+  renderDriverServiceTypePicker();
+}
 
-  if (!name || !phone || !plate) {
-    alert('Vui lòng nhập đầy đủ thông tin!');
+function renderDriverServiceTypePicker(selectedIds = null) {
+  const host = document.getElementById('driver-service-types');
+  if (!host) return;
+  const vehicleType = document.getElementById('driver-vehicle-type').value;
+  const seats = parseInt(document.getElementById('driver-vehicle-seats').value, 10) || (vehicleType === 'CAR' ? 4 : 1);
+  const selected = selectedIds || Array.from(host.querySelectorAll('input:checked')).map(x => x.value);
+  const services = SERVICE_TYPES.filter(s => s.vehicleType === vehicleType && (vehicleType !== 'CAR' || s.seats <= seats));
+  host.innerHTML = services.map(s => `<label class="service-permission-option">
+    <input type="checkbox" value="${s.id}" ${selected.includes(s.id) ? 'checked' : ''}>
+    <span><b>${s.icon || ''} ${esc(s.name)}</b><small>${esc(s.description || '')}</small></span>
+  </label>`).join('') || '<div class="text-muted">Chưa có loại dịch vụ phù hợp với phương tiện này.</div>';
+}
+
+function openDriverModal(driverId = null) {
+  const driver = driverId ? DRIVERS.find(d => d.id === driverId) : null;
+  document.getElementById('driver-edit-id').value = driver?.id || '';
+  document.getElementById('driver-modal-title').textContent = driver ? `Chỉnh sửa tài xế · ${driver.id}` : 'Thêm tài xế mới';
+  document.getElementById('driver-name').value = driver?.name || '';
+  document.getElementById('driver-phone').value = driver?.phone || '';
+  document.getElementById('driver-vehicle-type').value = driver?.vehicleType || 'BIKE';
+  document.getElementById('driver-vehicle-seats').value = driver?.vehicleSeats || (driver?.vehicleType === 'CAR' ? 4 : 1);
+  document.getElementById('driver-plate').value = driver?.plate || '';
+  document.getElementById('driver-status').value = driver?.status || 'offline';
+  document.getElementById('driver-save-btn').textContent = driver ? '💾 Lưu thay đổi' : '➕ Thêm tài xế';
+  renderDriverServiceTypePicker(driver ? getDriverServiceTypeIds(driver) : []);
+  openModal('driver-modal');
+}
+
+function saveDriver() {
+  const editId = document.getElementById('driver-edit-id').value;
+  const name = document.getElementById('driver-name').value.trim();
+  const phone = document.getElementById('driver-phone').value.trim();
+  const vehicleType = document.getElementById('driver-vehicle-type').value;
+  const vehicleSeats = parseInt(document.getElementById('driver-vehicle-seats').value, 10);
+  const plate = document.getElementById('driver-plate').value.trim();
+  const status = document.getElementById('driver-status').value;
+  const serviceTypeIds = Array.from(document.querySelectorAll('#driver-service-types input:checked')).map(x => x.value);
+
+  if (!name || !phone || !plate || isNaN(vehicleSeats) || vehicleSeats < 1) {
+    alert('Vui lòng nhập đầy đủ thông tin tài xế và phương tiện!');
+    return;
+  }
+  if (!serviceTypeIds.length) {
+    alert('Vui lòng chọn ít nhất một loại dịch vụ tài xế được phép nhận.');
     return;
   }
 
-  const newDriver = {
-    id: 'DRV' + String(DRIVERS.length + 1).padStart(3, '0'),
-    name: name,
-    phone: phone,
-    vehicleType: vehicleType,
-    plate: plate,
-    operatorId: operatorId || null,
-    status: status,
-    rating: 5.0,
-    trips: 0,
-    avatar: '👤',
-    currentAssignmentId: null
-  };
-
-  DRIVERS.push(newDriver);
+  if (editId) {
+    const driver = DRIVERS.find(d => d.id === editId);
+    if (!driver) return;
+    Object.assign(driver, { name, phone, vehicleType, vehicleSeats, plate, operatorId: null, status, serviceTypeIds });
+    createAuditLog({ action: 'driver.service_permissions.update', target: editId, before: null, after: { serviceTypeIds } });
+  } else {
+    const id = genId('DRV', DRIVERS);
+    DRIVERS.push({ id, name, phone, vehicleType, vehicleSeats, plate, operatorId: null,
+      status, serviceTypeIds, rating: 5.0, trips: 0, avatar: '👤', currentAssignmentId: null });
+    createAuditLog({ action: 'driver.create', target: id, before: null, after: { vehicleType, vehicleSeats, serviceTypeIds } });
+  }
   closeModal('driver-modal');
   renderDrivers();
-
-  // Clear form
-  document.getElementById('driver-name').value = '';
-  document.getElementById('driver-phone').value = '';
-  document.getElementById('driver-plate').value = '';
+  scheduleSave();
 }
+
+function addDriver() { saveDriver(); }
 
 // ============================================
 // BOOKING MONITORING
@@ -3005,6 +3167,7 @@ function renderFulfillmentDefault(allPending, availableDrivers, canAssign) {
   document.getElementById('dispatch-pending-count').textContent = `${allPending.length} chuyến`;
   document.getElementById('dispatch-pending-list').innerHTML = allPending.length ? allPending.map(b => {
     const vt = VEHICLE_TYPES[b.bookingType];
+    const bookingServiceType = getServiceType(b.serviceTypeId);
     const serviceOrder = getBookingServiceOrder(b)?.order;
     const serviceInfo = serviceOrder ? `
       <div class="dispatch-service-meta">
@@ -3017,7 +3180,7 @@ function renderFulfillmentDefault(allPending, availableDrivers, canAssign) {
       ? `<div class="dispatch-item-route dispatch-item-pickup-only"><span class="pickup">${esc(serviceOrder.pickupAddress || b.pickup || '—')}</span></div>`
       : `<div class="dispatch-item-route"><span class="pickup">${esc(b.pickup)}</span><span class="dropoff">${esc(b.dropoff)}</span></div>`;
     return `<div class="dispatch-item" ${canAssign ? `onclick="openDispatchModal('${b.id}')"` : ''}>
-      <div class="dispatch-item-header"><span class="dispatch-item-id">${b.bookingCode}</span><span class="dispatch-item-type">${vt?.icon||'🚗'}</span></div>
+      <div class="dispatch-item-header"><span class="dispatch-item-id">${b.bookingCode}</span><span class="dispatch-item-type">${bookingServiceType?.icon || vt?.icon || '🚗'} ${esc(bookingServiceType?.name || '')}</span></div>
       ${routeInfo}${serviceInfo}
       <div class="dispatch-item-footer"><span class="dispatch-item-price">${fmt(b.fareSnapshot)}</span>${canAssign ? `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDispatchModal('${b.id}')">Gán tài xế</button>` : '<span class="text-muted" style="font-size:12px">Chỉ xem</span>'}</div>
     </div>`;
@@ -3076,10 +3239,15 @@ function openDispatchModal(bookingId) {
   selectedDispatchBooking = b;
   selectedDispatchDriverId = null;
   const vt = VEHICLE_TYPES[b.bookingType];
+  const bookingServiceType = getServiceType(b.serviceTypeId);
   const serviceOrder = getBookingServiceOrder(b)?.order;
   const window = getBookingTimeWindow(b);
   const scheduleHtml = window
     ? `<div style="font-size:12px;color:var(--accent);margin-top:6px">🕐 Khung giờ: ${fmtBookingWindow(window)}</div>`
+    : '';
+  const matchingRadius = bookingServiceType ? getMatchingRadiusConfig(bookingServiceType) : null;
+  const radiusHtml = matchingRadius
+    ? `<div style="font-size:12px;color:var(--accent);margin-top:6px">📡 Ghép chuyến: ${matchingRadius.initialKm} km ban đầu · mở rộng +${matchingRadius.expandStepKm} km · tối đa ${matchingRadius.maxKm} km</div>`
     : '';
   const locationHtml = serviceOrder
     ? `<div class="dispatch-modal-pickup"><span>📍 Địa chỉ nhận xe</span><strong>${esc(serviceOrder.pickupAddress || b.pickup || '—')}</strong></div>
@@ -3091,8 +3259,8 @@ function openDispatchModal(bookingId) {
        </div>`
     : `<div style="font-size:12px;color:var(--text-secondary)">📍 ${esc(b.pickup)}<br>🏁 ${esc(b.dropoff)}</div>`;
   document.getElementById('dispatch-trip-info').innerHTML = `
-    <div class="flex-center" style="margin-bottom:8px"><span style="font-size:20px">${vt?.icon||'🚗'}</span><span class="fw-600">${b.bookingCode}</span><span class="text-muted">·</span><span>${vt?.label||''}</span><span class="recent-trip-price" style="margin-left:auto">${fmt(b.fareSnapshot)}</span></div>
-    ${locationHtml}${scheduleHtml}`;
+    <div class="flex-center" style="margin-bottom:8px"><span style="font-size:20px">${bookingServiceType?.icon || vt?.icon || '🚗'}</span><span class="fw-600">${b.bookingCode}</span><span class="text-muted">·</span><span>${esc(bookingServiceType?.name || vt?.label || '')}</span><span class="recent-trip-price" style="margin-left:auto">${fmt(b.fareSnapshot)}</span></div>
+    ${locationHtml}${scheduleHtml}${radiusHtml}`;
   // Pool tài xế phù hợp với loại booking
   const pool = getDriverPoolForBooking(b.bookingType);
   // SERVICE/MAINTENANCE dùng chung pool INTERCITY_DRIVERS → logic hiển thị giống liên tỉnh:
@@ -3101,7 +3269,7 @@ function openDispatchModal(bookingId) {
   const isServiceType = b.bookingType === 'SERVICE_ORDER' || b.bookingType === 'MAINTENANCE_ORDER';
   _dispatchDrivers = isServiceType
     ? pool.filter(d => d.status !== 'offline' && isDriverFreeAt(d.id, window, b.fulfillmentTaskId))
-    : pool.filter(d => d.status === 'online');
+    : pool.filter(d => d.status === 'online' && !d.currentAssignmentId && driverCanRunServiceType(d, b.serviceTypeId));
 
   document.getElementById('dispatch-modal-driver-count').textContent = `(${_dispatchDrivers.length})`;
   renderDispatchDriverCards();
@@ -4066,16 +4234,231 @@ function savePromo() {
 // ============================================
 // COMMISSIONS
 // ============================================
+function getServiceTypeDrivers(serviceTypeId) {
+  return DRIVERS.filter(d => driverCanRunServiceType(d, serviceTypeId));
+}
+
+function getServiceTypePriceSummary(serviceType) {
+  const profile = PRICING[serviceType?.pricingKey];
+  if (!profile) return 'Chưa liên kết';
+  if (profile.mode === 'km') {
+    const opening = profile.km?.[0];
+    return opening ? `Mở cửa ${fmt(opening.pricePerKm)} · ${profile.km.length} khung km` : 'Chưa có khung km';
+  }
+  return profile.label || serviceType.pricingKey;
+}
+
+function calculateServiceTypeFare(serviceType, distance) {
+  const profile = PRICING[serviceType?.pricingKey];
+  if (!profile || profile.mode !== 'km' || !Array.isArray(profile.km)) return 0;
+  const km = Math.max(0, Number(distance) || 0);
+  let total = 0;
+  profile.km.slice().sort((a, b) => a.fromKm - b.fromKm).forEach(rule => {
+    const end = rule.toKm == null ? km : Math.min(km, rule.toKm);
+    const segment = Math.max(0, end - rule.fromKm);
+    total += segment * rule.pricePerKm;
+  });
+  return Math.round(total / 1000) * 1000;
+}
+
+function switchServiceTypeTab(tab, button = null) {
+  document.querySelectorAll('#service-type-tabs .tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.stab === tab));
+  document.querySelectorAll('.service-type-tab-panel').forEach(panel => { panel.style.display = 'none'; });
+  const panel = document.getElementById(`service-type-panel-${tab}`);
+  if (panel) panel.style.display = '';
+  if (button) button.classList.add('active');
+  if (tab === 'radius') renderMatchingRadiusTable();
+}
+
+function renderMatchingRadiusTable() {
+  const body = document.getElementById('matching-radius-table-body');
+  if (!body) return;
+  body.innerHTML = SERVICE_TYPES.map(serviceType => {
+    const config = getMatchingRadiusConfig(serviceType);
+    const rounds = buildMatchingRadiusRounds(config);
+    const drivers = getServiceTypeDrivers(serviceType.id);
+    const online = drivers.filter(driver => driver.status === 'online' && !driver.currentAssignmentId).length;
+    return `<tr>
+      <td><div class="service-type-name"><span class="service-type-icon">${serviceType.icon || '🚗'}</span><div><div class="fw-600">${esc(serviceType.name)}</div><div class="text-muted" style="font-size:11px">${esc(serviceType.code)}</div></div></div></td>
+      <td><b>${config.initialKm} km</b></td>
+      <td>+${config.expandStepKm} km</td>
+      <td><b>${config.maxKm} km</b></td>
+      <td><div class="radius-rounds">${rounds.map(radius => `<span>${radius} km</span>`).join('<b>→</b>')}</div></td>
+      <td><button class="service-driver-summary" onclick="showServiceTypeDrivers('${serviceType.id}')"><b>${drivers.length} tài xế & xe riêng</b><span>${online} đang Online và chưa có chuyến</span></button></td>
+      <td><button class="btn btn-sm btn-outline" onclick="openMatchingRadiusModal('${serviceType.id}')">✏️ Cấu hình</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">Chưa có loại dịch vụ để cấu hình.</div></div></td></tr>';
+}
+
+function openMatchingRadiusModal(serviceTypeId) {
+  const serviceType = getServiceType(serviceTypeId);
+  if (!serviceType) return;
+  const config = getMatchingRadiusConfig(serviceType);
+  document.getElementById('radius-service-type-id').value = serviceType.id;
+  document.getElementById('radius-service-type-name').textContent = `${serviceType.icon || '🚗'} ${serviceType.name}`;
+  document.getElementById('radius-initial-km').value = config.initialKm;
+  document.getElementById('radius-expand-step-km').value = config.expandStepKm;
+  document.getElementById('radius-max-km').value = config.maxKm;
+  openModal('matching-radius-modal');
+}
+
+function saveMatchingRadius() {
+  const serviceType = getServiceType(document.getElementById('radius-service-type-id').value);
+  const initialKm = Number(document.getElementById('radius-initial-km').value);
+  const expandStepKm = Number(document.getElementById('radius-expand-step-km').value);
+  const maxKm = Number(document.getElementById('radius-max-km').value);
+  if (!serviceType) return;
+  if (initialKm <= 0 || expandStepKm <= 0 || maxKm <= 0) return alert('Các giá trị bán kính phải lớn hơn 0.');
+  if (initialKm > maxKm) return alert('Bán kính ban đầu không được lớn hơn bán kính tối đa.');
+  const before = { ...getMatchingRadiusConfig(serviceType) };
+  serviceType.matchingRadius = { initialKm, expandStepKm, maxKm };
+  createAuditLog({ action: 'service_type.matching_radius.update', target: serviceType.id, before, after: { ...serviceType.matchingRadius } });
+  closeModal('matching-radius-modal');
+  renderMatchingRadiusTable();
+  scheduleSave();
+  toast(`Đã lưu bán kính ghép chuyến cho ${serviceType.name}`, 'success');
+}
+
+function renderServiceTypes() {
+  const stats = document.getElementById('service-type-stats');
+  const body = document.getElementById('service-types-table-body');
+  if (!stats || !body) return;
+  const active = SERVICE_TYPES.filter(s => s.status === 'active');
+  const linkedDrivers = new Set(DRIVERS.filter(d => getDriverServiceTypeIds(d).length).map(d => d.id));
+  stats.innerHTML = `
+    <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon accent">🧩</div><span class="stat-card-label">Tổng loại dịch vụ</span></div><div class="stat-card-value">${SERVICE_TYPES.length}</div></div>
+    <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon success">✅</div><span class="stat-card-label">Đang hoạt động</span></div><div class="stat-card-value">${active.length}</div></div>
+    <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon info">🏍️</div><span class="stat-card-label">Dịch vụ Bike</span></div><div class="stat-card-value">${SERVICE_TYPES.filter(s => s.vehicleType === 'BIKE').length}</div></div>
+    <div class="stat-card"><div class="stat-card-header"><div class="stat-card-icon warning">🧑‍✈️</div><span class="stat-card-label">Tài xế đã cấp quyền</span></div><div class="stat-card-value">${linkedDrivers.size}</div></div>`;
+
+  body.innerHTML = SERVICE_TYPES.map(s => {
+    const commission = COMMISSIONS.find(c => c.vehicleType === s.vehicleType);
+    const drivers = getServiceTypeDrivers(s.id);
+    return `<tr>
+      <td><div class="service-type-name"><span class="service-type-icon">${s.icon || '🚗'}</span><div><div class="fw-600">${esc(s.name)}</div><div class="text-muted" style="font-size:11px">${esc(s.code)} · ${esc(s.description || '')}</div></div></div></td>
+      <td><div class="fw-600">${VEHICLE_TYPES[s.vehicleType]?.icon || ''} ${VEHICLE_TYPES[s.vehicleType]?.label || s.vehicleType}</div><div class="text-muted" style="font-size:11px">${s.seats || 1} chỗ</div></td>
+      <td><button class="service-link-card price" onclick="openServiceTypePricing('${s.id}')"><span>💵 ${esc(PRICING[s.pricingKey]?.label || s.pricingKey)}</span><small>${getServiceTypePriceSummary(s)}</small></button></td>
+      <td><div class="service-link-card commission readonly"><span>📈 ${s.vehicleType} · Tài xế nhận ${commission ? 100 - commission.rate : '—'}%</span><small>Chỉ xem · lấy từ cấu hình chiết khấu ${s.vehicleType === 'BIKE' ? 'Bike' : 'Car'}</small></div></td>
+      <td><button class="service-driver-summary" onclick="showServiceTypeDrivers('${s.id}')"><b>${drivers.length} tài xế & xe riêng</b><span>${drivers.filter(d => d.status === 'online').length} đang online</span></button></td>
+      <td><span class="badge badge-${s.status === 'active' ? 'active' : 'expired'}">${s.status === 'active' ? 'Hoạt động' : 'Tạm dừng'}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick="openServiceTypeModal('${s.id}')">✏️ Sửa</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">Chưa có loại dịch vụ Bike/Car</div></div></td></tr>';
+  renderMatchingRadiusTable();
+}
+
+function showServiceTypeDrivers(serviceTypeId) {
+  const select = document.querySelector('#page-partners .tab-btn[data-tab="drivers"]');
+  navigateTo('partners');
+  switchPartnerTab('drivers', select);
+  const filter = document.getElementById('driver-service-filter');
+  if (filter) filter.value = serviceTypeId;
+  renderDrivers();
+}
+
+function refreshServiceTypeFormOptions(preferredPricingKey = null, selectedDriverIds = null) {
+  const vehicleType = document.getElementById('st-vehicle-type').value;
+  const seats = parseInt(document.getElementById('st-seats').value, 10) || (vehicleType === 'CAR' ? 4 : 1);
+  const pricingSelect = document.getElementById('st-pricing-key');
+  const commissionDisplay = document.getElementById('st-commission-display');
+  const driverHost = document.getElementById('st-driver-picker');
+  const previousPricing = preferredPricingKey || pricingSelect.value;
+  const previousDrivers = selectedDriverIds || Array.from(driverHost.querySelectorAll('input:checked')).map(x => x.value);
+
+  const pricingProfiles = Object.entries(PRICING).filter(([key, p]) => p.mode === 'km' && (key === vehicleType || key.startsWith(vehicleType + '_')));
+  pricingSelect.innerHTML = pricingProfiles.map(([key, p]) => `<option value="${key}">${p.icon || ''} ${esc(p.label || key)}</option>`).join('');
+  if (pricingProfiles.some(([key]) => key === previousPricing)) pricingSelect.value = previousPricing;
+
+  const commission = COMMISSIONS.find(c => c.vehicleType === vehicleType);
+  commissionDisplay.innerHTML = commission
+    ? `${VEHICLE_TYPES[vehicleType]?.icon || ''} ${vehicleType} · Tài xế nhận ${100 - commission.rate}% · Phí hệ thống ${commission.rate}%`
+    : `<span class="text-warning">Chưa có cấu hình chiết khấu ${vehicleType}</span>`;
+
+  const eligibleDrivers = DRIVERS.filter(d => d.vehicleType === vehicleType && (vehicleType !== 'CAR' || (d.vehicleSeats || 4) >= seats));
+  driverHost.innerHTML = eligibleDrivers.map(d => `<label class="service-permission-option compact">
+    <input type="checkbox" value="${d.id}" ${previousDrivers.includes(d.id) ? 'checked' : ''}>
+    <span><b>${d.avatar || '👤'} ${esc(d.name)}</b><small>${esc(d.plate)} · ${d.vehicleSeats || (vehicleType === 'CAR' ? 4 : 1)} chỗ · ${d.status}</small></span>
+  </label>`).join('') || '<div class="text-muted">Chưa có tài xế phù hợp.</div>';
+}
+
+function openServiceTypeModal(id = null) {
+  const serviceType = id ? getServiceType(id) : null;
+  document.getElementById('st-id').value = serviceType?.id || '';
+  document.getElementById('service-type-modal-title').textContent = serviceType ? `Chỉnh sửa loại dịch vụ · ${serviceType.id}` : 'Tạo loại dịch vụ Bike/Car';
+  document.getElementById('st-code').value = serviceType?.code || '';
+  document.getElementById('st-name').value = serviceType?.name || '';
+  document.getElementById('st-vehicle-type').value = serviceType?.vehicleType || 'BIKE';
+  document.getElementById('st-seats').value = serviceType?.seats || 1;
+  document.getElementById('st-icon').value = serviceType?.icon || '🏍️';
+  document.getElementById('st-status').value = serviceType?.status || 'active';
+  document.getElementById('st-description').value = serviceType?.description || '';
+  refreshServiceTypeFormOptions(serviceType?.pricingKey, serviceType ? getServiceTypeDrivers(serviceType.id).map(d => d.id) : []);
+  openModal('service-type-modal');
+}
+
+function saveServiceType() {
+  const id = document.getElementById('st-id').value;
+  const code = document.getElementById('st-code').value.trim().toUpperCase().replace(/\s+/g, '_');
+  const name = document.getElementById('st-name').value.trim();
+  const vehicleType = document.getElementById('st-vehicle-type').value;
+  const seats = parseInt(document.getElementById('st-seats').value, 10);
+  const icon = document.getElementById('st-icon').value.trim() || (vehicleType === 'BIKE' ? '🏍️' : '🚗');
+  const status = document.getElementById('st-status').value;
+  const pricingKey = document.getElementById('st-pricing-key').value;
+  const commission = COMMISSIONS.find(c => c.vehicleType === vehicleType);
+  const hasCommission = !!commission;
+  const description = document.getElementById('st-description').value.trim();
+  const selectedDriverIds = Array.from(document.querySelectorAll('#st-driver-picker input:checked')).map(x => x.value);
+  if (!code || !name || isNaN(seats) || seats < 1 || !pricingKey || !hasCommission) return alert('Vui lòng nhập đủ thông tin và bảng giá; nhóm xe phải có cấu hình chiết khấu chung.');
+  if (status === 'active' && !selectedDriverIds.length) return alert('Dịch vụ hoạt động phải có ít nhất một tài xế được phép nhận.');
+  if (SERVICE_TYPES.some(s => s.code === code && s.id !== id)) return alert('Mã dịch vụ đã tồn tại.');
+
+  let serviceType = id ? getServiceType(id) : null;
+  if (serviceType) {
+    Object.assign(serviceType, { code, name, vehicleType, seats, icon, status, pricingKey, description });
+    delete serviceType.commissionId;
+  } else {
+    serviceType = { id: genId('SVT', SERVICE_TYPES), code, name, vehicleType, seats, icon, status, pricingKey, description,
+      matchingRadius: getDefaultMatchingRadius(vehicleType, seats, code) };
+    SERVICE_TYPES.push(serviceType);
+  }
+
+  DRIVERS.forEach(d => {
+    if (!Array.isArray(d.serviceTypeIds)) d.serviceTypeIds = [];
+    const shouldHave = selectedDriverIds.includes(d.id);
+    const has = d.serviceTypeIds.includes(serviceType.id);
+    if (shouldHave && !has) d.serviceTypeIds.push(serviceType.id);
+    if (!shouldHave && has) d.serviceTypeIds = d.serviceTypeIds.filter(x => x !== serviceType.id);
+  });
+  createAuditLog({ action: id ? 'service_type.update' : 'service_type.create', target: serviceType.id, before: null,
+    after: { code, pricingKey, commissionVehicleType: vehicleType, drivers: selectedDriverIds.length } });
+  closeModal('service-type-modal');
+  renderServiceTypes();
+  renderPricingTabs(pricingKey);
+  scheduleSave();
+  toast(`Đã lưu ${name} · ${selectedDriverIds.length} tài xế được phép nhận`, 'success');
+}
+
+function openServiceTypePricing(serviceTypeId) {
+  const serviceType = getServiceType(serviceTypeId);
+  if (!serviceType) return;
+  navigateTo('commissions');
+  const tabButton = document.querySelector('#page-commissions > .tabs .tab-btn[data-tab="pricing"]');
+  switchCommissionTab('pricing', tabButton);
+  renderPricingTabs(serviceType.pricingKey);
+}
+
 function renderCommissions() {
   document.getElementById('commission-config').innerHTML = COMMISSIONS.map(c => {
     const vt = VEHICLE_TYPES[c.vehicleType];
+    const serviceType = getServiceType(c.serviceTypeId);
     const feeRate = c.rate;            // % phí dịch vụ (platform giữ)
     const driverRate = 100 - feeRate;  // % tài xế thực nhận = chiết khấu
     return `<div class="commission-card">
       <div class="commission-card-header">
         <span class="commission-card-icon">${vt?.icon||'🚗'}</span>
         <div>
-          <div class="commission-card-title">${vt?.label||c.vehicleType}</div>
+          <div class="commission-card-title">${serviceType ? `${serviceType.icon || ''} ${esc(serviceType.name)}` : (vt?.label||c.vehicleType)}</div>
           <div class="commission-card-subtitle">${c.description}</div>
         </div>
       </div>
@@ -4113,16 +4496,18 @@ function renderCommissions() {
     </tr>`;
   }).join('');
 
-  // Mặc định render tab pricing cho BIKE
-  renderPricingPanel('BIKE');
+  renderPricingTabs();
 }
 
 function openCommissionEdit(id) {
   const c = COMMISSIONS.find(x => x.id === id);
   if (!c) return;
   const vt = VEHICLE_TYPES[c.vehicleType];
+  const serviceType = getServiceType(c.serviceTypeId);
   document.getElementById('ce-id').value = c.id;
-  document.getElementById('ce-service').innerHTML = `${vt?.icon||''} ${vt?.label||c.vehicleType}`;
+  document.getElementById('ce-service').innerHTML = serviceType
+    ? `${serviceType.icon || ''} ${esc(serviceType.name)} <span class="text-muted" style="font-weight:400">· ${esc(serviceType.code)}</span>`
+    : `${vt?.icon||''} ${vt?.label||c.vehicleType}`;
   document.getElementById('ce-desc').value = c.description || '';
   const feeRate = c.rate;
   const driverRate = 100 - feeRate;
@@ -4188,7 +4573,7 @@ function switchCommissionTab(tab, btn) {
   if (target) target.classList.add('is-active');
   if (tab === 'pricing') {
     const activeSub = document.querySelector('#pricing-sub-tabs .tab-btn.active');
-    renderPricingPanel(activeSub ? activeSub.dataset.ptab : 'BIKE');
+    renderPricingTabs(activeSub ? activeSub.dataset.ptab : null);
   }
 }
 
@@ -4196,6 +4581,26 @@ function switchPricingTab(type, btn) {
   document.querySelectorAll('#pricing-sub-tabs .tab-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderPricingPanel(type);
+}
+
+function renderPricingTabs(activeKey = null) {
+  const host = document.getElementById('pricing-sub-tabs');
+  if (!host) return;
+  const entries = [];
+  const used = new Set();
+  SERVICE_TYPES.forEach(s => {
+    if (!PRICING[s.pricingKey] || used.has(s.pricingKey)) return;
+    used.add(s.pricingKey);
+    entries.push({ key: s.pricingKey, label: s.name, icon: s.icon });
+  });
+  [
+    { key: 'INTERCITY', label: 'Liên tỉnh', icon: '🚌' },
+    { key: 'SERVICE_ORDER', label: 'Đăng kiểm hộ', icon: '📋' },
+    { key: 'MAINTENANCE_ORDER', label: 'Bảo dưỡng hộ', icon: '🔧' }
+  ].forEach(e => { if (PRICING[e.key] && !used.has(e.key)) entries.push(e); });
+  const key = entries.some(e => e.key === activeKey) ? activeKey : (entries[0]?.key || 'BIKE');
+  host.innerHTML = entries.map(e => `<button class="tab-btn ${e.key === key ? 'active' : ''}" data-ptab="${e.key}" onclick="switchPricingTab('${e.key}', this)">${e.icon || ''} ${esc(e.label)}</button>`).join('');
+  renderPricingPanel(key);
 }
 
 function renderPricingPanel(type) {
@@ -6086,14 +6491,21 @@ function renderSimPanel() {
 // ---------- TAB KHÁCH ----------
 function renderSimCustomer() {
   const custOpts = CUSTOMERS.map(c => `<option value="${c.id}">${esc(c.name)} · ${c.phone}</option>`).join('');
+  const serviceOpts = SERVICE_TYPES.filter(s => s.status === 'active').map(s => {
+    const available = getServiceTypeAvailableDrivers(s.id).length;
+    const sampleFare = calculateServiceTypeFare(s, 5);
+    return `<option value="${s.id}" ${available ? '' : 'disabled'}>${s.icon || ''} ${esc(s.name)} · khoảng ${fmt(sampleFare)}/5km${available ? ` · ${available} tài xế khả dụng` : ' · Không khả dụng'}</option>`;
+  }).join('') || '<option value="" disabled>Hiện chưa có dịch vụ hoạt động</option>';
   // Đơn đang hoạt động của khách (để huỷ / đổi lịch)
   const active = BOOKINGS.filter(b => ['PENDING_CONFIRMATION','CONFIRMED','IN_PROGRESS','RESCHEDULE_REQUESTED'].includes(b.bookingStatus));
   const cards = active.slice(0, 30).map(b => {
     const vt = VEHICLE_TYPES[b.bookingType];
+    const serviceType = getServiceType(b.serviceTypeId);
     const canCancel = ['PENDING_CONFIRMATION','CONFIRMED'].includes(b.bookingStatus);
     const canReschedule = b.bookingStatus === 'CONFIRMED';
     return `<div class="sim-card">
-      <div class="sc-top"><span class="sc-code">${vt?.icon||''} ${b.bookingCode}</span>${statusBadge(BOOKING_STATUSES, b.bookingStatus)}</div>
+      <div class="sc-top"><span class="sc-code">${serviceType?.icon || vt?.icon || ''} ${b.bookingCode}</span>${statusBadge(BOOKING_STATUSES, b.bookingStatus)}</div>
+      <div class="sc-route"><b>${esc(serviceType?.name || vt?.label || b.bookingType)}</b></div>
       <div class="sc-route">${esc(getCustomerName(b.customerId))} · ${esc(b.pickup)} → ${esc(b.dropoff)}</div>
       <div class="sim-actions">
         ${canCancel ? `<button class="btn btn-sm btn-danger" onclick="simCustomerCancel('${b.id}')">Huỷ chuyến</button>` : ''}
@@ -6107,11 +6519,8 @@ function renderSimCustomer() {
       <div class="sc-code" style="margin-bottom:4px">🚕 Đặt xe mới (như app khách)</div>
       <label>Khách hàng</label>
       <select class="input" id="sim-cust">${custOpts}</select>
-      <label>Loại xe</label>
-      <select class="input" id="sim-type">
-        <option value="BIKE">🏍️ Xe máy</option>
-        <option value="CAR">🚗 Xe hơi</option>
-      </select>
+      <label>Loại dịch vụ</label>
+      <select class="input" id="sim-service-type">${serviceOpts}</select>
       <label>Điểm đón</label>
       <input class="input" id="sim-pickup" placeholder="VD: 12 Lê Lợi, Q1" value="Vị trí hiện tại của khách">
       <label>Điểm đến</label>
@@ -6129,30 +6538,33 @@ function renderSimCustomer() {
 
 function simCreateRideBooking() {
   const custId = document.getElementById('sim-cust').value;
-  const type = document.getElementById('sim-type').value;
+  const serviceTypeId = document.getElementById('sim-service-type').value;
+  const serviceType = getServiceType(serviceTypeId);
+  if (!serviceType || serviceType.status !== 'active') return alert('Dịch vụ đã tạm dừng hoặc không còn tồn tại. Vui lòng chọn dịch vụ khác.');
+  if (!getServiceTypeAvailableDrivers(serviceTypeId).length) return alert('Dịch vụ hiện không khả dụng do chưa có tài xế phù hợp. Vui lòng chọn dịch vụ khác.');
+  const type = serviceType.vehicleType;
   const pickup = document.getElementById('sim-pickup').value.trim() || 'Vị trí khách';
   const dropoff = document.getElementById('sim-dropoff').value.trim() || 'Điểm đến';
   const method = document.getElementById('sim-pay').value === 'cash' ? 'cash' : 'wallet';
   const distance = Math.round((3 + Math.random() * 12) * 10) / 10;
-  const base = type === 'BIKE' ? 12000 : 25000;
-  const perKm = type === 'BIKE' ? 4500 : 11000;
-  const fare = Math.round((base + distance * perKm) / 1000) * 1000;
+  const fare = calculateServiceTypeFare(serviceType, distance);
   const traceId = newTraceId();
   const id = genId('BK', BOOKINGS);
   const b = {
     id, bookingCode: 'RB-' + id.replace('BK', ''),
-    bookingType: type,
+    bookingType: type, serviceTypeId, pricingKey: serviceType.pricingKey,
     bookingStatus: 'PENDING_CONFIRMATION', paymentStatus: 'PENDING', fulfillmentStatus: null,
     customerId: custId, agentId: null, driverId: null,
     pickup, dropoff, fareSnapshot: fare, distance,
+    pricingSnapshot: { serviceTypeId, pricingKey: serviceType.pricingKey, fare, distance },
     paymentMethod: method, paymentReference: null, fulfillmentTaskId: null,
     createdAt: nowStr(), updatedAt: nowStr()
   };
   BOOKINGS.unshift(b);
   createAuditLog({ action: 'booking.create', target: id, traceId, actor: custId, actorRole: 'CUSTOMER',
-    sourceSite: 'customer', before: null, after: { type, fare } });
+    sourceSite: 'customer', before: null, after: { type, serviceTypeId, fare } });
   createNotification({ type: 'booking_created', recipient: custId,
-    content: `Đã đặt ${VEHICLE_TYPES[type].label} ${b.bookingCode}, đang xử lý thanh toán...` });
+    content: `Đã đặt ${serviceType.name} ${b.bookingCode}, đang xử lý thanh toán...` });
   const pay = processPayment(b, traceId);
   if (pay.success) {
     b.bookingStatus = 'CONFIRMED'; b.fulfillmentStatus = 'PENDING'; b.updatedAt = nowStr();

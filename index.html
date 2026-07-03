@@ -47,6 +47,9 @@
         <div class="nav-item" data-page="routes" data-roles="ADMIN,OPERATOR" data-perm="master.view,master.manage" onclick="navigateTo('routes')">
           <span class="nav-item-icon">🗺️</span> Tuyến & Lịch chạy
         </div>
+        <div class="nav-item" data-page="service-types" data-roles="ADMIN,OPERATOR" data-perm="master.view,master.manage" onclick="navigateTo('service-types')">
+          <span class="nav-item-icon">🧩</span> Loại dịch vụ Bike/Car
+        </div>
         <div class="nav-item" data-page="partners" data-roles="ADMIN,OPERATOR,AGENT" data-perm="partner.view,partner.manage,driver.view,driver.manage" onclick="navigateTo('partners')">
           <span class="nav-item-icon">🤝</span> Nhà xe & Tài xế
         </div>
@@ -197,7 +200,7 @@
           <div class="tabs" style="margin-bottom:20px">
             <button class="tab-btn active" data-tab="schedules" onclick="switchRouteTab('schedules', this)">📅 Lịch chạy</button>
             <button class="tab-btn" data-tab="routes" onclick="switchRouteTab('routes', this)">🗺️ Tuyến đường</button>
-            <button class="tab-btn" data-tab="vehicle-models" onclick="switchRouteTab('vehicle-models', this)">🚐 Loại xe</button>
+            <button class="tab-btn" data-tab="vehicle-models" onclick="switchRouteTab('vehicle-models', this)">🚐 Loại xe liên tỉnh</button>
             <button class="tab-btn" data-tab="stops" onclick="switchRouteTab('stops', this)">📍 Điểm dừng</button>
           </div>
 
@@ -230,7 +233,7 @@
           <!-- Vehicle Models Tab -->
           <div id="routes-tab-vehicle-models" style="display:none">
             <div class="table-container">
-              <div class="table-header"><span class="table-title">Loại xe (thay cho Ghế)</span>
+              <div class="table-header"><span class="table-title">Loại xe liên tỉnh (quản lý tách xe và tài xế)</span>
                 <div class="table-actions"><button class="btn btn-primary" onclick="openVehicleModelCreate()">➕ Thêm loại xe</button></div>
               </div>
               <div class="table-wrapper">
@@ -278,18 +281,23 @@
 
           <!-- Drivers Tab (Bike/Car only) -->
           <div id="partners-tab-drivers" style="display:none">
+            <div class="service-type-notice compact">
+              <div class="service-type-notice-icon">🧑‍✈️</div>
+              <div><b>Mỗi tài xế Bike/Car có một xe riêng</b><span>Loại xe, số chỗ và biển số được quản lý ngay trong hồ sơ tài xế. Điều phối chỉ gán tài xế.</span></div>
+            </div>
             <div class="stats-grid" id="driver-stats"></div>
             <div class="table-container">
               <div class="table-header"><span class="table-title">Tài xế Bike & Car</span>
                 <div class="table-actions">
                   <button class="btn btn-outline app-review-btn" id="bikecar-app-btn" onclick="openDriverApps('bikecar')" style="display:none">📥 Đơn đăng ký mới <span class="app-count-badge" id="bikecar-app-count">0</span></button>
                   <select id="driver-status-filter" onchange="renderDrivers()"><option value="">Tất cả</option><option value="online">Online</option><option value="busy">Đang chạy</option><option value="offline">Offline</option></select>
+                  <select id="driver-service-filter" onchange="renderDrivers()"><option value="">Mọi loại dịch vụ</option></select>
                   <div class="search-box"><input type="search" placeholder="Tìm tài xế..." id="driver-search" oninput="renderDrivers()"></div>
-                  <button class="btn btn-primary" onclick="openModal('driver-modal')">➕ Thêm tài xế</button>
+                  <button class="btn btn-primary" onclick="openDriverModal()">➕ Thêm tài xế</button>
                 </div>
               </div>
               <div class="table-wrapper">
-                <table><thead><tr><th>ID</th><th>Tài xế</th><th>SĐT</th><th>Loại xe</th><th>Biển số</th><th>Nhà xe</th><th>Đánh giá</th><th>Hoàn thành</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <table><thead><tr><th>ID</th><th>Tài xế</th><th>SĐT</th><th>Phương tiện</th><th>Biển số</th><th>Dịch vụ được phép chạy</th><th>Đánh giá</th><th>Hoàn thành</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
                 <tbody id="drivers-table-body"></tbody></table>
               </div>
             </div>
@@ -584,6 +592,53 @@
           </div>
         </div>
 
+        <!-- ===== BIKE/CAR SERVICE TYPES ===== -->
+        <div class="page" id="page-service-types">
+          <div class="tabs" id="service-type-tabs" style="margin-bottom:20px">
+            <button class="tab-btn active" data-stab="list" onclick="switchServiceTypeTab('list', this)">🧩 Loại dịch vụ</button>
+            <button class="tab-btn" data-stab="radius" onclick="switchServiceTypeTab('radius', this)">📍 Bán kính ghép chuyến</button>
+          </div>
+
+          <div id="service-type-panel-list" class="service-type-tab-panel">
+            <div class="service-type-notice">
+              <div class="service-type-notice-icon">🏍️</div>
+              <div><b>Bike/Car: một tài xế gắn với một phương tiện riêng</b><span>Thông tin xe nằm trong hồ sơ tài xế. Khi điều phối chỉ cần gán tài xế, không chọn thêm xe riêng.</span></div>
+            </div>
+            <div class="stats-grid" id="service-type-stats"></div>
+            <div class="table-container">
+              <div class="table-header">
+                <div><span class="table-title">Loại dịch vụ khách có thể chọn khi đặt xe</span><div class="text-muted" style="font-size:12px;margin-top:4px">Mỗi loại có bảng giá và quyền tài xế riêng; chiết khấu chỉ xem và tự lấy từ cấu hình Bike hoặc Car.</div></div>
+                <div class="table-actions"><button class="btn btn-primary" onclick="openServiceTypeModal()">➕ Tạo loại dịch vụ</button></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>Loại dịch vụ</th><th>Nhóm xe</th><th>Bảng giá</th><th>Chiết khấu tham chiếu</th><th>Tài xế & xe được phép</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
+                <tbody id="service-types-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+
+          <div id="service-type-panel-radius" class="service-type-tab-panel" style="display:none">
+            <div class="service-type-notice radius-notice">
+              <div class="service-type-notice-icon">📡</div>
+              <div><b>Điều kiện để tài xế được đưa vào danh sách ghép chuyến</b><span>Online + không bận/không bị khóa bởi cuốc khác + đúng quyền dịch vụ và xe + hồ sơ hợp lệ + vị trí còn mới + nằm trong bán kính hiện tại. Mỗi tài xế có 15 giây để nhận cuốc.</span></div>
+            </div>
+            <div class="radius-flow" aria-label="Cách mở rộng bán kính">
+              <span><small>Bước 1</small>Tìm trong bán kính ban đầu</span><b>→</b>
+              <span><small>Chưa có tài xế nhận</small>Mở rộng theo mỗi bước</span><b>→</b>
+              <span><small>Điểm dừng</small>Không vượt bán kính tối đa</span>
+            </div>
+            <div class="table-container">
+              <div class="table-header">
+                <div><span class="table-title">Cấu hình bán kính theo loại dịch vụ</span><div class="text-muted" style="font-size:12px;margin-top:4px">Khoảng cách được tính từ vị trí tài xế mới nhất đến điểm đón của khách.</div></div>
+              </div>
+              <div class="table-wrapper">
+                <table><thead><tr><th>Loại dịch vụ</th><th>Bán kính ban đầu</th><th>Mỗi lần mở rộng</th><th>Tối đa</th><th>Các vòng tìm kiếm</th><th>Tài xế đã cấp quyền</th><th>Thao tác</th></tr></thead>
+                <tbody id="matching-radius-table-body"></tbody></table>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- ===== COMMISSIONS ===== -->
         <div class="page" id="page-commissions">
           <div class="tabs" style="margin-bottom:20px">
@@ -874,40 +929,79 @@
   </div>
 
   <div class="modal-overlay" id="driver-modal">
-    <div class="modal">
-      <div class="modal-header"><span class="modal-title">Thêm tài xế mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('driver-modal')">✕</button></div>
+    <div class="modal" style="max-width:760px">
+      <div class="modal-header"><span class="modal-title" id="driver-modal-title">Thêm tài xế mới</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('driver-modal')">✕</button></div>
       <div class="modal-body">
+        <input type="hidden" id="driver-edit-id">
         <div class="form-grid">
           <div class="input-group"><label>Họ tên</label><input type="text" id="driver-name" placeholder="Nguyễn Văn A"></div>
           <div class="input-group"><label>Số điện thoại</label><input type="text" id="driver-phone" placeholder="090xxxxxxx"></div>
           <div class="input-group"><label>Loại xe</label>
-            <select id="driver-vehicle-type">
+            <select id="driver-vehicle-type" onchange="onDriverVehicleTypeChange()">
               <option value="BIKE">Xe máy</option>
               <option value="CAR">Xe hơi</option>
-              <option value="INTERCITY">Xe khách liên tỉnh</option>
             </select>
           </div>
+          <div class="input-group"><label>Số chỗ</label><input type="number" id="driver-vehicle-seats" min="1" max="16" value="1" oninput="renderDriverServiceTypePicker()"></div>
           <div class="input-group"><label>Biển số</label><input type="text" id="driver-plate" placeholder="51F-12345"></div>
-          <div class="input-group"><label>Nhà xe (Operator)</label>
-            <select id="driver-operator">
-              <option value="">Cá nhân</option>
-              <option value="PTR001">Nhà xe Phương Trang</option>
-              <option value="PTR002">Nhà xe Thành Bưởi</option>
-              <option value="PTR003">Nhà xe Hoàng Long</option>
-            </select>
-          </div>
           <div class="input-group"><label>Trạng thái</label>
             <select id="driver-status">
               <option value="offline">Offline</option>
               <option value="online">Online</option>
+              <option value="busy" disabled>Đang chạy (hệ thống)</option>
             </select>
           </div>
+          <div class="input-group span-2"><label>Dịch vụ được phép nhận</label><div id="driver-service-types" class="service-permission-picker"></div><div class="text-muted" style="font-size:11px;margin-top:6px">Chỉ hiển thị các dịch vụ phù hợp với phương tiện của tài xế.</div></div>
         </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeModal('driver-modal')">Hủy</button>
-        <button class="btn btn-primary" onclick="addDriver()">Thêm tài xế</button>
+        <button class="btn btn-primary" id="driver-save-btn" onclick="saveDriver()">Lưu tài xế</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Bike/Car Service Type Create/Edit Modal -->
+  <div class="modal-overlay" id="service-type-modal">
+    <div class="modal" style="max-width:780px">
+      <div class="modal-header"><span class="modal-title" id="service-type-modal-title">Tạo loại dịch vụ</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('service-type-modal')">✕</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="st-id">
+        <div class="form-grid">
+          <div class="input-group"><label>Mã dịch vụ *</label><input type="text" id="st-code" placeholder="CAR_PREMIUM"></div>
+          <div class="input-group"><label>Tên hiển thị *</label><input type="text" id="st-name" placeholder="Car Cao cấp"></div>
+          <div class="input-group"><label>Nhóm phương tiện *</label><select id="st-vehicle-type" onchange="refreshServiceTypeFormOptions()"><option value="BIKE">🏍️ Bike</option><option value="CAR">🚗 Car</option></select></div>
+          <div class="input-group"><label>Số chỗ</label><input type="number" id="st-seats" min="1" max="16" value="1" oninput="refreshServiceTypeFormOptions()"></div>
+          <div class="input-group"><label>Biểu tượng</label><input type="text" id="st-icon" maxlength="4" value="🏍️"></div>
+          <div class="input-group"><label>Trạng thái</label><select id="st-status"><option value="active">Hoạt động</option><option value="inactive">Tạm dừng</option></select><div class="text-muted" style="font-size:11px;margin-top:5px">Tạm dừng: dịch vụ sẽ bị ẩn trên app khách.</div></div>
+          <div class="input-group"><label>Liên kết bảng giá *</label><select id="st-pricing-key"></select></div>
+          <div class="input-group"><label>Chiết khấu áp dụng</label><div id="st-commission-display" class="readonly-link-field"></div><div class="text-muted" style="font-size:11px;margin-top:5px">Tự động dùng cấu hình chung của Bike hoặc Car.</div></div>
+          <div class="input-group span-2"><label>Mô tả cho khách</label><input type="text" id="st-description" placeholder="Mô tả ngắn hiển thị khi khách chọn xe"></div>
+          <div class="input-group span-2"><label>Tài xế được phép nhận</label><div id="st-driver-picker" class="service-permission-picker"></div></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('service-type-modal')">Hủy</button><button class="btn btn-primary" onclick="saveServiceType()">💾 Lưu loại dịch vụ</button></div>
+    </div>
+  </div>
+
+  <!-- Bike/Car Matching Radius Modal -->
+  <div class="modal-overlay" id="matching-radius-modal">
+    <div class="modal" style="max-width:620px">
+      <div class="modal-header"><span class="modal-title">Cấu hình bán kính ghép chuyến</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('matching-radius-modal')">✕</button></div>
+      <div class="modal-body">
+        <input type="hidden" id="radius-service-type-id">
+        <div class="service-type-notice compact" style="margin-bottom:18px">
+          <div class="service-type-notice-icon">📍</div>
+          <div><b id="radius-service-type-name">Loại dịch vụ</b><span>Tài xế được xét theo khoảng cách từ vị trí mới nhất đến điểm đón.</span></div>
+        </div>
+        <div class="form-grid" style="grid-template-columns:repeat(3,1fr)">
+          <div class="input-group"><label>Bán kính ban đầu (km) *</label><input type="number" id="radius-initial-km" min="0.1" step="0.1"></div>
+          <div class="input-group"><label>Mỗi lần mở rộng (km) *</label><input type="number" id="radius-expand-step-km" min="0.1" step="0.1"></div>
+          <div class="input-group"><label>Bán kính tối đa (km) *</label><input type="number" id="radius-max-km" min="0.1" step="0.1"></div>
+        </div>
+        <div class="matching-radius-rule">⏱️ Thời gian chờ mỗi tài xế: <b>15 giây</b>. Từ chối hoặc hết thời gian sẽ chuyển sang tài xế khả dụng tiếp theo; hết danh sách trong vòng hiện tại mới mở rộng bán kính.</div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('matching-radius-modal')">Hủy</button><button class="btn btn-primary" onclick="saveMatchingRadius()">💾 Lưu cấu hình</button></div>
     </div>
   </div>
 
@@ -1159,11 +1253,11 @@
   <!-- Vehicle Model Create Modal -->
   <div class="modal-overlay" id="vehicle-model-modal">
     <div class="modal" style="max-width:560px">
-      <div class="modal-header"><span class="modal-title">🚐 Thêm loại xe</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('vehicle-model-modal')">✕</button></div>
+      <div class="modal-header"><span class="modal-title">🚐 Thêm loại xe liên tỉnh</span><button class="modal-close" aria-label="Đóng" onclick="closeModal('vehicle-model-modal')">✕</button></div>
       <div class="modal-body">
         <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div class="input-group"><label>Tên *</label><input type="text" class="input" id="vm-name" placeholder="VD: Limousine 22 chỗ"></div>
-          <div class="input-group"><label>Loại dịch vụ *</label><select class="input" id="vm-service-type"><option value="BIKE">🏍️ Xe máy</option><option value="CAR">🚗 Xe hơi</option><option value="INTERCITY" selected>🚌 Liên tỉnh</option></select></div>
+          <div class="input-group"><label>Loại dịch vụ *</label><select class="input" id="vm-service-type"><option value="INTERCITY" selected>🚌 Liên tỉnh</option></select></div>
           <div class="input-group"><label>Phân loại *</label><select class="input" id="vm-category"><option value="seat">💺 Ghế ngồi</option><option value="sleeper">🛏️ Giường nằm</option><option value="limo_seat">🚐 Limousine ngồi</option><option value="limo_sleeper">🛌 Limousine nằm</option><option value="other">🚗 Khác</option></select></div>
           <div class="input-group"><label>Số ghế *</label><input type="number" class="input" id="vm-seats" min="1" placeholder="22"></div>
           <div class="input-group"><label>Trạng thái *</label><select class="input" id="vm-status"><option value="active">Hoạt động</option><option value="inactive">Tạm ngừng</option></select></div>
