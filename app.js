@@ -13,12 +13,22 @@ let selectedDispatchDriverId = null;  // modal gán tài xế (bike/car/service/
 let _icDispatchVehicles = [];   // [{v, sameOp}] cho re-render card xe
 let _icDispatchDrivers = [];    // [{d, sameOp}] cho re-render card tài xế
 let _dispatchDrivers = [];      // tài xế khả dụng cho modal mặc định
+let _dispatchDriverMeta = new Map(); // distance / availability cho modal Bike/Car
+let _simCustomerId = null;
+let _simDriverId = null;
+let _driverHeartbeatTimer = null;
+let _offerTicker = null;
+let selectedPricingKeyByGroup = { BIKE: 'BIKE', CAR: 'CAR' };
 let currentNotificationTab = 'history';
 let currentRole = 'ADMIN';
 let currentUser = null;
 const OTP_VALIDITY_SECONDS = 300;
 const OTP_BACKEND_ENDPOINT = window.HAHAGO_OTP_ENDPOINT || '';
 let otpCountdownTimer = null;
+const DRIVER_LOCATION_STALE_MS = 15000;
+const MANUAL_DISPATCH_WAIT_SECONDS = 60;
+const DRIVER_OFFER_TIMEOUT_SECONDS = 15;
+const DEFAULT_PICKUP_LOCATION = { lat: 10.7769, lng: 106.7009 };
 
 // Role configurations
 const ROLE_CONFIG = {
@@ -92,7 +102,7 @@ function navigateTo(page) {
   if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
 
   const titles = {
-    dashboard: 'Tổng quan', users: 'Người dùng & Vai trò', routes: 'Tuyến & Lịch Chạy', 'service-types': 'Loại dịch vụ Bike/Car',
+    dashboard: 'Tổng quan', users: 'Người dùng & Vai trò', routes: 'Tuyến & Lịch Chạy', 'service-types': 'Cấu hình loại xe Bike/Car',
     partners: 'Nhà xe & Tài xế',
     bookings: 'Giám sát đơn hàng', fulfillment: 'Nhiệm vụ phân công', intercity: 'Đặt vé',
     wallets: 'Ví & Thanh toán', refunds: 'Hoàn tiền', promos: 'Mã Ưu Đãi',
@@ -278,6 +288,149 @@ function getServiceType(id) {
   return SERVICE_TYPES.find(s => s.id === id) || null;
 }
 
+function getVehicleModel(id) {
+  return VEHICLE_MODELS.find(v => v.id === id) || null;
+}
+
+function isBikeCarVehicleModel(model) {
+  return ['BIKE', 'CAR'].includes(model?.serviceType);
+}
+
+function getServiceTypeVehicleModel(serviceType) {
+  if (!serviceType) return null;
+  return getVehicleModel(serviceType.vehicleModelId)
+    || VEHICLE_MODELS.find(v => v.pricingKey === serviceType.pricingKey && v.serviceType === serviceType.vehicleType)
+    || null;
+}
+
+function getServiceTypeDisplayName(serviceType) {
+  const model = getServiceTypeVehicleModel(serviceType);
+  return model?.name || serviceType?.name || '';
+}
+
+function getServiceTypeDisplayCode(serviceType) {
+  const model = getServiceTypeVehicleModel(serviceType);
+  return model?.code || serviceType?.code || serviceType?.id || '';
+}
+
+function getServiceTypeByVehicleModelId(vehicleModelId) {
+  return SERVICE_TYPES.find(s => s.vehicleModelId === vehicleModelId) || null;
+}
+
+function getRideVehicleModels(vehicleType = null, activeOnly = false) {
+  return VEHICLE_MODELS.filter(model =>
+    isBikeCarVehicleModel(model)
+    && (!vehicleType || model.serviceType === vehicleType)
+    && (!activeOnly || model.status === 'active')
+  );
+}
+
+function getVehicleModelTier(model) {
+  if (!model) return 'standard';
+  if (model.tier) return model.tier;
+  return /premium/i.test(`${model.name || ''} ${model.code || ''}`) ? 'premium' : 'standard';
+}
+
+function isPremiumVehicleModel(model) {
+  return getVehicleModelTier(model) === 'premium';
+}
+
+function getVehiclePermissionRule(sourceVehicleModelId) {
+  return VEHICLE_PERMISSION_RULES.find(rule => rule.sourceVehicleModelId === sourceVehicleModelId) || null;
+}
+
+const CAR_LARGE_SEAT_MIN = 6;
+const CAR_LARGE_SEAT_MAX = 7;
+
+function isLargeCarVehicleModel(model) {
+  const seats = Number(model?.seats || 0);
+  return model?.serviceType === 'CAR' && seats >= CAR_LARGE_SEAT_MIN && seats <= CAR_LARGE_SEAT_MAX;
+}
+
+function isStandardCarVehicleModel(model) {
+  const seats = Number(model?.seats || 0);
+  return model?.serviceType === 'CAR' && seats > 0 && seats < CAR_LARGE_SEAT_MIN;
+}
+
+function getAllowedVehicleModelIdsByDriverCapabilities(vehicleType, options = {}) {
+  const largeCarQualified = options.largeCarQualified === true;
+  const premiumQualified = options.premiumQualified === true;
+  return getRideVehicleModels(vehicleType, true)
+    .filter(model => {
+      if (model.serviceType === 'BIKE') return Number(model.seats || 1) <= 1;
+      if (model.serviceType !== 'CAR') return false;
+      return isStandardCarVehicleModel(model) || (largeCarQualified && isLargeCarVehicleModel(model));
+    })
+    .filter(model => premiumQualified || !isPremiumVehicleModel(model))
+    .sort((a, b) => {
+      const seatDelta = Number(b.seats || 0) - Number(a.seats || 0);
+      if (seatDelta) return seatDelta;
+      return Number(isPremiumVehicleModel(b)) - Number(isPremiumVehicleModel(a));
+    })
+    .map(model => model.id);
+}
+
+function getDefaultAllowedVehicleModelIds(sourceVehicleModelId, premiumQualified = false) {
+  const sourceModel = getVehicleModel(sourceVehicleModelId);
+  if (!isBikeCarVehicleModel(sourceModel)) return [];
+  return getAllowedVehicleModelIdsByDriverCapabilities(sourceModel.serviceType, {
+    largeCarQualified: isLargeCarVehicleModel(sourceModel),
+    premiumQualified
+  });
+}
+
+function getServiceTypeIdsByVehicleModelIds(vehicleModelIds) {
+  return [...new Set((vehicleModelIds || []).map(modelId => getServiceTypeByVehicleModelId(modelId)?.id).filter(Boolean))];
+}
+
+function isDriverLargeCarQualified(driver) {
+  if (!driver || driver.vehicleType !== 'CAR') return false;
+  if (driver.largeCarQualified != null) return driver.largeCarQualified === true;
+  const model = getVehicleModel(driver.vehicleModelId);
+  return Number(driver.vehicleSeats || model?.seats || 0) >= 6 || ['VM007', 'VM010'].includes(driver.vehicleModelId);
+}
+
+function resolveDriverVehicleModelIdFromQuickFlags(vehicleType, largeCarQualified = false, premiumQualified = false) {
+  const findModel = predicate => getRideVehicleModels(vehicleType, true).find(predicate)
+    || getRideVehicleModels(vehicleType, false).find(predicate)
+    || null;
+  if (vehicleType === 'BIKE') {
+    const model = findModel(model => Number(model.seats || 1) <= 1 && isPremiumVehicleModel(model) === premiumQualified);
+    return model?.id || (premiumQualified ? 'VM008' : 'VM005');
+  }
+  if (vehicleType === 'CAR') {
+    const model = findModel(model =>
+      (largeCarQualified ? isLargeCarVehicleModel(model) : isStandardCarVehicleModel(model))
+      && isPremiumVehicleModel(model) === premiumQualified
+    );
+    if (model) return model.id;
+    const fallbackModel = findModel(model => isStandardCarVehicleModel(model) && isPremiumVehicleModel(model) === premiumQualified)
+      || findModel(isStandardCarVehicleModel);
+    if (fallbackModel) return fallbackModel.id;
+    if (largeCarQualified && premiumQualified) return 'VM010';
+    if (largeCarQualified) return 'VM007';
+    if (premiumQualified) return 'VM009';
+    return 'VM006';
+  }
+  return null;
+}
+
+function getDriverVehicleModel(driver) {
+  if (!driver) return null;
+  if (driver.vehicleModelId) {
+    const model = getVehicleModel(driver.vehicleModelId);
+    if (model) return model;
+  }
+  const serviceType = SERVICE_TYPES.find(s =>
+    s.vehicleType === driver.vehicleType
+    && (!driver.serviceTypeIds || driver.serviceTypeIds.includes(s.id))
+    && (driver.vehicleType !== 'CAR' || Number(s.seats || 1) <= Number(driver.vehicleSeats || 4))
+  );
+  return getServiceTypeVehicleModel(serviceType)
+    || getRideVehicleModels(driver.vehicleType, true).find(model => driver.vehicleType !== 'CAR' || Number(model.seats || 1) <= Number(driver.vehicleSeats || 4))
+    || null;
+}
+
 function getServiceTypesForVehicle(vehicleType, activeOnly = false) {
   return SERVICE_TYPES.filter(s => s.vehicleType === vehicleType && (!activeOnly || s.status === 'active'));
 }
@@ -288,7 +441,7 @@ function getDefaultMatchingRadius(vehicleType, seats = 1, serviceCode = '') {
       ? { initialKm: 3, expandStepKm: 2, maxKm: 10 }
       : { initialKm: 2, expandStepKm: 2, maxKm: 10 };
   }
-  return seats >= 7
+  return seats >= 6
     ? { initialKm: 5, expandStepKm: 5, maxKm: 20 }
     : { initialKm: 3, expandStepKm: 3, maxKm: 15 };
 }
@@ -316,7 +469,28 @@ function buildMatchingRadiusRounds(config) {
 }
 
 function getDriverServiceTypeIds(driver) {
-  return Array.isArray(driver?.serviceTypeIds) ? driver.serviceTypeIds : [];
+  if (!driver) return [];
+  if (driver.permissionOverrideEnabled) {
+    const overrideIds = Array.isArray(driver.overrideServiceTypeIds) && driver.overrideServiceTypeIds.length
+      ? driver.overrideServiceTypeIds
+      : (Array.isArray(driver.serviceTypeIds) ? driver.serviceTypeIds : []);
+    return overrideIds.filter(id => SERVICE_TYPES.some(s => s.id === id));
+  }
+  const model = getDriverVehicleModel(driver);
+  const vehicleType = driver.vehicleType || model?.serviceType;
+  if (vehicleType) {
+    const premiumQualified = driver.premiumQualified ?? isPremiumVehicleModel(model);
+    const modelIds = getAllowedVehicleModelIdsByDriverCapabilities(vehicleType, {
+      largeCarQualified: isDriverLargeCarQualified(driver),
+      premiumQualified
+    });
+    return getServiceTypeIdsByVehicleModelIds(modelIds);
+  }
+  if (Array.isArray(driver?.serviceTypeIds)) return driver.serviceTypeIds;
+  if (Array.isArray(driver?.vehicleModelPermissionIds)) {
+    return driver.vehicleModelPermissionIds.map(id => getServiceTypeByVehicleModelId(id)?.id).filter(Boolean);
+  }
+  return [];
 }
 
 function driverCanRunServiceType(driver, serviceTypeId) {
@@ -324,12 +498,157 @@ function driverCanRunServiceType(driver, serviceTypeId) {
   return getDriverServiceTypeIds(driver).includes(serviceTypeId);
 }
 
-function getServiceTypeAvailableDrivers(serviceTypeId) {
-  return DRIVERS.filter(driver =>
-    driver.status === 'online' &&
-    !driver.currentAssignmentId &&
-    driverCanRunServiceType(driver, serviceTypeId)
-  );
+function syncDriverDerivedVehiclePermissions(driver) {
+  if (!driver) return [];
+  const serviceTypeIds = getDriverServiceTypeIds(driver);
+  driver.serviceTypeIds = serviceTypeIds;
+  driver.vehicleModelPermissionIds = serviceTypeIds
+    .map(serviceTypeId => getServiceType(serviceTypeId)?.vehicleModelId)
+    .filter(Boolean);
+  return serviceTypeIds;
+}
+
+function getDriverQuickClassificationText(driver) {
+  if (!driver) return '';
+  const parts = [VEHICLE_TYPES[driver.vehicleType]?.label || driver.vehicleType];
+  if (driver.vehicleType === 'CAR' && isDriverLargeCarQualified(driver)) parts.push('Ô tô 6–7 chỗ');
+  else if (driver.vehicleType === 'CAR') parts.push('Ô tô phổ thông');
+  else parts.push('Bike phổ thông');
+  if (driver.premiumQualified) parts.push('Premium');
+  return parts.join(' · ');
+}
+
+function parseAppDateTime(value) {
+  if (!value) return null;
+  const parsed = new Date(String(value).replace(' ', 'T'));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function vnDateKey(value = new Date()) {
+  const date = value instanceof Date ? value : parseAppDateTime(value);
+  if (!date) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(date);
+}
+
+function deterministicLocation(seed = '') {
+  let hash = 0;
+  String(seed).split('').forEach(ch => { hash = ((hash * 31) + ch.charCodeAt(0)) >>> 0; });
+  const angle = (hash % 360) * Math.PI / 180;
+  const distanceKm = 0.8 + ((hash >> 8) % 70) / 10;
+  return {
+    lat: DEFAULT_PICKUP_LOCATION.lat + (distanceKm / 111) * Math.cos(angle),
+    lng: DEFAULT_PICKUP_LOCATION.lng + (distanceKm / (111 * Math.cos(DEFAULT_PICKUP_LOCATION.lat * Math.PI / 180))) * Math.sin(angle)
+  };
+}
+
+function resolvePickupLocation(address) {
+  return /vị trí hiện tại/i.test(String(address || '')) ? { ...DEFAULT_PICKUP_LOCATION } : deterministicLocation(address);
+}
+
+function getBookingPickupLocation(booking) {
+  if (!booking) return { ...DEFAULT_PICKUP_LOCATION };
+  if (Number.isFinite(Number(booking.pickupLat)) && Number.isFinite(Number(booking.pickupLng))) {
+    return { lat: Number(booking.pickupLat), lng: Number(booking.pickupLng) };
+  }
+  const point = deterministicLocation(booking.pickup || booking.id);
+  booking.pickupLat = point.lat;
+  booking.pickupLng = point.lng;
+  return point;
+}
+
+function distanceKmBetween(a, b) {
+  if (!a || !b) return Infinity;
+  const lat1 = Number(a.lat); const lng1 = Number(a.lng);
+  const lat2 = Number(b.lat); const lng2 = Number(b.lng);
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return Infinity;
+  const rad = n => n * Math.PI / 180;
+  const dLat = rad(lat2 - lat1); const dLng = rad(lng2 - lng1);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function getDriverActiveOffer(driverId, excludeBookingId = null) {
+  return FULFILLMENT_TASKS.find(task => {
+    if (task.driverId !== driverId || task.status !== 'ASSIGNED' || task.acceptedAt) return false;
+    const booking = BOOKINGS.find(b => b.id === task.bookingId);
+    return booking && booking.id !== excludeBookingId && booking.bookingStatus !== 'CANCELLED';
+  }) || null;
+}
+
+function getDriverAvailability(driver, serviceTypeId, pickupLocation, radiusKm, options = {}) {
+  const reasons = [];
+  if (!driver || driver.status !== 'online') reasons.push(driver?.status === 'busy' ? 'Đang bận' : 'Offline');
+  if (driver?.currentAssignmentId) reasons.push('Đang có chuyến');
+  if (driver && getDriverActiveOffer(driver.id, options.excludeBookingId)) reasons.push('Đang có offer khác');
+  if (driver && !driverCanRunServiceType(driver, serviceTypeId)) reasons.push('Chưa được phép nhận loại xe này');
+  if (driver && driver.profileApproved === false) reasons.push('Hồ sơ chưa hợp lệ');
+  if (driver && driver.documentsValid === false) reasons.push('Giấy tờ hết hạn');
+  if (driver && driver.gpsEnabled === false) reasons.push('GPS đang tắt');
+
+  const lastLocation = parseAppDateTime(driver?.lastLocationAt);
+  const lastHeartbeat = parseAppDateTime(driver?.lastHeartbeatAt);
+  const locationAgeMs = lastLocation ? Date.now() - lastLocation.getTime() : Infinity;
+  const heartbeatAgeMs = lastHeartbeat ? Date.now() - lastHeartbeat.getTime() : Infinity;
+  if (locationAgeMs > DRIVER_LOCATION_STALE_MS) reasons.push('Vị trí quá 15 giây');
+  if (heartbeatAgeMs > DRIVER_LOCATION_STALE_MS) reasons.push('Mất heartbeat');
+
+  const driverLocation = driver ? { lat: Number(driver.lat), lng: Number(driver.lng) } : null;
+  const distanceKm = distanceKmBetween(driverLocation, pickupLocation || DEFAULT_PICKUP_LOCATION);
+  if (!options.ignoreRadius && Number.isFinite(Number(radiusKm)) && distanceKm > Number(radiusKm)) {
+    reasons.push(`Ngoài bán kính ${Number(radiusKm)} km`);
+  }
+  return { available: reasons.length === 0, reasons, distanceKm, locationAgeMs, heartbeatAgeMs };
+}
+
+function getServiceTypeAvailableDrivers(serviceTypeId, pickupLocation = DEFAULT_PICKUP_LOCATION, radiusKm = null) {
+  const serviceType = getServiceType(serviceTypeId);
+  const config = serviceType ? getMatchingRadiusConfig(serviceType) : null;
+  const radius = radiusKm == null ? config?.initialKm : radiusKm;
+  return DRIVERS.filter(driver => getDriverAvailability(driver, serviceTypeId, pickupLocation, radius).available);
+}
+
+function getBookingWaitSeconds(booking) {
+  if (Number.isFinite(Number(booking?.createdAtEpoch))) return Math.max(0, Math.floor((Date.now() - Number(booking.createdAtEpoch)) / 1000));
+  const created = parseAppDateTime(booking?.createdAt);
+  return created ? Math.max(0, Math.floor((Date.now() - created.getTime()) / 1000)) : 0;
+}
+
+function formatWaitDuration(seconds) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  if (safe < 60) return `${safe} giây`;
+  const minutes = Math.floor(safe / 60);
+  return minutes < 60 ? `${minutes} phút` : `${Math.floor(minutes / 60)} giờ ${minutes % 60} phút`;
+}
+
+function getDriverCompletedToday(driverId) {
+  const today = vnDateKey();
+  return FULFILLMENT_TASKS.filter(t => t.driverId === driverId && t.status === 'COMPLETED' && vnDateKey(t.completedAt) === today).length;
+}
+
+function getDriverRatingCount(driver) {
+  return Number(driver?.ratingCount) || 0;
+}
+
+function getManualDispatchState(booking) {
+  if (!booking || !['BIKE', 'CAR'].includes(booking.bookingType)) return { allowed: true, reason: '' };
+  const serviceType = getServiceType(booking.serviceTypeId);
+  if (!serviceType) return { allowed: false, reason: 'Chưa có loại xe' };
+  const pickup = getBookingPickupLocation(booking);
+  const config = getMatchingRadiusConfig(serviceType);
+  const inRadius = getServiceTypeAvailableDrivers(serviceType.id, pickup, config.initialKm);
+  const waitSeconds = getBookingWaitSeconds(booking);
+  if (!inRadius.length) return { allowed: true, reason: 'Không có tài xế khả dụng trong bán kính ban đầu', waitSeconds, inRadiusCount: 0 };
+  if (waitSeconds >= MANUAL_DISPATCH_WAIT_SECONDS) {
+    return { allowed: true, reason: `Đã chờ quá ${MANUAL_DISPATCH_WAIT_SECONDS} giây`, waitSeconds, inRadiusCount: inRadius.length };
+  }
+  return {
+    allowed: false,
+    reason: `Cho phép điều phối sau ${MANUAL_DISPATCH_WAIT_SECONDS - waitSeconds} giây`,
+    waitSeconds,
+    inRadiusCount: inRadius.length
+  };
 }
 
 function getCommissionRate(vehicleType) {
@@ -963,6 +1282,7 @@ function createOrUpdateFulfillmentTask(booking, driverId, vehicleId, traceId) {
     task.vehicleId = vehicleId || null;
     task.status = 'ASSIGNED';
     task.assignedAt = nowStr(); task.startedAt = null; task.completedAt = null;
+    task.acceptedAt = null; task.offerExpiresAt = null; task.offerStatus = null;
   }
   createAuditLog({
     action: 'fulfillment.assign', target: task.id, traceId,
@@ -1119,14 +1439,88 @@ function generateTripsFromSchedule(schedule, opts = {}) {
   return out;
 }
 
-// Bổ sung/migrate dữ liệu loại dịch vụ Bike/Car cho các localStorage snapshot cũ.
+// Bổ sung/migrate dữ liệu loại xe Bike/Car cho các localStorage snapshot cũ.
 function ensureBikeCarServiceTypeData() {
+  const clonePricing = key => JSON.parse(JSON.stringify(PRICING[key] || PRICING.CAR || PRICING.BIKE || {}));
   if (!PRICING.BIKE_ECONOMY && PRICING.BIKE) {
     PRICING.BIKE_ECONOMY = { ...JSON.parse(JSON.stringify(PRICING.BIKE)), label: 'Bike Tiết kiệm', icon: '🛵' };
   }
   if (!PRICING.CAR_7 && PRICING.CAR) {
     PRICING.CAR_7 = { ...JSON.parse(JSON.stringify(PRICING.CAR)), label: 'Car 7 chỗ', icon: '🚙' };
   }
+  if (PRICING.BIKE_ECONOMY) {
+    PRICING.BIKE_ECONOMY.label = 'Bike Premium';
+    PRICING.BIKE_ECONOMY.icon = '🛵';
+  }
+  if (PRICING.CAR_7) {
+    PRICING.CAR_7.label = 'Car 06 phổ thông';
+    PRICING.CAR_7.icon = '🚙';
+  }
+  if (!PRICING.CAR_4_PREMIUM) {
+    PRICING.CAR_4_PREMIUM = {
+      ...clonePricing('CAR'),
+      label: 'Car 4 Premium',
+      icon: '🚘',
+      km: [
+        { id: 'KM-C4P0', fromKm: 0, toKm: 1, pricePerKm: 30000, note: 'Giá mở cửa (1km đầu)' },
+        { id: 'KM-C4P1', fromKm: 1, toKm: 20, pricePerKm: 16000, note: 'Từ km 1 → km 20' },
+        { id: 'KM-C4P2', fromKm: 20, toKm: null, pricePerKm: 14000, note: 'Trên 20 km' },
+      ]
+    };
+  }
+  if (!PRICING.CAR_06_PREMIUM) {
+    PRICING.CAR_06_PREMIUM = {
+      ...clonePricing('CAR_7'),
+      label: 'Car 06 Premium',
+      icon: '🚙',
+      km: [
+        { id: 'KM-C6P0', fromKm: 0, toKm: 1, pricePerKm: 35000, note: 'Giá mở cửa (1km đầu)' },
+        { id: 'KM-C6P1', fromKm: 1, toKm: 20, pricePerKm: 18000, note: 'Từ km 1 → km 20' },
+        { id: 'KM-C6P2', fromKm: 20, toKm: null, pricePerKm: 15000, note: 'Trên 20 km' },
+      ]
+    };
+  }
+
+  const vehicleModelSeeds = [
+    { id: 'VM005', code: 'B-TK', name: 'Bike phổ thông', serviceType: 'BIKE', category: 'motorbike', tier: 'standard', seats: 1, status: 'active', luggage: '', description: 'Xe máy tiêu chuẩn cho nhu cầu di chuyển hằng ngày', pricingKey: 'BIKE' },
+    { id: 'VM008', code: 'B-P', name: 'Bike Premium', serviceType: 'BIKE', category: 'motorbike', tier: 'premium', seats: 1, status: 'active', luggage: '', description: 'Xe máy chất lượng cao hơn, tài xế/xe được chọn lọc', pricingKey: 'BIKE_ECONOMY' },
+    { id: 'VM006', code: 'CTK-04-01', name: 'Car 04 phổ thông', serviceType: 'CAR', category: 'car', tier: 'standard', seats: 4, status: 'active', luggage: '2 vali', description: 'Ô tô 4 chỗ phổ thông, tối đa 4 khách', pricingKey: 'CAR' },
+    { id: 'VM009', code: 'CP-04-01', name: 'Car 4 Premium', serviceType: 'CAR', category: 'car', tier: 'premium', seats: 4, status: 'active', luggage: '2 vali', description: 'Ô tô 4 chỗ chất lượng cao hơn', pricingKey: 'CAR_4_PREMIUM' },
+    { id: 'VM007', code: 'CTK-06-01', name: 'Car 06 phổ thông', serviceType: 'CAR', category: 'car', tier: 'standard', seats: 6, status: 'active', luggage: '3 vali', description: 'Ô tô 6/7 chỗ phổ thông, tối đa 6 khách', pricingKey: 'CAR_7' },
+    { id: 'VM010', code: 'CP-06', name: 'Car 06 Premium', serviceType: 'CAR', category: 'car', tier: 'premium', seats: 6, status: 'active', luggage: '3 vali', description: 'Ô tô 6/7 chỗ chất lượng cao hơn', pricingKey: 'CAR_06_PREMIUM' },
+  ];
+  vehicleModelSeeds.forEach(seed => {
+    const existing = VEHICLE_MODELS.find(model => model.id === seed.id);
+    if (existing) Object.assign(existing, { ...seed, status: existing.status || seed.status });
+    else VEHICLE_MODELS.push({ ...seed });
+  });
+
+  const serviceTypeSeeds = [
+    { id: 'SVT001', code: 'BIKE_STANDARD', name: 'Bike phổ thông', icon: '🏍️', vehicleModelId: 'VM005', vehicleType: 'BIKE', seats: 1, description: 'Xe máy tiêu chuẩn, phù hợp nhu cầu di chuyển hằng ngày', pricingKey: 'BIKE', matchingRadius: { initialKm: 2, expandStepKm: 2, maxKm: 10 }, status: 'active' },
+    { id: 'SVT002', code: 'BIKE_PREMIUM', name: 'Bike Premium', icon: '🛵', vehicleModelId: 'VM008', vehicleType: 'BIKE', seats: 1, description: 'Xe máy chất lượng cao hơn, tài xế/xe được chọn lọc', pricingKey: 'BIKE_ECONOMY', matchingRadius: { initialKm: 3, expandStepKm: 2, maxKm: 10 }, status: 'active' },
+    { id: 'SVT003', code: 'CAR_04_STANDARD', name: 'Car 04 phổ thông', icon: '🚗', vehicleModelId: 'VM006', vehicleType: 'CAR', seats: 4, description: 'Ô tô 4 chỗ phổ thông, tối đa 4 khách', pricingKey: 'CAR', matchingRadius: { initialKm: 3, expandStepKm: 3, maxKm: 15 }, status: 'active' },
+    { id: 'SVT004', code: 'CAR_06_STANDARD', name: 'Car 06 phổ thông', icon: '🚙', vehicleModelId: 'VM007', vehicleType: 'CAR', seats: 6, description: 'Ô tô 6/7 chỗ phổ thông, tối đa 6 khách', pricingKey: 'CAR_7', matchingRadius: { initialKm: 5, expandStepKm: 5, maxKm: 20 }, status: 'active' },
+    { id: 'SVT005', code: 'CAR_04_PREMIUM', name: 'Car 4 Premium', icon: '🚘', vehicleModelId: 'VM009', vehicleType: 'CAR', seats: 4, description: 'Ô tô 4 chỗ chất lượng cao hơn', pricingKey: 'CAR_4_PREMIUM', matchingRadius: { initialKm: 3, expandStepKm: 3, maxKm: 15 }, status: 'active' },
+    { id: 'SVT006', code: 'CAR_06_PREMIUM', name: 'Car 06 Premium', icon: '🚙', vehicleModelId: 'VM010', vehicleType: 'CAR', seats: 6, description: 'Ô tô 6/7 chỗ chất lượng cao hơn', pricingKey: 'CAR_06_PREMIUM', matchingRadius: { initialKm: 5, expandStepKm: 5, maxKm: 20 }, status: 'active' },
+  ];
+  serviceTypeSeeds.forEach(seed => {
+    const existing = SERVICE_TYPES.find(serviceType => serviceType.id === seed.id);
+    if (existing) {
+      Object.assign(existing, { ...seed, status: existing.status || seed.status, matchingRadius: existing.matchingRadius || seed.matchingRadius });
+    } else {
+      SERVICE_TYPES.push({ ...seed });
+    }
+  });
+  SERVICE_TYPES.forEach(serviceType => {
+    const model = getServiceTypeVehicleModel(serviceType);
+    if (!model) return;
+    serviceType.name = model.name;
+    serviceType.vehicleType = model.serviceType;
+    serviceType.seats = model.seats;
+    serviceType.pricingKey = model.pricingKey || serviceType.pricingKey;
+    serviceType.status = model.status === 'active' ? 'active' : 'inactive';
+    serviceType.description = model.description || serviceType.description;
+  });
 
   // Chiết khấu chỉ có 1 cấu hình chung cho BIKE và 1 cấu hình chung cho CAR.
   for (let i = COMMISSIONS.length - 1; i >= 0; i--) {
@@ -1150,21 +1544,117 @@ function ensureBikeCarServiceTypeData() {
     if (!s.matchingRadius) s.matchingRadius = getDefaultMatchingRadius(s.vehicleType, s.seats, s.code);
   });
 
-  const sevenSeatDriverIds = new Set(['DRV004', 'DRV007']);
-  DRIVERS.forEach(d => {
-    if (!d.vehicleSeats) d.vehicleSeats = d.vehicleType === 'CAR' ? (sevenSeatDriverIds.has(d.id) ? 7 : 4) : 1;
-    if (!Array.isArray(d.serviceTypeIds)) {
-      d.serviceTypeIds = SERVICE_TYPES
-        .filter(s => s.vehicleType === d.vehicleType && (s.vehicleType !== 'CAR' || s.seats <= d.vehicleSeats))
-        .map(s => s.id);
+  const permissionRuleSeeds = [
+    { id: 'VPR001', sourceVehicleModelId: 'VM005', allowedVehicleModelIds: ['VM005'], note: 'Bike phổ thông chỉ nhận Bike phổ thông' },
+    { id: 'VPR002', sourceVehicleModelId: 'VM008', allowedVehicleModelIds: ['VM008', 'VM005'], note: 'Bike Premium có thể nhận Premium và phổ thông' },
+    { id: 'VPR003', sourceVehicleModelId: 'VM006', allowedVehicleModelIds: ['VM006'], note: 'Car 04 phổ thông chỉ nhận Car 04 phổ thông' },
+    { id: 'VPR004', sourceVehicleModelId: 'VM009', allowedVehicleModelIds: ['VM009', 'VM006'], note: 'Car 4 Premium có thể nhận Premium và phổ thông cùng số ghế' },
+    { id: 'VPR005', sourceVehicleModelId: 'VM007', allowedVehicleModelIds: ['VM007', 'VM006'], note: 'Car 06 phổ thông có thể nhận Car 06 và Car 04 phổ thông' },
+    { id: 'VPR006', sourceVehicleModelId: 'VM010', allowedVehicleModelIds: ['VM010', 'VM007', 'VM009', 'VM006'], note: 'Car 06 Premium có thể nhận các loại Car phù hợp số ghế' },
+  ];
+  permissionRuleSeeds.forEach(seed => {
+    const existing = VEHICLE_PERMISSION_RULES.find(rule => rule.id === seed.id || rule.sourceVehicleModelId === seed.sourceVehicleModelId);
+    if (existing) {
+      Object.assign(existing, {
+        id: existing.id || seed.id,
+        sourceVehicleModelId: seed.sourceVehicleModelId,
+        allowedVehicleModelIds: Array.isArray(existing.allowedVehicleModelIds) && existing.allowedVehicleModelIds.length ? existing.allowedVehicleModelIds : seed.allowedVehicleModelIds,
+        note: existing.note || seed.note
+      });
     } else {
-      d.serviceTypeIds = d.serviceTypeIds.filter(id => SERVICE_TYPES.some(s => s.id === id));
+      VEHICLE_PERMISSION_RULES.push({ ...seed });
     }
   });
 
+  const sevenSeatDriverIds = new Set(['DRV004', 'DRV007']);
+  const nowIso = new Date().toISOString();
+  const demoDistanceKm = { DRV001: 0.8, DRV003: 1.4, DRV008: 3.2, DRV010: 4.5, DRV002: 1.8, DRV004: 4.2, DRV007: 2.4, DRV009: 6.5 };
+  DRIVERS.forEach((d, index) => {
+    if (!d.vehicleSeats) d.vehicleSeats = d.vehicleType === 'CAR' ? (sevenSeatDriverIds.has(d.id) ? 6 : 4) : 1;
+    if (!d.vehicleModelId || !getVehicleModel(d.vehicleModelId) || getVehicleModel(d.vehicleModelId).serviceType !== d.vehicleType) {
+      if (d.vehicleType === 'BIKE') d.vehicleModelId = 'VM005';
+      else d.vehicleModelId = Number(d.vehicleSeats || 4) >= 6 ? 'VM007' : 'VM006';
+    }
+    const driverModel = getVehicleModel(d.vehicleModelId);
+    if (driverModel?.seats) d.vehicleSeats = Number(driverModel.seats);
+    if (d.profileApproved == null) d.profileApproved = true;
+    if (d.documentsValid == null) d.documentsValid = true;
+    if (d.ratingCount == null) d.ratingCount = Math.max(1, Math.round((Number(d.trips) || 0) * 0.65));
+    if (d.gpsEnabled == null) d.gpsEnabled = d.status !== 'offline';
+    if (!Number.isFinite(Number(d.lat)) || !Number.isFinite(Number(d.lng))) {
+      const point = deterministicLocation(`${d.id}-${index}`);
+      d.lat = point.lat; d.lng = point.lng;
+    }
+    if (d.operationalLocationSeedVersion !== 1) {
+      const distance = demoDistanceKm[d.id] || (1 + index);
+      const angle = (index * 47) * Math.PI / 180;
+      d.lat = DEFAULT_PICKUP_LOCATION.lat + (distance / 111) * Math.cos(angle);
+      d.lng = DEFAULT_PICKUP_LOCATION.lng + (distance / (111 * Math.cos(DEFAULT_PICKUP_LOCATION.lat * Math.PI / 180))) * Math.sin(angle);
+      d.operationalLocationSeedVersion = 1;
+    }
+    if (d.status === 'online') {
+      d.gpsEnabled = d.gpsEnabled !== false;
+      if (d.gpsEnabled) {
+        d.lastHeartbeatAt = nowIso;
+        d.lastLocationAt = nowIso;
+      }
+    }
+    if (d.largeCarQualified == null) d.largeCarQualified = isDriverLargeCarQualified(d);
+    if (d.premiumQualified == null) d.premiumQualified = isPremiumVehicleModel(driverModel);
+    const normalizedVehicleModelId = resolveDriverVehicleModelIdFromQuickFlags(d.vehicleType, d.largeCarQualified, d.premiumQualified);
+    if (normalizedVehicleModelId && getVehicleModel(normalizedVehicleModelId)) {
+      d.vehicleModelId = normalizedVehicleModelId;
+      const normalizedModel = getVehicleModel(normalizedVehicleModelId);
+      if (normalizedModel?.seats) d.vehicleSeats = Number(normalizedModel.seats);
+    }
+    d.permissionOverrideEnabled = d.permissionOverrideEnabled === true;
+    if (d.permissionOverrideEnabled) {
+      d.overrideServiceTypeIds = (Array.isArray(d.overrideServiceTypeIds) && d.overrideServiceTypeIds.length ? d.overrideServiceTypeIds : (d.serviceTypeIds || []))
+        .filter(id => SERVICE_TYPES.some(s => s.id === id));
+    } else {
+      d.overrideServiceTypeIds = [];
+    }
+    d.serviceTypePermissionVersion = 3;
+    syncDriverDerivedVehiclePermissions(d);
+  });
+
   BOOKINGS.forEach(b => {
-    if (b.serviceTypeId || (b.bookingType !== 'BIKE' && b.bookingType !== 'CAR')) return;
-    b.serviceTypeId = b.bookingType === 'BIKE' ? 'SVT001' : 'SVT003';
+    if (b.bookingType !== 'BIKE' && b.bookingType !== 'CAR') return;
+    if (!b.serviceTypeId) b.serviceTypeId = b.bookingType === 'BIKE' ? 'SVT001' : 'SVT003';
+    getBookingPickupLocation(b);
+  });
+
+  // Dữ liệu hoàn thành cũ đã được tính vào tổng chuyến seed; đánh dấu để không cộng lại.
+  FULFILLMENT_TASKS.forEach(t => {
+    if (t.status === 'COMPLETED' && t.tripCounted == null) t.tripCounted = true;
+  });
+}
+
+// Bổ sung dữ liệu địa điểm phục vụ cho cả snapshot localStorage đã tạo trước đây.
+// Không reset store để tránh làm mất các đơn, chuyến và cấu hình người dùng đã chỉnh.
+function ensureIntercityServiceLocationData() {
+  const requiredRoutes = [
+    { id: 'INT014', originId: 'DL', destinationId: 'HCM', origin: 'Đà Lạt', destination: 'TP.HCM', operators: ['PTR001','PTR002'], priceFrom: 280000, duration: '7h', distance: 305, schedules: 4 },
+    { id: 'INT015', originId: 'DUL', destinationId: 'BDU', origin: 'Đức Linh', destination: 'Bình Dương', operators: ['PTR005'], priceFrom: 190000, duration: '4h', distance: 175, schedules: 2 },
+    { id: 'INT016', originId: 'VT', destinationId: 'PT', origin: 'Vũng Tàu', destination: 'Phan Thiết', operators: ['PTR005'], priceFrom: 220000, duration: '4h30', distance: 210, schedules: 3 }
+  ];
+  requiredRoutes.forEach(route => {
+    if (!INTERCITY_ROUTES.some(item => item.id === route.id)) INTERCITY_ROUTES.push(route);
+  });
+
+  const requiredTrips = [
+    { id: 'TRP105', routeId: 'INT014', operatorId: 'PTR002', operatorName: 'Nhà xe Thành Bưởi', departureTime: '08:00', arrivalTime: '15:00', vehicleType: 'Giường nằm 36 chỗ', price: 280000, seatsTotal: 36, seatsAvailable: 18, status: 'available', date: '2026-07-07' },
+    { id: 'TRP106', routeId: 'INT015', operatorId: 'PTR005', operatorName: 'Nhà xe Việt Thanh', departureTime: '07:30', arrivalTime: '11:30', vehicleType: 'Ghế ngồi 16 chỗ', price: 190000, seatsTotal: 16, seatsAvailable: 10, status: 'available', date: '2026-07-07' },
+    { id: 'TRP107', routeId: 'INT016', operatorId: 'PTR005', operatorName: 'Nhà xe Việt Thanh', departureTime: '09:00', arrivalTime: '13:30', vehicleType: 'Ghế ngồi 16 chỗ', price: 220000, seatsTotal: 16, seatsAvailable: 9, status: 'available', date: '2026-07-07' }
+  ];
+  requiredTrips.forEach(trip => {
+    const existingTrip = INTERCITY_TRIPS.find(item => item.id === trip.id);
+    if (!existingTrip) {
+      // Snapshot cũ chưa có vé cho chuyến migration nên bắt đầu với toàn bộ ghế trống.
+      INTERCITY_TRIPS.push({ ...trip, seatsAvailable: trip.seatsTotal });
+    } else if (!BOOKINGS.some(booking => booking.tripId === trip.id)) {
+      existingTrip.seatsAvailable = existingTrip.seatsTotal;
+    }
   });
 }
 
@@ -1173,7 +1663,7 @@ function healData() {
   ensureBikeCarServiceTypeData();
   normalizeRegistrationPricing();
 
-  // 1. currentAssignmentId trỏ về FT IN_PROGRESS (đang chạy thực), không tính FT ASSIGNED tương lai
+  // 1. currentAssignmentId trỏ về chuyến đang chạy hoặc offer đã được tài xế nhận.
   DRIVERS.forEach(d => { d.currentAssignmentId = null; });
   if (typeof INTERCITY_DRIVERS !== 'undefined') {
     INTERCITY_DRIVERS.forEach(d => { d.currentAssignmentId = null; });
@@ -1182,7 +1672,7 @@ function healData() {
     INTERCITY_VEHICLES.forEach(v => { v.currentAssignmentId = null; });
   }
   FULFILLMENT_TASKS.forEach(t => {
-    if (t.status !== 'IN_PROGRESS') return;
+    if (t.status !== 'IN_PROGRESS' && !(t.status === 'ASSIGNED' && t.acceptedAt)) return;
     const d = findDriver(t.driverId);
     if (d) d.currentAssignmentId = t.id;
     if (t.vehicleId && typeof INTERCITY_VEHICLES !== 'undefined') {
@@ -1822,20 +2312,141 @@ function renderVehicleModels() {
   const body = document.getElementById('vehicle-models-table-body');
   if (!body) return;
   const serviceLabels = { BIKE: '🏍️ Xe máy', CAR: '🚗 Xe hơi', INTERCITY: '🚌 Liên tỉnh' };
-  body.innerHTML = VEHICLE_MODELS.filter(v => v.serviceType === 'INTERCITY').map(v => {
+  const codeFilter = document.getElementById('vehicle-model-code-filter')?.value?.trim().toLowerCase() || '';
+  const nameFilter = document.getElementById('vehicle-model-name-filter')?.value?.trim().toLowerCase() || '';
+  const serviceFilter = document.getElementById('vehicle-model-service-filter')?.value || '';
+  let models = VEHICLE_MODELS.slice();
+  if (codeFilter) models = models.filter(v => String(v.code || v.id).toLowerCase().includes(codeFilter));
+  if (nameFilter) models = models.filter(v => String(v.name || '').toLowerCase().includes(nameFilter));
+  if (serviceFilter) models = models.filter(v => v.serviceType === serviceFilter);
+  renderVehiclePermissionRuleSummary(serviceFilter);
+  body.innerHTML = models.map((v, index) => {
     const cat = VEHICLE_CATEGORIES[v.category] || { label: v.category, icon: '' };
+    const st = isBikeCarVehicleModel(v) ? getServiceTypeByVehicleModelId(v.id) : null;
     return `<tr>
-      <td><span class="text-accent fw-600">${v.id}</span></td>
+      <td>${index + 1}</td>
+      <td><span class="text-accent fw-600">${esc(v.code || v.id)}</span><div class="text-muted" style="font-size:11px">${esc(v.id)}</div></td>
       <td class="fw-600">${v.name}</td>
-      <td>${serviceLabels[v.serviceType] || v.serviceType}</td>
-      <td>${cat.icon} ${cat.label}</td>
+      <td><span class="badge badge-accepted">${serviceLabels[v.serviceType] || v.serviceType}</span></td>
+      <td><span class="badge badge-pending">${cat.icon} ${cat.label}</span></td>
       <td class="fw-600">${v.seats}</td>
-      <td class="text-muted">${v.luggage || '—'}</td>
-      <td class="text-muted">${v.description || '—'}</td>
-      <td><span class="badge badge-${v.status==='active'?'active':'expired'}">${v.status==='active'?'Hoạt động':'Tạm ngừng'}</span></td>
-      <td><button class="btn btn-sm btn-outline" onclick="deleteVehicleModel('${v.id}')">🗑️</button></td>
+      <td><span class="badge badge-${v.status==='active'?'active':'expired'}">${v.status==='active'?'Hoạt động':'Tạm dừng'}</span></td>
+      <td><div class="flex-center">${st ? `<button class="btn btn-sm btn-outline" onclick="openVehicleModelPricing('${v.id}')">💵 Giá</button><button class="btn btn-sm btn-outline" onclick="openMatchingRadiusModal('${st.id}')">📍 Bán kính</button>` : ''}<button class="btn btn-sm btn-outline" onclick="deleteVehicleModel('${v.id}')">🗑️</button></div></td>
     </tr>`;
+  }).join('') || '<tr><td colspan="8"><div class="empty-state"><div class="empty-state-text">Không tìm thấy loại xe phù hợp</div></div></td></tr>';
+}
+
+function renderVehiclePermissionRuleSummary(serviceFilter = '') {
+  const host = document.getElementById('vehicle-permission-rule-summary');
+  if (!host) return;
+  if (serviceFilter === 'INTERCITY') {
+    host.innerHTML = '';
+    host.style.display = 'none';
+    return;
+  }
+  const models = getRideVehicleModels(['BIKE', 'CAR'].includes(serviceFilter) ? serviceFilter : null, false);
+  host.style.display = models.length ? 'grid' : 'none';
+  host.innerHTML = models.map(model => {
+    const allowedIds = getDefaultAllowedVehicleModelIds(model.id, isPremiumVehicleModel(model));
+    const allowedHtml = allowedIds.map(modelId => {
+      const allowedModel = getVehicleModel(modelId);
+      if (!allowedModel) return '';
+      const premiumSuffix = isPremiumVehicleModel(allowedModel) ? ' · cần đủ chuẩn Premium' : '';
+      return `<span class="badge ${isPremiumVehicleModel(allowedModel) ? 'badge-pending' : 'badge-accepted'}">${esc(allowedModel.name)}${premiumSuffix}</span>`;
+    }).join('');
+    const note = model.serviceType === 'CAR'
+      ? 'Xe hơi được suy ra theo số ghế của Loại xe: dưới 6 là nhóm 4 chỗ; từ 6–7 là nhóm 6–7 chỗ.'
+      : 'Xe máy được suy ra theo nhóm Bike và điều kiện Premium.';
+    return `<div class="vehicle-rule-card">
+      <b>${esc(model.name)} → được nhận</b>
+      <div>${allowedHtml || '<span class="text-muted">Chưa có rule</span>'}</div>
+      <small>${esc(note)}</small>
+    </div>`;
   }).join('');
+}
+
+function onVehicleModelServiceTypeChange() {
+  const serviceType = document.getElementById('vm-service-type').value;
+  const category = document.getElementById('vm-category');
+  const seats = document.getElementById('vm-seats');
+  const luggage = document.getElementById('vm-luggage');
+  if (serviceType === 'BIKE') {
+    category.value = 'motorbike';
+    seats.value = seats.value || 1;
+    luggage.value = '';
+  } else if (serviceType === 'CAR') {
+    category.value = 'car';
+    seats.value = seats.value || 3;
+    luggage.value = luggage.value || '2 vali';
+  } else {
+    category.value = ['motorbike', 'car'].includes(category.value) ? 'seat' : category.value;
+    seats.value = seats.value || 22;
+    luggage.value = luggage.value || '20kg/khách';
+  }
+}
+
+function slugForConfigKey(value) {
+  const ascii = String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return ascii || 'MODEL';
+}
+
+function createPricingProfileForVehicleModel(model) {
+  const baseKey = model.serviceType === 'BIKE' ? 'BIKE' : 'CAR';
+  const base = PRICING[baseKey] || { label: model.name, icon: model.serviceType === 'BIKE' ? '🏍️' : '🚗', mode: 'km', km: [], timeSlot: [], period: [] };
+  let key = `${model.serviceType}_${slugForConfigKey(model.code || model.id)}`;
+  let suffix = 1;
+  while (PRICING[key]) {
+    suffix += 1;
+    key = `${model.serviceType}_${slugForConfigKey(model.code || model.id)}_${suffix}`;
+  }
+  PRICING[key] = {
+    ...JSON.parse(JSON.stringify(base)),
+    label: model.name,
+    icon: model.serviceType === 'BIKE' ? '🏍️' : '🚗'
+  };
+  return key;
+}
+
+function createServiceTypeFromVehicleModel(model) {
+  if (!isBikeCarVehicleModel(model)) return null;
+  const existing = getServiceTypeByVehicleModelId(model.id);
+  const payload = {
+    code: slugForConfigKey(model.code || model.id),
+    name: model.name,
+    icon: model.serviceType === 'BIKE' ? '🏍️' : (Number(model.seats || 1) >= 6 ? '🚙' : '🚗'),
+    vehicleModelId: model.id,
+    vehicleType: model.serviceType,
+    seats: Number(model.seats) || 1,
+    description: model.description || '',
+    pricingKey: model.pricingKey || createPricingProfileForVehicleModel(model),
+    matchingRadius: getDefaultMatchingRadius(model.serviceType, Number(model.seats) || 1, model.code || ''),
+    status: model.status === 'active' ? 'active' : 'inactive'
+  };
+  if (existing) {
+    Object.assign(existing, payload, { matchingRadius: existing.matchingRadius || payload.matchingRadius });
+    return existing;
+  }
+  const serviceType = { id: genId('SVT', SERVICE_TYPES), ...payload };
+  SERVICE_TYPES.push(serviceType);
+  return serviceType;
+}
+
+function openVehicleModelPricing(vehicleModelId) {
+  const model = getVehicleModel(vehicleModelId);
+  const serviceType = getServiceTypeByVehicleModelId(vehicleModelId);
+  if (!model || !serviceType) return;
+  selectedPricingKeyByGroup[model.serviceType] = serviceType.pricingKey;
+  navigateTo('commissions');
+  const commissionTab = document.querySelector('#page-commissions > .tabs .tab-btn[data-tab="pricing"]');
+  switchCommissionTab('pricing', commissionTab);
+  const pricingTab = document.querySelector(`#pricing-sub-tabs .tab-btn[data-ptab="${model.serviceType}"]`);
+  if (pricingTab) switchPricingTab(model.serviceType, pricingTab);
+  else renderPricingPanel(model.serviceType);
 }
 
 function renderStops() {
@@ -1853,14 +2464,15 @@ function renderStops() {
 
 // ===== Vehicle Model CRUD =====
 function openVehicleModelCreate() {
-  ['vm-name','vm-seats','vm-luggage','vm-description'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('vm-service-type').value = 'INTERCITY';
-  document.getElementById('vm-category').value = 'seat';
+  ['vm-code','vm-name','vm-seats','vm-luggage','vm-description'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('vm-service-type').value = 'BIKE';
+  onVehicleModelServiceTypeChange();
   document.getElementById('vm-status').value = 'active';
   openModal('vehicle-model-modal');
 }
 
 function createVehicleModel() {
+  const code = document.getElementById('vm-code').value.trim();
   const name = document.getElementById('vm-name').value.trim();
   const serviceType = document.getElementById('vm-service-type').value;
   const category = document.getElementById('vm-category').value;
@@ -1868,24 +2480,52 @@ function createVehicleModel() {
   const status = document.getElementById('vm-status').value;
   const luggage = document.getElementById('vm-luggage').value.trim();
   const description = document.getElementById('vm-description').value.trim();
-  if (!name || !serviceType || !category || isNaN(seats) || seats < 1) {
-    return alert('Vui lòng nhập đủ Tên, Loại dịch vụ, Phân loại và Số ghế.');
+  if (!code || !name || !serviceType || !category || isNaN(seats) || seats < 1) {
+    return alert('Vui lòng nhập đủ Mã, Tên, Loại dịch vụ, Phân loại xe và Số ghế.');
   }
+  if (VEHICLE_MODELS.some(model => String(model.code || '').toLowerCase() === code.toLowerCase())) return alert('Mã loại xe đã tồn tại.');
   const id = genId('VM', VEHICLE_MODELS);
-  VEHICLE_MODELS.push({ id, name, serviceType, category, seats, status, luggage, description });
-  createAuditLog({ action: 'vehicle_model.create', target: id, before: null, after: { name, serviceType, category, seats } });
+  const model = { id, code, name, serviceType, category, seats, status, luggage, description };
+  if (isBikeCarVehicleModel(model)) {
+    model.pricingKey = createPricingProfileForVehicleModel(model);
+  }
+  VEHICLE_MODELS.push(model);
+  if (isBikeCarVehicleModel(model)) createServiceTypeFromVehicleModel(model);
+  createAuditLog({ action: 'vehicle_model.create', target: id, before: null, after: { code, name, serviceType, category, seats } });
   closeModal('vehicle-model-modal');
   renderVehicleModels();
+  renderDrivers();
+  renderCommissions();
   populateScheduleOptions();
+  scheduleSave();
 }
 
 function deleteVehicleModel(id) {
   if (!confirm('Xoá loại xe ' + id + '?')) return;
   const idx = VEHICLE_MODELS.findIndex(v => v.id === id);
   if (idx < 0) return;
+  const model = VEHICLE_MODELS[idx];
+  const linkedServiceType = getServiceTypeByVehicleModelId(id);
+  if (linkedServiceType && BOOKINGS.some(booking => booking.serviceTypeId === linkedServiceType.id)) {
+    alert('Loại xe đã phát sinh booking, không thể xóa. Vui lòng chuyển trạng thái sang Tạm dừng.');
+    return;
+  }
   VEHICLE_MODELS.splice(idx, 1);
+  if (linkedServiceType) {
+    const stIdx = SERVICE_TYPES.findIndex(s => s.id === linkedServiceType.id);
+    if (stIdx >= 0) SERVICE_TYPES.splice(stIdx, 1);
+    DRIVERS.forEach(driver => {
+      driver.serviceTypeIds = getDriverServiceTypeIds(driver).filter(serviceTypeId => serviceTypeId !== linkedServiceType.id);
+      driver.overrideServiceTypeIds = (driver.overrideServiceTypeIds || []).filter(serviceTypeId => serviceTypeId !== linkedServiceType.id);
+      driver.vehicleModelPermissionIds = (driver.vehicleModelPermissionIds || []).filter(vehicleModelId => vehicleModelId !== id);
+    });
+  }
+  createAuditLog({ action: 'vehicle_model.delete', target: id, before: model, after: null });
   renderVehicleModels();
+  renderDrivers();
+  renderCommissions();
   populateScheduleOptions();
+  scheduleSave();
 }
 
 // ===== Stop CRUD =====
@@ -1917,33 +2557,90 @@ function deleteStop(id) {
 
 // ===== Route CRUD =====
 function openRouteCreate() {
-  ['route-name','route-distance','route-duration','route-origin-district','route-origin-province','route-dest-district','route-dest-province'].forEach(i => document.getElementById(i).value = '');
+  ['route-name','route-distance','route-duration'].forEach(i => document.getElementById(i).value = '');
+  document.getElementById('route-name').dataset.autoName = '';
+  document.getElementById('route-origin-search').value = '';
+  document.getElementById('route-dest-search').value = '';
+  const selectableLocationIds = LOCATIONS
+    .filter(location => location.type !== 'province')
+    .map(location => location.id);
+  const locationOptions = buildLocationOptions(selectableLocationIds);
+  document.getElementById('route-origin-location').innerHTML = locationOptions;
+  document.getElementById('route-dest-location').innerHTML = locationOptions;
   document.getElementById('route-status').value = 'active';
   filterRouteStops();
   openModal('route-modal');
 }
 
+function filterRouteLocationSelect(side) {
+  const searchInput = document.getElementById(`route-${side}-search`);
+  const select = document.getElementById(`route-${side}-location`);
+  if (!searchInput || !select) return;
+
+  const query = normalizeLocationSearchText(searchInput.value);
+  const selectedId = select.value;
+  const matchedIds = LOCATIONS
+    .filter(location => location.type !== 'province')
+    .filter(location => {
+      if (!query) return true;
+      const parent = location.parentId ? getLocation(location.parentId) : null;
+      return normalizeLocationSearchText(`${location.name} ${parent?.name || ''}`).includes(query);
+    })
+    .map(location => location.id);
+
+  select.innerHTML = buildLocationOptions(matchedIds);
+  if (selectedId && matchedIds.includes(selectedId)) select.value = selectedId;
+}
+
+function syncRouteLocationSelection() {
+  const origin = getLocation(document.getElementById('route-origin-location').value);
+  const destination = getLocation(document.getElementById('route-dest-location').value);
+  const nameInput = document.getElementById('route-name');
+  const previousAutoName = nameInput.dataset.autoName || '';
+  if (origin && destination) {
+    const nextAutoName = `${origin.name} - ${destination.name}`;
+    if (!nameInput.value.trim() || nameInput.value === previousAutoName) {
+      nameInput.value = nextAutoName;
+      nameInput.dataset.autoName = nextAutoName;
+    }
+  }
+  filterRouteStops();
+}
+
+function normalizeLocationSearchText(value) {
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(tp|thanh pho|tinh|quan|huyen|thi xa)\.?\s*/gi, '')
+    .toLowerCase().trim();
+}
+
+function stopMatchesRouteLocation(stop, location) {
+  if (!location) return false;
+  const locationName = normalizeLocationSearchText(location.name);
+  const stopText = normalizeLocationSearchText(`${stop.district} ${stop.province} ${stop.address}`);
+  return Boolean(locationName && stopText.includes(locationName));
+}
+
 function filterRouteStops() {
-  const origin = document.getElementById('route-origin-district').value.trim().toLowerCase();
-  const dest = document.getElementById('route-dest-district').value.trim().toLowerCase();
+  const origin = getLocation(document.getElementById('route-origin-location').value);
+  const destination = getLocation(document.getElementById('route-dest-location').value);
   const picker = document.getElementById('route-stops-picker');
   if (!picker) return;
-  if (!origin && !dest) {
-    picker.innerHTML = '<div class="text-muted" style="font-size:12px">Nhập quận của Điểm đi & Điểm đến để hiển thị điểm dừng phù hợp.</div>';
+  if (!origin && !destination) {
+    picker.innerHTML = '<div class="text-muted" style="font-size:12px">Chọn Điểm đi & Điểm đến để hiển thị điểm dừng phù hợp.</div>';
     return;
   }
-  const matched = STOPS.filter(s => {
-    const d = s.district.toLowerCase();
-    return (origin && d.includes(origin)) || (dest && d.includes(dest));
-  });
+  const matched = STOPS.filter(stop =>
+    stopMatchesRouteLocation(stop, origin) || stopMatchesRouteLocation(stop, destination)
+  );
   // Sắp xếp: origin → others → dest (tuần tự)
   matched.sort((a, b) => {
-    const ao = a.district.toLowerCase().includes(origin) ? 0 : (a.district.toLowerCase().includes(dest) ? 2 : 1);
-    const bo = b.district.toLowerCase().includes(origin) ? 0 : (b.district.toLowerCase().includes(dest) ? 2 : 1);
+    const ao = stopMatchesRouteLocation(a, origin) ? 0 : (stopMatchesRouteLocation(a, destination) ? 2 : 1);
+    const bo = stopMatchesRouteLocation(b, origin) ? 0 : (stopMatchesRouteLocation(b, destination) ? 2 : 1);
     return ao - bo;
   });
   if (!matched.length) {
-    picker.innerHTML = '<div class="text-muted" style="font-size:12px">Không có điểm dừng nào trong các quận đã nhập. (Thêm Điểm dừng ở tab "Điểm dừng" trước.)</div>';
+    picker.innerHTML = '<div class="text-muted" style="font-size:12px">Không có điểm dừng phù hợp với các địa điểm đã chọn. (Thêm Điểm dừng ở tab "Điểm dừng" trước.)</div>';
     return;
   }
   picker.innerHTML = matched.map(s => `
@@ -1960,18 +2657,25 @@ function createRoute() {
   const name = document.getElementById('route-name').value.trim();
   const distance = parseInt(document.getElementById('route-distance').value, 10);
   const duration = document.getElementById('route-duration').value.trim();
-  const originDistrict = document.getElementById('route-origin-district').value.trim();
-  const originProvince = document.getElementById('route-origin-province').value.trim();
-  const destDistrict = document.getElementById('route-dest-district').value.trim();
-  const destProvince = document.getElementById('route-dest-province').value.trim();
+  const originLocationId = document.getElementById('route-origin-location').value;
+  const destLocationId = document.getElementById('route-dest-location').value;
+  const originLocation = getLocation(originLocationId);
+  const destLocation = getLocation(destLocationId);
   const status = document.getElementById('route-status').value;
   const stopIds = Array.from(document.querySelectorAll('.route-stop-cb:checked')).map(cb => cb.value);
-  if (!name || isNaN(distance) || !duration || !originDistrict || !originProvince || !destDistrict || !destProvince) {
+  if (!name || isNaN(distance) || !duration || !originLocation || !destLocation) {
     return alert('Vui lòng điền đủ các trường bắt buộc.');
   }
+  if (originLocationId === destLocationId) return alert('Điểm đi và Điểm đến không được trùng nhau.');
+  const originParent = originLocation.parentId ? getLocation(originLocation.parentId) : null;
+  const destParent = destLocation.parentId ? getLocation(destLocation.parentId) : null;
+  const originDistrict = originLocation.name;
+  const originProvince = originParent?.name || originLocation.name;
+  const destDistrict = destLocation.name;
+  const destProvince = destParent?.name || destLocation.name;
   const id = genId('RT', ROUTES);
-  ROUTES.push({ id, name, distance, duration, originDistrict, originProvince, destDistrict, destProvince, stopIds, status });
-  createAuditLog({ action: 'route.create', target: id, before: null, after: { name, distance, duration, stopIds: stopIds.length } });
+  ROUTES.push({ id, name, distance, duration, originLocationId, destLocationId, originDistrict, originProvince, destDistrict, destProvince, stopIds, status });
+  createAuditLog({ action: 'route.create', target: id, before: null, after: { name, originLocationId, destLocationId, distance, duration, stopIds: stopIds.length } });
   closeModal('route-modal');
   renderRoutes();
 }
@@ -2288,15 +2992,22 @@ function approveDriverApplication(id, fromModal) {
   let newId;
   if (a.applyType === 'bikecar') {
     newId = nextDriverId('DRV', DRIVERS);
-    const vehicleSeats = a.vehicleType === 'CAR' ? 4 : 1;
-    const serviceTypeIds = SERVICE_TYPES
-      .filter(s => s.vehicleType === a.vehicleType && (a.vehicleType !== 'CAR' || s.seats <= vehicleSeats))
-      .map(s => s.id);
-    DRIVERS.push({
+    const largeCarQualified = a.vehicleType === 'CAR' && (a.largeCarQualified === true || Number(a.vehicleSeats || 0) >= 6);
+    const premiumQualified = a.premiumQualified === true;
+    const vehicleModel = getVehicleModel(resolveDriverVehicleModelIdFromQuickFlags(a.vehicleType, largeCarQualified, premiumQualified))
+      || getVehicleModel(a.vehicleModelId)
+      || getRideVehicleModels(a.vehicleType, true)[0]
+      || null;
+    const vehicleSeats = vehicleModel?.seats || (a.vehicleType === 'CAR' ? 4 : 1);
+    const driver = {
       id: newId, name: a.name, phone: a.phone, vehicleType: a.vehicleType, plate: a.plate,
-      vehicleSeats, serviceTypeIds,
+      vehicleModelId: vehicleModel?.id || null, vehicleSeats,
+      largeCarQualified, premiumQualified, permissionOverrideEnabled: false, overrideServiceTypeIds: [],
       status: 'offline', operatorId: null, rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null
-    });
+    };
+    driver.serviceTypePermissionVersion = 3;
+    syncDriverDerivedVehiclePermissions(driver);
+    DRIVERS.push(driver);
   } else {
     newId = nextDriverId('IDR', INTERCITY_DRIVERS);
     INTERCITY_DRIVERS.push({
@@ -2539,14 +3250,14 @@ function renderDrivers() {
   const serviceFilter = document.getElementById('driver-service-filter');
   if (serviceFilter) {
     const currentValue = serviceFilter.value;
-    serviceFilter.innerHTML = '<option value="">Mọi loại dịch vụ</option>' + SERVICE_TYPES.map(s =>
-      `<option value="${s.id}">${s.icon || ''} ${esc(s.name)}</option>`).join('');
+    serviceFilter.innerHTML = '<option value="">Mọi loại xe được phép</option>' + SERVICE_TYPES.map(s =>
+      `<option value="${s.id}">${s.icon || ''} ${esc(getServiceTypeDisplayName(s))}</option>`).join('');
     serviceFilter.value = currentValue;
     if (serviceFilter.value) drivers = drivers.filter(d => driverCanRunServiceType(d, serviceFilter.value));
   }
   const search = document.getElementById('driver-search')?.value?.toLowerCase();
   if (search) drivers = drivers.filter(d => {
-    const services = getDriverServiceTypeIds(d).map(id => getServiceType(id)?.name || '').join(' ').toLowerCase();
+    const services = getDriverServiceTypeIds(d).map(id => getServiceTypeDisplayName(getServiceType(id))).join(' ').toLowerCase();
     return d.name.toLowerCase().includes(search) || d.id.toLowerCase().includes(search) || d.plate.toLowerCase().includes(search) || services.includes(search);
   });
 
@@ -2558,56 +3269,176 @@ function renderDrivers() {
   `;
   renderDriverApplications('bikecar');
 
-  document.getElementById('drivers-table-body').innerHTML = drivers.map(d => `<tr>
+  document.getElementById('drivers-table-body').innerHTML = drivers.map(d => {
+    const operational = getDriverAvailability(d, null, DEFAULT_PICKUP_LOCATION, null, { ignoreRadius: true });
+    const model = getDriverVehicleModel(d);
+    const statusHint = d.status === 'online'
+      ? `<div class="text-${operational.available ? 'success' : 'warning'}" style="font-size:10px;margin-top:3px">${operational.available ? 'Sẵn sàng' : esc(operational.reasons.join(', '))}</div>`
+      : '';
+    return `<tr>
     <td><span class="text-accent fw-600">${d.id}</span></td>
     <td><div class="flex-center"><div class="driver-avatar" style="width:28px;height:28px;font-size:14px">${d.avatar}</div><span class="fw-600">${d.name}</span></div></td>
-    <td>${d.phone}</td><td><div class="fw-600">${VEHICLE_TYPES[d.vehicleType]?.icon||''} ${VEHICLE_TYPES[d.vehicleType]?.label||d.vehicleType}</div><div class="text-muted" style="font-size:11px">${d.vehicleSeats || (d.vehicleType === 'CAR' ? 4 : 1)} chỗ</div></td>
+    <td>${d.phone}</td><td><div class="fw-600">${VEHICLE_TYPES[d.vehicleType]?.icon||''} ${esc(VEHICLE_TYPES[d.vehicleType]?.label || d.vehicleType)}</div><div class="text-muted" style="font-size:11px">${esc(getDriverQuickClassificationText(d))} · ${d.vehicleSeats || (d.vehicleType === 'CAR' ? 4 : 1)} ghế phục vụ khách</div></td>
     <td class="fw-600">${d.plate}</td><td><div class="service-chip-list">${getDriverServiceTypeIds(d).map(id => {
       const st = getServiceType(id);
-      return st ? `<span class="service-chip">${st.icon || ''} ${esc(st.name)}</span>` : '';
-    }).join('') || '<span class="text-warning">Chưa được cấp dịch vụ</span>'}</div></td><td>⭐ ${d.rating}</td><td class="fw-600">${d.trips.toLocaleString()}</td>
-    <td>${driverBadge(d.status)}</td>
-    <td><button class="btn btn-sm btn-outline" onclick="editDriver('${d.id}')">✏️</button></td>
-  </tr>`).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy tài xế</div></div></td></tr>`;
+      return st ? `<span class="service-chip">${st.icon || ''} ${esc(getServiceTypeDisplayName(st))}</span>` : '';
+    }).join('') || '<span class="text-warning">Chưa được cấp dịch vụ</span>'}</div></td><td>⭐ ${Number(d.rating || 0).toFixed(1)}<div class="text-muted" style="font-size:10px">${getDriverRatingCount(d).toLocaleString()} lượt</div></td><td class="fw-600">${Number(d.trips || 0).toLocaleString()}</td><td class="fw-600 text-accent">${getDriverCompletedToday(d.id)}</td>
+    <td>${driverBadge(d.status)}${statusHint}</td>
+    <td><div class="flex-center"><button class="btn btn-sm btn-outline" onclick="showBikeCarDriverDetail('${d.id}')">👁️</button><button class="btn btn-sm btn-outline" onclick="editDriver('${d.id}')">✏️</button></div></td>
+  </tr>`;
+  }).join('') || `<tr><td colspan="11"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy tài xế</div></div></td></tr>`;
+}
+
+function showBikeCarDriverDetail(driverId) {
+  const driver = DRIVERS.find(d => d.id === driverId);
+  if (!driver) return;
+  const ratings = DRIVER_RATINGS.filter(r => r.driverId === driver.id).slice(0, 20);
+  const completed = FULFILLMENT_TASKS.filter(t => t.driverId === driver.id && t.status === 'COMPLETED').slice(0, 20);
+  document.getElementById('ic-detail-title').textContent = `Hồ sơ tài xế Bike/Car · ${driver.id}`;
+  document.getElementById('ic-detail-body').innerHTML = `
+    <div class="stats-grid" style="grid-template-columns:repeat(3,1fr)">
+      <div class="stat-card"><span class="stat-card-label">Tổng chuyến</span><div class="stat-card-value">${Number(driver.trips || 0).toLocaleString()}</div></div>
+      <div class="stat-card"><span class="stat-card-label">Hôm nay</span><div class="stat-card-value">${getDriverCompletedToday(driver.id)}</div></div>
+      <div class="stat-card"><span class="stat-card-label">Đánh giá</span><div class="stat-card-value">⭐ ${Number(driver.rating || 0).toFixed(1)}</div><div class="text-muted">${getDriverRatingCount(driver)} lượt</div></div>
+    </div>
+    <div class="service-type-notice compact"><div class="service-type-notice-icon">${driver.avatar || '👤'}</div><div><b>${esc(driver.name)} · ${esc(driver.plate)}</b><span>${esc(driver.phone)} · ${esc(getDriverQuickClassificationText(driver))} · ${driver.vehicleSeats || 1} ghế phục vụ khách · ${driverBadge(driver.status)}</span></div></div>
+    <div class="table-container mt-20"><div class="table-header"><span class="table-title">Đánh giá gần nhất</span></div><div class="table-wrapper"><table><thead><tr><th>Booking</th><th>Điểm</th><th>Nhận xét</th><th>Thời gian</th></tr></thead><tbody>${ratings.map(r => {
+      const booking = BOOKINGS.find(b => b.id === r.bookingId);
+      return `<tr><td>${esc(booking?.bookingCode || r.bookingId)}</td><td>⭐ ${r.score}</td><td>${esc(r.comment || '—')}</td><td>${esc(r.createdAt)}</td></tr>`;
+    }).join('') || '<tr><td colspan="4" class="text-muted">Chưa có đánh giá mới</td></tr>'}</tbody></table></div></div>
+    <div class="text-muted mt-16">Có ${completed.length} bản ghi chuyến hoàn thành gần nhất trong dữ liệu chi tiết.</div>`;
+  openModal('ic-detail-modal');
 }
 
 function editDriver(driverId) {
   openDriverModal(driverId);
 }
 
-function onDriverVehicleTypeChange() {
+function renderDriverVehicleModelSelect(preferredModelId = null) {
+  const input = document.getElementById('driver-vehicle-model');
+  if (!input) return;
   const vehicleType = document.getElementById('driver-vehicle-type').value;
-  const seats = document.getElementById('driver-vehicle-seats');
-  if (vehicleType === 'BIKE') seats.value = 1;
-  else if (parseInt(seats.value, 10) < 4) seats.value = 4;
-  renderDriverServiceTypePicker();
+  const preferredModel = getVehicleModel(preferredModelId);
+  const sixSeatCheckbox = document.getElementById('driver-six-seat');
+  const premiumCheckbox = document.getElementById('driver-premium-qualified');
+  if (sixSeatCheckbox) {
+    sixSeatCheckbox.checked = vehicleType === 'CAR' && (sixSeatCheckbox.checked || Number(preferredModel?.seats || 0) >= 6);
+  }
+  if (premiumCheckbox) {
+    premiumCheckbox.checked = premiumCheckbox.checked || isPremiumVehicleModel(preferredModel);
+  }
+  onDriverVehicleModelChange(false);
+}
+
+function onDriverVehicleTypeChange() {
+  const sixSeatCheckbox = document.getElementById('driver-six-seat');
+  if (sixSeatCheckbox && document.getElementById('driver-vehicle-type')?.value !== 'CAR') sixSeatCheckbox.checked = false;
+  onDriverQuickFlagChange();
+}
+
+function getSeatValueFromQuickFlags(vehicleType, largeCarQualified = false) {
+  if (vehicleType === 'BIKE') return 1;
+  if (vehicleType === 'CAR') return largeCarQualified ? 6 : 4;
+  return 1;
+}
+
+function onDriverQuickFlagChange() {
+  const vehicleType = document.getElementById('driver-vehicle-type')?.value || 'BIKE';
+  const sixSeatCheckbox = document.getElementById('driver-six-seat');
+  const premiumCheckbox = document.getElementById('driver-premium-qualified');
+  const sixSeatWrap = document.getElementById('driver-six-seat-wrap');
+  const largeCarQualified = vehicleType === 'CAR' && sixSeatCheckbox?.checked === true;
+  const premiumQualified = premiumCheckbox?.checked === true;
+  if (sixSeatWrap) sixSeatWrap.style.display = vehicleType === 'CAR' ? 'inline-flex' : 'none';
+  const modelId = resolveDriverVehicleModelIdFromQuickFlags(vehicleType, largeCarQualified, premiumQualified);
+  const input = document.getElementById('driver-vehicle-model');
+  if (input) input.value = modelId || '';
+  const seatsInput = document.getElementById('driver-vehicle-seats');
+  if (seatsInput) seatsInput.value = getSeatValueFromQuickFlags(vehicleType, largeCarQualified);
+  onDriverVehicleModelChange(false);
+  renderDriverPermissionPreview();
+}
+
+function onDriverVehicleModelChange(shouldRenderPicker = true) {
+  const vehicleType = document.getElementById('driver-vehicle-type')?.value || 'BIKE';
+  const largeCarQualified = vehicleType === 'CAR' && document.getElementById('driver-six-seat')?.checked === true;
+  let model = getVehicleModel(document.getElementById('driver-vehicle-model')?.value);
+  if (!model) {
+    document.getElementById('driver-vehicle-seats').value = getSeatValueFromQuickFlags(vehicleType, largeCarQualified);
+    if (shouldRenderPicker) renderDriverPermissionPreview();
+    return;
+  }
+  document.getElementById('driver-vehicle-type').value = model.serviceType;
+  document.getElementById('driver-vehicle-seats').value = getSeatValueFromQuickFlags(model.serviceType, largeCarQualified);
+  if (shouldRenderPicker) renderDriverPermissionPreview();
+}
+
+function getDraftDriverPermissionInput(selectedIds = null) {
+  onDriverVehicleModelChange(false);
+  const vehicleModelId = document.getElementById('driver-vehicle-model')?.value;
+  const model = getVehicleModel(vehicleModelId);
+  const vehicleType = document.getElementById('driver-vehicle-type')?.value || model?.serviceType || 'BIKE';
+  const largeCarQualified = vehicleType === 'CAR' && document.getElementById('driver-six-seat')?.checked === true;
+  const premiumQualified = document.getElementById('driver-premium-qualified')?.checked === true;
+  const overrideEnabled = document.getElementById('driver-permission-override')?.checked === true;
+  const host = document.getElementById('driver-service-types');
+  const selected = selectedIds || Array.from(host?.querySelectorAll('input:checked') || []).map(x => x.value);
+  const defaultIds = getServiceTypeIdsByVehicleModelIds(getAllowedVehicleModelIdsByDriverCapabilities(vehicleType, { largeCarQualified, premiumQualified }));
+  const overrideIds = selected.length ? selected : defaultIds;
+  return { model, vehicleType, largeCarQualified, premiumQualified, overrideEnabled, defaultIds, overrideIds };
+}
+
+function renderDriverPermissionPreview(selectedIds = null) {
+  const host = document.getElementById('driver-service-types');
+  if (!host) return;
+  const { vehicleType, largeCarQualified, premiumQualified, overrideEnabled, defaultIds, overrideIds } = getDraftDriverPermissionInput(selectedIds);
+  const overrideModelIds = getAllowedVehicleModelIdsByDriverCapabilities(vehicleType, { largeCarQualified, premiumQualified: true });
+  const services = getServiceTypesForVehicle(vehicleType, true)
+    .filter(s => overrideModelIds.includes(s.vehicleModelId));
+  if (overrideEnabled) {
+    const selectedSet = new Set(overrideIds);
+    host.innerHTML = services.map(s => `<label class="service-permission-option">
+      <input type="checkbox" value="${s.id}" ${selectedSet.has(s.id) ? 'checked' : ''}>
+      <span><b>${s.icon || ''} ${esc(getServiceTypeDisplayName(s))}</b><small>${esc(getServiceTypeDisplayCode(s))} · ${s.seats || 1} ghế · ${isPremiumVehicleModel(getServiceTypeVehicleModel(s)) ? 'Premium' : 'Phổ thông'} · ngoại lệ thủ công</small></span>
+    </label>`).join('') || '<div class="text-muted">Chưa có loại xe phù hợp với phương tiện này.</div>';
+    return;
+  }
+  const allowedServices = defaultIds.map(id => getServiceType(id)).filter(Boolean);
+  const missingLargeCarTypeWarning = vehicleType === 'CAR'
+    && largeCarQualified
+    && !getRideVehicleModels('CAR', true).some(isLargeCarVehicleModel)
+    ? '<div class="service-permission-option readonly"><span><b>⚠️ Chưa có loại xe 6–7 chỗ đang hoạt động</b><small>Tài xế vẫn được lưu năng lực Ô tô 6–7 chỗ, nhưng chỉ nhận các loại xe đang có trong hệ thống.</small></span></div>'
+    : '';
+  host.innerHTML = missingLargeCarTypeWarning + (allowedServices.map(s => `<div class="service-permission-option readonly">
+    <span><b>${s.icon || ''} ${esc(getServiceTypeDisplayName(s))}</b><small>${esc(getServiceTypeDisplayCode(s))} · ${s.seats || 1} ghế · ${isPremiumVehicleModel(getServiceTypeVehicleModel(s)) ? 'Premium đã đủ chuẩn' : 'Tự động theo rule loại xe'}</small></span>
+  </div>`).join('') || `<div class="text-muted">Chưa có loại xe được phép nhận. ${premiumQualified ? '' : 'Nếu cần nhận Premium, tick nhanh "Premium".'}</div>`);
 }
 
 function renderDriverServiceTypePicker(selectedIds = null) {
-  const host = document.getElementById('driver-service-types');
-  if (!host) return;
-  const vehicleType = document.getElementById('driver-vehicle-type').value;
-  const seats = parseInt(document.getElementById('driver-vehicle-seats').value, 10) || (vehicleType === 'CAR' ? 4 : 1);
-  const selected = selectedIds || Array.from(host.querySelectorAll('input:checked')).map(x => x.value);
-  const services = SERVICE_TYPES.filter(s => s.vehicleType === vehicleType && (vehicleType !== 'CAR' || s.seats <= seats));
-  host.innerHTML = services.map(s => `<label class="service-permission-option">
-    <input type="checkbox" value="${s.id}" ${selected.includes(s.id) ? 'checked' : ''}>
-    <span><b>${s.icon || ''} ${esc(s.name)}</b><small>${esc(s.description || '')}</small></span>
-  </label>`).join('') || '<div class="text-muted">Chưa có loại dịch vụ phù hợp với phương tiện này.</div>';
+  renderDriverPermissionPreview(selectedIds);
 }
 
 function openDriverModal(driverId = null) {
   const driver = driverId ? DRIVERS.find(d => d.id === driverId) : null;
+  const driverModel = getDriverVehicleModel(driver);
   document.getElementById('driver-edit-id').value = driver?.id || '';
   document.getElementById('driver-modal-title').textContent = driver ? `Chỉnh sửa tài xế · ${driver.id}` : 'Thêm tài xế mới';
   document.getElementById('driver-name').value = driver?.name || '';
   document.getElementById('driver-phone').value = driver?.phone || '';
   document.getElementById('driver-vehicle-type').value = driver?.vehicleType || 'BIKE';
   document.getElementById('driver-vehicle-seats').value = driver?.vehicleSeats || (driver?.vehicleType === 'CAR' ? 4 : 1);
+  const sixSeatCheckbox = document.getElementById('driver-six-seat');
+  if (sixSeatCheckbox) sixSeatCheckbox.checked = isDriverLargeCarQualified(driver);
+  const premiumCheckbox = document.getElementById('driver-premium-qualified');
+  if (premiumCheckbox) premiumCheckbox.checked = driver?.premiumQualified ?? isPremiumVehicleModel(driverModel);
+  renderDriverVehicleModelSelect(driver?.vehicleModelId || driverModel?.id);
+  onDriverQuickFlagChange();
   document.getElementById('driver-plate').value = driver?.plate || '';
   document.getElementById('driver-status').value = driver?.status || 'offline';
+  const overrideToggle = document.getElementById('driver-permission-override');
+  if (overrideToggle) overrideToggle.checked = driver?.permissionOverrideEnabled === true;
   document.getElementById('driver-save-btn').textContent = driver ? '💾 Lưu thay đổi' : '➕ Thêm tài xế';
-  renderDriverServiceTypePicker(driver ? getDriverServiceTypeIds(driver) : []);
+  renderDriverPermissionPreview(driver?.permissionOverrideEnabled ? driver?.overrideServiceTypeIds : null);
   openModal('driver-modal');
 }
 
@@ -2616,30 +3447,50 @@ function saveDriver() {
   const name = document.getElementById('driver-name').value.trim();
   const phone = document.getElementById('driver-phone').value.trim();
   const vehicleType = document.getElementById('driver-vehicle-type').value;
+  const vehicleModelId = document.getElementById('driver-vehicle-model').value;
   const vehicleSeats = parseInt(document.getElementById('driver-vehicle-seats').value, 10);
   const plate = document.getElementById('driver-plate').value.trim();
   const status = document.getElementById('driver-status').value;
-  const serviceTypeIds = Array.from(document.querySelectorAll('#driver-service-types input:checked')).map(x => x.value);
+  const largeCarQualified = vehicleType === 'CAR' && document.getElementById('driver-six-seat')?.checked === true;
+  const premiumQualified = document.getElementById('driver-premium-qualified')?.checked === true;
+  const permissionOverrideEnabled = document.getElementById('driver-permission-override')?.checked === true;
+  const draftPermission = getDraftDriverPermissionInput();
+  const overrideServiceTypeIds = permissionOverrideEnabled
+    ? Array.from(document.querySelectorAll('#driver-service-types input:checked')).map(x => x.value)
+    : [];
+  const serviceTypeIds = permissionOverrideEnabled ? overrideServiceTypeIds : draftPermission.defaultIds;
+  const vehicleModelPermissionIds = serviceTypeIds.map(serviceTypeId => getServiceType(serviceTypeId)?.vehicleModelId).filter(Boolean);
 
-  if (!name || !phone || !plate || isNaN(vehicleSeats) || vehicleSeats < 1) {
+  if (!name || !phone || !vehicleModelId || !plate || isNaN(vehicleSeats) || vehicleSeats < 1) {
     alert('Vui lòng nhập đầy đủ thông tin tài xế và phương tiện!');
     return;
   }
   if (!serviceTypeIds.length) {
-    alert('Vui lòng chọn ít nhất một loại dịch vụ tài xế được phép nhận.');
+    alert(permissionOverrideEnabled ? 'Vui lòng chọn ít nhất một loại xe ngoại lệ cho tài xế.' : 'Chưa có loại xe hệ thống cho phép nhận. Vui lòng kiểm tra loại xe hoặc cờ Premium.');
     return;
   }
 
   if (editId) {
     const driver = DRIVERS.find(d => d.id === editId);
     if (!driver) return;
-    Object.assign(driver, { name, phone, vehicleType, vehicleSeats, plate, operatorId: null, status, serviceTypeIds });
-    createAuditLog({ action: 'driver.service_permissions.update', target: editId, before: null, after: { serviceTypeIds } });
+    Object.assign(driver, { name, phone, vehicleType, vehicleModelId, vehicleSeats, plate, operatorId: null, status, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideServiceTypeIds, serviceTypeIds, vehicleModelPermissionIds, serviceTypePermissionVersion: 3 });
+    if (status === 'online') {
+      driver.gpsEnabled = true;
+      driver.lastHeartbeatAt = new Date().toISOString();
+      driver.lastLocationAt = new Date().toISOString();
+    } else if (status === 'offline') {
+      driver.gpsEnabled = false;
+    }
+    createAuditLog({ action: 'driver.vehicle_permission_rule.update', target: editId, before: null, after: { vehicleModelId, largeCarQualified, premiumQualified, permissionOverrideEnabled, serviceTypeIds } });
   } else {
     const id = genId('DRV', DRIVERS);
-    DRIVERS.push({ id, name, phone, vehicleType, vehicleSeats, plate, operatorId: null,
-      status, serviceTypeIds, rating: 5.0, trips: 0, avatar: '👤', currentAssignmentId: null });
-    createAuditLog({ action: 'driver.create', target: id, before: null, after: { vehicleType, vehicleSeats, serviceTypeIds } });
+    const point = deterministicLocation(id);
+    DRIVERS.push({ id, name, phone, vehicleType, vehicleModelId, vehicleSeats, plate, operatorId: null,
+      status, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideServiceTypeIds, serviceTypeIds, vehicleModelPermissionIds, serviceTypePermissionVersion: 3, rating: 0, ratingCount: 0, trips: 0, avatar: '👤', currentAssignmentId: null,
+      profileApproved: true, documentsValid: true, gpsEnabled: status === 'online', lat: point.lat, lng: point.lng,
+      lastHeartbeatAt: status === 'online' ? new Date().toISOString() : null,
+      lastLocationAt: status === 'online' ? new Date().toISOString() : null });
+    createAuditLog({ action: 'driver.create', target: id, before: null, after: { vehicleType, vehicleModelId, vehicleSeats, largeCarQualified, premiumQualified, permissionOverrideEnabled, serviceTypeIds } });
   }
   closeModal('driver-modal');
   renderDrivers();
@@ -2746,7 +3597,7 @@ function renderBookings() {
       <td class="text-muted">${b.createdAt}</td>
       <td><div class="flex-center">
         <button class="btn-icon" title="Chi tiết" onclick="showBookingDetail('${b.id}')">👁️</button>
-        ${canDispatch && b.bookingStatus==='PENDING_CONFIRMATION'?`<button class="btn-icon" title="Điều phối" onclick="openDispatchModal('${b.id}')" style="border-color:var(--warning);color:var(--warning)">📡</button>`:''}
+        ${canDispatch && b.bookingStatus === 'CONFIRMED' && (!b.fulfillmentStatus || b.fulfillmentStatus === 'PENDING') && getManualDispatchState(b).allowed ? `<button class="btn-icon" title="Điều phối" onclick="openDispatchModal('${b.id}')" style="border-color:var(--warning);color:var(--warning)">📡</button>` : ''}
       </div></td>
     </tr>`;
   }).join('') || `<tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">🔍</div><div class="empty-state-text">Không tìm thấy booking</div></div></td></tr>`;
@@ -2792,7 +3643,7 @@ function showBookingDetail(id) {
       <div class="input-group full-width"><label>📍 Điểm nhận xe</label><div style="padding:8px 0;font-size:13px">${esc(serviceOrder.pickupAddress || b.pickup || '—')}</div></div>` : `
       <div class="input-group full-width"><label>📍 Điểm đón</label><div style="padding:8px 0;font-size:13px">${b.pickup}</div></div>
       <div class="input-group full-width"><label>🏁 Điểm đến</label><div style="padding:8px 0;font-size:13px">${b.dropoff}</div></div>`}
-      <div class="input-group"><label>Giá</label><div style="padding:8px 0;font-size:16px;font-weight:700;color:var(--success)">${fmt(b.fareSnapshot)}</div></div>
+      <div class="input-group"><label>Giá</label><div style="padding:8px 0;font-size:16px;font-weight:700;color:var(--success)">${fmt(b.fareSnapshot)}</div>${renderPricingSnapshotSummary(b.pricingSnapshot)}</div>
       ${serviceOrder ? '' : `<div class="input-group"><label>Khoảng cách</label><div style="padding:8px 0;font-size:13px">${b.distance} km</div></div>`}
       <div class="input-group"><label>Payment Ref</label><div style="padding:8px 0;font-size:13px;font-family:monospace">${b.paymentReference}</div></div>
       <div class="input-group"><label>Fulfillment Task</label><div style="padding:8px 0;font-size:13px;font-family:monospace">${b.fulfillmentTaskId||'—'}</div></div>
@@ -2814,10 +3665,11 @@ function showBookingDetail(id) {
 
   const canDispatch = hasPermission('fulfillment.assign') || currentRole === 'ADMIN';
   const canCancel = hasPermission('booking.cancel') || currentRole === 'ADMIN';
+  const bookingTask = b.fulfillmentTaskId ? FULFILLMENT_TASKS.find(t => t.id === b.fulfillmentTaskId) : null;
 
   let actions = '<button class="btn btn-outline" onclick="closeModal(\'booking-detail-modal\')">Đóng</button>';
-  if (canDispatch && b.bookingStatus === 'PENDING_CONFIRMATION') actions += `<button class="btn btn-primary" onclick="closeModal('booking-detail-modal');openDispatchModal('${b.id}')">📡 Điều phối</button>`;
-  if (canDispatch && b.fulfillmentStatus === 'ASSIGNED') actions += `<button class="btn btn-primary" onclick="closeModal('booking-detail-modal');startTrip('${b.id}','master')">▶️ Bắt đầu chuyến</button>`;
+  if (canDispatch && b.bookingStatus === 'CONFIRMED' && (!b.fulfillmentStatus || b.fulfillmentStatus === 'PENDING') && getManualDispatchState(b).allowed) actions += `<button class="btn btn-primary" onclick="closeModal('booking-detail-modal');openDispatchModal('${b.id}')">📡 Điều phối</button>`;
+  if (canDispatch && b.fulfillmentStatus === 'ASSIGNED' && (!['BIKE', 'CAR'].includes(b.bookingType) || bookingTask?.acceptedAt)) actions += `<button class="btn btn-primary" onclick="closeModal('booking-detail-modal');startTrip('${b.id}','master')">▶️ Bắt đầu chuyến</button>`;
   if (canDispatch && b.fulfillmentStatus === 'IN_PROGRESS') {
     actions += `<button class="btn btn-success" onclick="closeModal('booking-detail-modal');completeTrip('${b.id}','master')">🏁 Hoàn thành</button>`;
     actions += `<button class="btn btn-outline" onclick="closeModal('booking-detail-modal');markNoShow('${b.id}','master')">🚫 No-show</button>`;
@@ -2923,7 +3775,15 @@ function syncServiceStatus(b, phase) {
 function driverAcceptTask(bookingId, sourceSite = 'driver') {
   const { b, t } = getBookingTask(bookingId);
   if (!b || !t || t.status !== 'ASSIGNED' || t.acceptedAt) return;
+  if (t.offerExpiresAt && Date.now() >= new Date(t.offerExpiresAt).getTime()) {
+    expireDriverOffer(t, 'Hết 15 giây phản hồi');
+    return alert('Offer đã hết hạn. Chuyến đã được trả về danh sách điều phối.');
+  }
   t.acceptedAt = nowStr();
+  t.offerStatus = 'ACCEPTED';
+  t.offerExpiresAt = null;
+  const driver = findDriver(b.driverId);
+  if (driver) { driver.status = 'busy'; driver.currentAssignmentId = t.id; }
   const traceId = newTraceId();
   createNotification({ type: 'driver_accepted', recipient: b.customerId,
     content: `Tài xế đã nhận chuyến ${b.bookingCode}, đang đến điểm đón` });
@@ -2941,6 +3801,8 @@ function driverRejectTask(bookingId, reason = 'Tài xế từ chối', sourceSit
   if (t.vehicleId) releaseVehicle(t.vehicleId);
   if (prevDriver) releaseDriver(prevDriver);
   t.status = 'CANCELLED';
+  t.offerStatus = 'DECLINED';
+  t.offerExpiresAt = null;
   b.driverId = null;
   b.fulfillmentTaskId = null;
   b.fulfillmentStatus = 'PENDING';
@@ -2961,10 +3823,45 @@ function driverRejectTask(bookingId, reason = 'Tài xế từ chối', sourceSit
   renderPage(currentPage); updateBadges();
 }
 
+function expireDriverOffer(task, reason = 'Hết thời gian phản hồi') {
+  if (!task || task.status !== 'ASSIGNED' || task.acceptedAt) return false;
+  const b = BOOKINGS.find(x => x.id === task.bookingId);
+  if (!b) return false;
+  const prevDriver = b.driverId;
+  if (prevDriver) releaseDriver(prevDriver);
+  task.status = 'CANCELLED';
+  task.offerStatus = 'TIMEOUT';
+  task.offerExpiresAt = null;
+  b.driverId = null;
+  b.fulfillmentTaskId = null;
+  b.fulfillmentStatus = 'PENDING';
+  b.updatedAt = nowStr();
+  createAuditLog({ action: 'fulfillment.offer_timeout', target: task.id, actor: prevDriver, actorRole: 'DRIVER',
+    before: { status: 'PENDING' }, after: { status: 'TIMEOUT', reason } });
+  createNotification({ type: 'driver_offer_timeout', recipient: b.customerId,
+    content: `Tài xế chưa phản hồi chuyến ${b.bookingCode}; đơn đã quay lại danh sách điều phối` });
+  return true;
+}
+
+function expirePendingDriverOffers() {
+  let changed = false;
+  FULFILLMENT_TASKS.forEach(task => {
+    if (task.offerExpiresAt && Date.now() >= new Date(task.offerExpiresAt).getTime()) {
+      changed = expireDriverOffer(task) || changed;
+    }
+  });
+  if (changed) {
+    renderPage(currentPage);
+    updateBadges();
+    if (document.getElementById('sim-panel')?.classList.contains('open')) renderSimPanel();
+  }
+}
+
 // TX bắt đầu chạy → IN_PROGRESS
 function startTrip(bookingId, sourceSite = 'driver') {
   const { b, t } = getBookingTask(bookingId);
   if (!b || !t || t.status !== 'ASSIGNED') return;
+  if (['BIKE', 'CAR'].includes(b.bookingType) && !t.acceptedAt) return alert('Tài xế phải nhận chuyến trước khi bắt đầu.');
   const traceId = newTraceId();
   t.status = 'IN_PROGRESS';
   t.startedAt = nowStr();
@@ -3001,6 +3898,11 @@ function completeTrip(bookingId, sourceSite = 'driver') {
   b.fulfillmentStatus = 'COMPLETED';
   b.updatedAt = nowStr();
   completeBookingSettlement(b, traceId);   // chiết khấu + thu nhập TX + nhả tiền giữ
+  const completedDriver = b.driverId ? findDriver(b.driverId) : null;
+  if (completedDriver && !t.tripCounted) {
+    completedDriver.trips = Number(completedDriver.trips || 0) + 1;
+    t.tripCounted = true;
+  }
   if (b.driverId) releaseDriver(b.driverId);
   if (t.vehicleId) releaseVehicle(t.vehicleId);
   syncServiceStatus(b, 'completed');
@@ -3010,7 +3912,7 @@ function completeTrip(bookingId, sourceSite = 'driver') {
     recipient: b.customerId,
     fallbackType: 'trip_completed',
     fallbackTitle: 'Đơn đã hoàn thành',
-    fallbackContent: `Chuyến ${b.bookingCode} đã hoàn thành. Cảm ơn bạn!`,
+    fallbackContent: `Chuyến ${b.bookingCode} đã hoàn thành. Hãy đánh giá tài xế của bạn!`,
     actionPage: 'bookings',
     targetId: b.id
   });
@@ -3056,6 +3958,11 @@ function renderFulfillmentActions(t, canAssign, isInter) {
   if (!canAssign) return '—';
   const reassign = `<button class="btn btn-sm btn-outline" title="Gán lại" onclick="${isInter ? `openIntercityDispatchModal('${t.bookingId}')` : `openDispatchModal('${t.bookingId}')`}">🔄</button>`;
   if (t.status === 'ASSIGNED') {
+    const b = BOOKINGS.find(x => x.id === t.bookingId);
+    if (b && ['BIKE', 'CAR'].includes(b.bookingType) && !t.acceptedAt) {
+      const remaining = t.offerExpiresAt ? Math.max(0, Math.ceil((new Date(t.offerExpiresAt).getTime() - Date.now()) / 1000)) : DRIVER_OFFER_TIMEOUT_SECONDS;
+      return `<div style="display:flex;gap:4px;justify-content:center;align-items:center"><span class="badge badge-pending">Chờ TX · ${remaining}s</span>${reassign}</div>`;
+    }
     return `<div style="display:flex;gap:4px;justify-content:center">
       <button class="btn btn-sm btn-primary" title="Bắt đầu chuyến" onclick="startTrip('${t.bookingId}','master')">▶️ Bắt đầu</button>${reassign}</div>`;
   }
@@ -3115,7 +4022,9 @@ function renderFulfillment() {
     bookingMatchesFulfillmentTab(b, tab)
   );
   const pool = getDriverPoolForTab(tab);
-  const availableDrivers = pool.filter(d => d.status === 'online');
+  const availableDrivers = tab === 'bikecar'
+    ? pool.filter(d => getDriverAvailability(d, null, DEFAULT_PICKUP_LOCATION, null, { ignoreRadius: true }).available)
+    : pool.filter(d => d.status === 'online');
 
   // Stats theo tab
   const tasksInTab = FULFILLMENT_TASKS.filter(t => {
@@ -3179,10 +4088,15 @@ function renderFulfillmentDefault(allPending, availableDrivers, canAssign) {
     const routeInfo = serviceOrder
       ? `<div class="dispatch-item-route dispatch-item-pickup-only"><span class="pickup">${esc(serviceOrder.pickupAddress || b.pickup || '—')}</span></div>`
       : `<div class="dispatch-item-route"><span class="pickup">${esc(b.pickup)}</span><span class="dropoff">${esc(b.dropoff)}</span></div>`;
-    return `<div class="dispatch-item" ${canAssign ? `onclick="openDispatchModal('${b.id}')"` : ''}>
-      <div class="dispatch-item-header"><span class="dispatch-item-id">${b.bookingCode}</span><span class="dispatch-item-type">${bookingServiceType?.icon || vt?.icon || '🚗'} ${esc(bookingServiceType?.name || '')}</span></div>
-      ${routeInfo}${serviceInfo}
-      <div class="dispatch-item-footer"><span class="dispatch-item-price">${fmt(b.fareSnapshot)}</span>${canAssign ? `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDispatchModal('${b.id}')">Gán tài xế</button>` : '<span class="text-muted" style="font-size:12px">Chỉ xem</span>'}</div>
+    const manualState = getManualDispatchState(b);
+    const manualAllowed = canAssign && manualState.allowed;
+    const waitInfo = ['BIKE', 'CAR'].includes(b.bookingType)
+      ? `<div style="font-size:11px;color:${manualState.allowed ? 'var(--warning)' : 'var(--text-muted)'};margin-top:5px">⏱️ Đã chờ ${formatWaitDuration(manualState.waitSeconds)} · ${esc(manualState.reason)}</div>`
+      : '';
+    return `<div class="dispatch-item" ${manualAllowed ? `onclick="openDispatchModal('${b.id}')"` : ''}>
+      <div class="dispatch-item-header"><span class="dispatch-item-id">${b.bookingCode}</span><span class="dispatch-item-type">${bookingServiceType?.icon || vt?.icon || '🚗'} ${esc(getServiceTypeDisplayName(bookingServiceType))}</span></div>
+      ${routeInfo}${serviceInfo}${waitInfo}
+      <div class="dispatch-item-footer"><span class="dispatch-item-price">${fmt(b.fareSnapshot)}</span>${manualAllowed ? `<button class="btn btn-primary btn-sm" onclick="event.stopPropagation();openDispatchModal('${b.id}')">Điều phối</button>` : (canAssign ? `<button class="btn btn-sm btn-outline" disabled>${esc(manualState.reason || 'Chưa thể điều phối')}</button>` : '<span class="text-muted" style="font-size:12px">Chỉ xem</span>')}</div>
     </div>`;
   }).join('') : '<div class="empty-state"><div class="empty-state-icon">🎉</div><div class="empty-state-text">Tất cả đã được gán</div></div>';
 
@@ -3236,8 +4150,15 @@ function openDispatchModal(bookingId) {
   if (b.bookingType === 'INTERCITY') {
     return openIntercityDispatchModal(bookingId);
   }
+  if (['BIKE', 'CAR'].includes(b.bookingType) && (!b.fulfillmentStatus || b.fulfillmentStatus === 'PENDING')) {
+    const manualState = getManualDispatchState(b);
+    if (!manualState.allowed) return alert(manualState.reason);
+  }
   selectedDispatchBooking = b;
   selectedDispatchDriverId = null;
+  _dispatchDriverMeta = new Map();
+  const manualReason = document.getElementById('dispatch-manual-reason');
+  if (manualReason) manualReason.value = '';
   const vt = VEHICLE_TYPES[b.bookingType];
   const bookingServiceType = getServiceType(b.serviceTypeId);
   const serviceOrder = getBookingServiceOrder(b)?.order;
@@ -3249,6 +4170,10 @@ function openDispatchModal(bookingId) {
   const radiusHtml = matchingRadius
     ? `<div style="font-size:12px;color:var(--accent);margin-top:6px">📡 Ghép chuyến: ${matchingRadius.initialKm} km ban đầu · mở rộng +${matchingRadius.expandStepKm} km · tối đa ${matchingRadius.maxKm} km</div>`
     : '';
+  const manualState = getManualDispatchState(b);
+  const waitHtml = ['BIKE', 'CAR'].includes(b.bookingType)
+    ? `<div style="font-size:12px;color:var(--warning);margin-top:6px">⏱️ Đã chờ ${formatWaitDuration(manualState.waitSeconds)} · ${esc(manualState.reason)}</div>`
+    : '';
   const locationHtml = serviceOrder
     ? `<div class="dispatch-modal-pickup"><span>📍 Địa chỉ nhận xe</span><strong>${esc(serviceOrder.pickupAddress || b.pickup || '—')}</strong></div>
        <div class="dispatch-service-meta dispatch-service-meta-modal">
@@ -3259,19 +4184,44 @@ function openDispatchModal(bookingId) {
        </div>`
     : `<div style="font-size:12px;color:var(--text-secondary)">📍 ${esc(b.pickup)}<br>🏁 ${esc(b.dropoff)}</div>`;
   document.getElementById('dispatch-trip-info').innerHTML = `
-    <div class="flex-center" style="margin-bottom:8px"><span style="font-size:20px">${bookingServiceType?.icon || vt?.icon || '🚗'}</span><span class="fw-600">${b.bookingCode}</span><span class="text-muted">·</span><span>${esc(bookingServiceType?.name || vt?.label || '')}</span><span class="recent-trip-price" style="margin-left:auto">${fmt(b.fareSnapshot)}</span></div>
-    ${locationHtml}${scheduleHtml}${radiusHtml}`;
+    <div class="flex-center" style="margin-bottom:8px"><span style="font-size:20px">${bookingServiceType?.icon || vt?.icon || '🚗'}</span><span class="fw-600">${b.bookingCode}</span><span class="text-muted">·</span><span>${esc(getServiceTypeDisplayName(bookingServiceType) || vt?.label || '')}</span><span class="recent-trip-price" style="margin-left:auto">${fmt(b.fareSnapshot)}</span></div>
+    ${locationHtml}${scheduleHtml}${radiusHtml}${waitHtml}`;
   // Pool tài xế phù hợp với loại booking
   const pool = getDriverPoolForBooking(b.bookingType);
   // SERVICE/MAINTENANCE dùng chung pool INTERCITY_DRIVERS → logic hiển thị giống liên tỉnh:
   //   status !== 'offline' và rảnh trong khung giờ (không xung đột lịch khác)
   // BIKE/CAR (real-time) → chỉ TX đang online
   const isServiceType = b.bookingType === 'SERVICE_ORDER' || b.bookingType === 'MAINTENANCE_ORDER';
-  _dispatchDrivers = isServiceType
-    ? pool.filter(d => d.status !== 'offline' && isDriverFreeAt(d.id, window, b.fulfillmentTaskId))
-    : pool.filter(d => d.status === 'online' && !d.currentAssignmentId && driverCanRunServiceType(d, b.serviceTypeId));
+  if (['BIKE', 'CAR'].includes(b.bookingType)) {
+    const pickup = getBookingPickupLocation(b);
+    const config = getMatchingRadiusConfig(bookingServiceType);
+    _dispatchDrivers = pool.filter(d =>
+      d.vehicleType === b.bookingType &&
+      (b.bookingType !== 'CAR' || Number(d.vehicleSeats || 4) >= Number(bookingServiceType?.seats || 4))
+    );
+    _dispatchDrivers.forEach(d => {
+      const availability = getDriverAvailability(d, b.serviceTypeId, pickup, config.maxKm, { excludeBookingId: b.id });
+      _dispatchDriverMeta.set(d.id, {
+        ...availability,
+        withinInitialRadius: availability.distanceKm <= config.initialKm,
+        initialKm: config.initialKm,
+        maxKm: config.maxKm
+      });
+    });
+    _dispatchDrivers.sort((a, bDriver) => {
+      const ma = _dispatchDriverMeta.get(a.id); const mb = _dispatchDriverMeta.get(bDriver.id);
+      if (ma.available !== mb.available) return ma.available ? -1 : 1;
+      if (ma.withinInitialRadius !== mb.withinInitialRadius) return ma.withinInitialRadius ? -1 : 1;
+      return ma.distanceKm - mb.distanceKm;
+    });
+  } else {
+    _dispatchDrivers = isServiceType
+      ? pool.filter(d => d.status !== 'offline' && isDriverFreeAt(d.id, window, b.fulfillmentTaskId))
+      : pool.filter(d => d.status === 'online' && !d.currentAssignmentId && driverCanRunServiceType(d, b.serviceTypeId));
+  }
 
-  document.getElementById('dispatch-modal-driver-count').textContent = `(${_dispatchDrivers.length})`;
+  const selectableCount = _dispatchDrivers.filter(d => _dispatchDriverMeta.has(d.id) ? _dispatchDriverMeta.get(d.id).available : true).length;
+  document.getElementById('dispatch-modal-driver-count').textContent = `(${selectableCount} có thể chọn / ${_dispatchDrivers.length})`;
   renderDispatchDriverCards();
   renderDispatchSelected();
   openModal('dispatch-modal');
@@ -3291,12 +4241,21 @@ function renderDispatchDriverCards() {
     const busy = d.status === 'busy' ? describeNextBusyWindow('driver', d.id) : null;
     const nBusy = _busyWindows('driver', d.id, null).length;
     const sel = d.id === selectedDispatchDriverId;
-    return `<div class="dispatch-pick-card ${sel ? 'selected' : ''}" onclick="selectDispatchDriver('${d.id}')">
+    const availability = _dispatchDriverMeta.get(d.id);
+    const selectable = availability ? availability.available : true;
+    const distance = availability && Number.isFinite(availability.distanceKm) ? `${availability.distanceKm.toFixed(1)} km` : '';
+    const locationLabel = availability
+      ? (availability.withinInitialRadius ? `Trong bán kính ban đầu · ${distance}` : `Ngoài bán kính ban đầu · ${distance}`)
+      : '';
+    const sub = selectable
+      ? (locationLabel || (busy ? `⏳ đang bận ${busy}${nBusy > 1 ? ` +${nBusy - 1} lịch` : ''}` : 'Sẵn sàng nhận chuyến'))
+      : availability.reasons.join(' · ');
+    return `<div class="dispatch-pick-card ${sel ? 'selected' : ''} ${selectable ? '' : 'is-disabled'}" ${selectable ? `onclick="selectDispatchDriver('${d.id}')"` : ''} style="${selectable ? '' : 'opacity:.58;cursor:not-allowed'}">
       <div class="driver-avatar">${d.avatar}</div>
       <div class="dispatch-pick-info">
         <div class="dispatch-pick-name">${d.name}${sel ? '<span class="dispatch-pick-check">✓</span>' : ''}</div>
-        <div class="dispatch-pick-meta">${meta} · ⭐ ${d.rating}</div>
-        <div class="dispatch-pick-sub">${busy ? `⏳ đang bận ${busy}${nBusy > 1 ? ` +${nBusy - 1} lịch` : ''}` : 'Sẵn sàng nhận chuyến'}</div>
+        <div class="dispatch-pick-meta">${meta} · ⭐ ${Number(d.rating || 0).toFixed(1)} (${getDriverRatingCount(d)} lượt) · ${Number(d.trips || 0).toLocaleString()} chuyến · hôm nay ${getDriverCompletedToday(d.id)}</div>
+        <div class="dispatch-pick-sub">${esc(sub)}</div>
       </div>
       ${driverBadge(d.status)}
     </div>`;
@@ -3304,6 +4263,8 @@ function renderDispatchDriverCards() {
 }
 
 function selectDispatchDriver(id) {
+  const availability = _dispatchDriverMeta.get(id);
+  if (availability && !availability.available) return;
   selectedDispatchDriverId = (selectedDispatchDriverId === id) ? null : id;
   renderDispatchDriverCards();
   renderDispatchSelected();
@@ -3312,17 +4273,23 @@ function selectDispatchDriver(id) {
 function renderDispatchSelected() {
   const el = document.getElementById('dispatch-selected');
   const d = selectedDispatchDriverId ? findDriver(selectedDispatchDriverId) : null;
+  const reasonWrap = document.getElementById('dispatch-manual-reason-wrap');
   if (!d) {
     el.innerHTML = `<div class="dispatch-sel-title">✅ Đã chọn</div><div class="dispatch-sel-box"><div class="dispatch-sel-empty">🧑‍✈️ Chưa chọn tài xế</div></div>`;
+    if (reasonWrap) reasonWrap.style.display = 'none';
     return;
   }
   const meta = d.plate
     ? `${VEHICLE_TYPES[d.vehicleType]?.icon || ''} ${d.plate}`
     : `🪪 GPLX ${d.licenseClass || '—'} · ${getPartnerName(d.operatorId)}`;
   const exclude = selectedDispatchBooking ? selectedDispatchBooking.fulfillmentTaskId : null;
+  const availability = _dispatchDriverMeta.get(d.id);
+  const outsideInitial = availability && !availability.withinInitialRadius;
+  if (reasonWrap) reasonWrap.style.display = outsideInitial ? '' : 'none';
+  const performance = `⭐ ${Number(d.rating || 0).toFixed(1)} (${getDriverRatingCount(d)} lượt) · ${Number(d.trips || 0).toLocaleString()} chuyến · hôm nay ${getDriverCompletedToday(d.id)}`;
   el.innerHTML = `<div class="dispatch-sel-title">✅ Đã chọn</div>
     <div class="dispatch-sel-box filled">
-      <div class="dispatch-sel-head"><span class="driver-avatar">${d.avatar}</span><div><div class="dispatch-sel-name">${d.name}</div><div class="dispatch-sel-meta">${meta} · ⭐ ${d.rating}</div></div></div>
+      <div class="dispatch-sel-head"><span class="driver-avatar">${d.avatar}</span><div><div class="dispatch-sel-name">${d.name}</div><div class="dispatch-sel-meta">${meta} · ${performance}</div>${availability ? `<div class="dispatch-sel-meta">📍 ${availability.distanceKm.toFixed(1)} km đến điểm đón${outsideInitial ? ' · ngoài bán kính ban đầu' : ''}</div>` : ''}</div></div>
       <div class="dispatch-sel-notes-title">${_busyNotesTitle('driver', d.id, exclude)}</div>
       <div class="dispatch-sel-notes">${_busyWindowsHtml('driver', d.id, exclude)}</div>
     </div>`;
@@ -3517,6 +4484,11 @@ function assignDriver() {
   if (!_validateAssign(b)) return;
   const driver = findDriver(driverId);
   if (!driver) { alert('Không tìm thấy tài xế'); return; }
+  const availability = _dispatchDriverMeta.get(driverId);
+  if (availability && !availability.available) return alert(`Tài xế không còn khả dụng: ${availability.reasons.join(', ')}`);
+  const outsideInitial = availability && !availability.withinInitialRadius;
+  const manualReason = document.getElementById('dispatch-manual-reason')?.value.trim() || '';
+  if (outsideInitial && !manualReason) return alert('Vui lòng nhập lý do chọn tài xế ngoài bán kính ban đầu.');
 
   const traceId = newTraceId();
   if (b.driverId && b.driverId !== driverId) releaseDriver(b.driverId);
@@ -3524,13 +4496,19 @@ function assignDriver() {
   b.driverId = driverId;
   b.fulfillmentStatus = 'ASSIGNED';
   b.updatedAt = nowStr();
-  createOrUpdateFulfillmentTask(b, driverId, null, traceId);
-
-  // Chỉ set busy nếu trip đang/sắp chạy. Trip tương lai → status giữ nguyên (TX vẫn online nhận chuyến khác trong khung khác)
-  const window = getBookingTimeWindow(b);
-  if (isWindowCurrent(window)) {
-    driver.status = 'busy';
-    driver.currentAssignmentId = b.fulfillmentTaskId;
+  const task = createOrUpdateFulfillmentTask(b, driverId, null, traceId);
+  if (['BIKE', 'CAR'].includes(b.bookingType)) {
+    task.acceptedAt = null;
+    task.offerStatus = 'PENDING';
+    task.offerExpiresAt = new Date(Date.now() + DRIVER_OFFER_TIMEOUT_SECONDS * 1000).toISOString();
+    task.manualDispatchReason = manualReason || getManualDispatchState(b).reason;
+    task.offerDistanceKm = availability?.distanceKm == null ? null : Math.round(availability.distanceKm * 10) / 10;
+  } else {
+    const window = getBookingTimeWindow(b);
+    if (isWindowCurrent(window)) {
+      driver.status = 'busy';
+      driver.currentAssignmentId = b.fulfillmentTaskId;
+    }
   }
 
   sendConfiguredNotification({
@@ -3541,21 +4519,14 @@ function assignDriver() {
     driver,
     fallbackType: 'driver_assigned',
     fallbackTitle: 'Có đơn mới',
-    fallbackContent: `Bạn được gán chuyến ${b.bookingCode} (${b.pickup} → ${b.dropoff})`,
+    fallbackContent: `Bạn có ${DRIVER_OFFER_TIMEOUT_SECONDS} giây để nhận chuyến ${b.bookingCode} (${b.pickup} → ${b.dropoff})`,
     actionPage: 'fulfillment',
     targetId: b.id
   });
-  sendConfiguredNotification({
-    eventType: 'fulfillment_assigned_user',
-    booking: b,
-    recipient: b.customerId,
-    driver,
-    fallbackType: 'driver_assigned',
-    fallbackTitle: 'Đơn đã có tài xế',
-    fallbackContent: `Tài xế ${driver.name}${driver.plate ? ' (' + driver.plate + ')' : ''} sẽ phục vụ chuyến ${b.bookingCode}`,
-    actionPage: 'bookings',
-    targetId: b.id
-  });
+  createNotification({ type: 'driver_offer_pending', recipient: b.customerId,
+    content: `Đang chờ tài xế xác nhận chuyến ${b.bookingCode}` });
+  createAuditLog({ action: 'fulfillment.manual_offer', target: task.id, traceId,
+    before: null, after: { driverId, outsideInitial: !!outsideInitial, distanceKm: task.offerDistanceKm, reason: task.manualDispatchReason } });
 
   closeModal('dispatch-modal');
   selectedDispatchBooking = null;
@@ -3875,7 +4846,7 @@ let cashTrip = null; // { walletId, seats, price, rate, held, tripId }
 function openCashSettle(walletId) {
   const w = WALLETS.find(x => x.id === walletId);
   if (!w || w.ownerType !== 'DRIVER') { alert('Chỉ áp dụng cho ví tài xế.'); return; }
-  cashTrip = { walletId, seats: 5, price: 200000, rate: 10, held: false, noShow: [], tripId: 'TRIP-' + Date.now().toString().slice(-5) };
+  cashTrip = { walletId, seats: 6, price: 200000, rate: 10, held: false, noShow: [], tripId: 'TRIP-' + Date.now().toString().slice(-5) };
   renderCashSettle();
   openModal('cash-settle-modal');
 }
@@ -4248,17 +5219,84 @@ function getServiceTypePriceSummary(serviceType) {
   return profile.label || serviceType.pricingKey;
 }
 
-function calculateServiceTypeFare(serviceType, distance) {
+function minutesInVietnam(date) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).formatToParts(date);
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
+  const minute = Number(parts.find(p => p.type === 'minute')?.value || 0);
+  return hour * 60 + minute;
+}
+
+function timeToMinutes(value) {
+  const [hour, minute] = String(value || '').split(':').map(Number);
+  return Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : null;
+}
+
+function isMinuteInSlot(minute, from, to) {
+  const start = timeToMinutes(from); const end = timeToMinutes(to);
+  if (start == null || end == null) return false;
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end;
+}
+
+function calculateServiceTypeFareBreakdown(serviceType, distance, requestedAt = new Date(), promotionDiscount = 0) {
   const profile = PRICING[serviceType?.pricingKey];
-  if (!profile || profile.mode !== 'km' || !Array.isArray(profile.km)) return 0;
+  if (!profile || profile.mode !== 'km' || !Array.isArray(profile.km)) {
+    return { distanceFare: 0, timeSlotSurcharge: 0, periodSurcharge: 0, promotionDiscount: 0, total: 0, kmSegments: [] };
+  }
   const km = Math.max(0, Number(distance) || 0);
-  let total = 0;
+  const at = requestedAt instanceof Date ? requestedAt : (parseAppDateTime(requestedAt) || new Date());
+  let distanceFare = 0;
+  const kmSegments = [];
   profile.km.slice().sort((a, b) => a.fromKm - b.fromKm).forEach(rule => {
     const end = rule.toKm == null ? km : Math.min(km, rule.toKm);
     const segment = Math.max(0, end - rule.fromKm);
-    total += segment * rule.pricePerKm;
+    if (!segment) return;
+    const amount = segment * rule.pricePerKm;
+    distanceFare += amount;
+    kmSegments.push({ ruleId: rule.id, fromKm: rule.fromKm, toKm: end, distanceKm: segment, pricePerKm: rule.pricePerKm, amount });
   });
-  return Math.round(total / 1000) * 1000;
+
+  const minute = minutesInVietnam(at);
+  const matchedSlots = (profile.timeSlot || []).filter(slot => isMinuteInSlot(minute, slot.from, slot.to));
+  const selectedSlot = matchedSlots.sort((a, b) => Number(b.surcharge || 0) - Number(a.surcharge || 0))[0] || null;
+
+  const dateKey = vnDateKey(at);
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' }).format(at);
+  const matchedPeriods = (profile.period || []).filter(period =>
+    (period.type === 'weekend' && ['Sat', 'Sun'].includes(weekday)) ||
+    (period.type === 'date_range' && period.from <= dateKey && dateKey <= period.to)
+  );
+  const selectedPeriod = matchedPeriods.sort((a, b) => Number(b.surcharge || 0) - Number(a.surcharge || 0))[0] || null;
+  const timeSlotSurcharge = Number(selectedSlot?.surcharge) || 0;
+  const periodSurcharge = Number(selectedPeriod?.surcharge) || 0;
+  const discount = Math.max(0, Number(promotionDiscount) || 0);
+  const total = Math.max(0, Math.round((distanceFare + timeSlotSurcharge + periodSurcharge - discount) / 1000) * 1000);
+  return {
+    serviceTypeId: serviceType.id,
+    pricingKey: serviceType.pricingKey,
+    requestedAt: at.toISOString(),
+    distanceKm: km,
+    kmSegments,
+    distanceFare: Math.round(distanceFare),
+    timeSlot: selectedSlot ? { ...selectedSlot } : null,
+    timeSlotSurcharge,
+    period: selectedPeriod ? { ...selectedPeriod } : null,
+    periodSurcharge,
+    promotionDiscount: discount,
+    total
+  };
+}
+
+function calculateServiceTypeFare(serviceType, distance, requestedAt = new Date(), promotionDiscount = 0) {
+  return calculateServiceTypeFareBreakdown(serviceType, distance, requestedAt, promotionDiscount).total;
+}
+
+function renderPricingSnapshotSummary(snapshot) {
+  if (!snapshot || snapshot.distanceFare == null) return '';
+  return `<div class="text-muted" style="font-size:11px;line-height:1.7">
+    Giá km ${fmt(snapshot.distanceFare)} · Khung giờ +${fmt(snapshot.timeSlotSurcharge || 0)} · Thời điểm +${fmt(snapshot.periodSurcharge || 0)}${snapshot.promotionDiscount ? ` · Khuyến mãi -${fmt(snapshot.promotionDiscount)}` : ''}
+  </div>`;
 }
 
 function switchServiceTypeTab(tab, button = null) {
@@ -4277,17 +5315,17 @@ function renderMatchingRadiusTable() {
     const config = getMatchingRadiusConfig(serviceType);
     const rounds = buildMatchingRadiusRounds(config);
     const drivers = getServiceTypeDrivers(serviceType.id);
-    const online = drivers.filter(driver => driver.status === 'online' && !driver.currentAssignmentId).length;
+    const available = getServiceTypeAvailableDrivers(serviceType.id, DEFAULT_PICKUP_LOCATION, config.initialKm).length;
     return `<tr>
-      <td><div class="service-type-name"><span class="service-type-icon">${serviceType.icon || '🚗'}</span><div><div class="fw-600">${esc(serviceType.name)}</div><div class="text-muted" style="font-size:11px">${esc(serviceType.code)}</div></div></div></td>
+      <td><div class="service-type-name"><span class="service-type-icon">${serviceType.icon || '🚗'}</span><div><div class="fw-600">${esc(getServiceTypeDisplayName(serviceType))}</div><div class="text-muted" style="font-size:11px">${esc(getServiceTypeDisplayCode(serviceType))}</div></div></div></td>
       <td><b>${config.initialKm} km</b></td>
       <td>+${config.expandStepKm} km</td>
       <td><b>${config.maxKm} km</b></td>
       <td><div class="radius-rounds">${rounds.map(radius => `<span>${radius} km</span>`).join('<b>→</b>')}</div></td>
-      <td><button class="service-driver-summary" onclick="showServiceTypeDrivers('${serviceType.id}')"><b>${drivers.length} tài xế & xe riêng</b><span>${online} đang Online và chưa có chuyến</span></button></td>
+      <td><button class="service-driver-summary" onclick="showServiceTypeDrivers('${serviceType.id}')"><b>${drivers.length} tài xế & xe riêng</b><span>${available} available trong bán kính ban đầu</span></button></td>
       <td><button class="btn btn-sm btn-outline" onclick="openMatchingRadiusModal('${serviceType.id}')">✏️ Cấu hình</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">Chưa có loại dịch vụ để cấu hình.</div></div></td></tr>';
+  }).join('') || '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">Chưa có loại xe để cấu hình.</div></div></td></tr>';
 }
 
 function openMatchingRadiusModal(serviceTypeId) {
@@ -4295,7 +5333,7 @@ function openMatchingRadiusModal(serviceTypeId) {
   if (!serviceType) return;
   const config = getMatchingRadiusConfig(serviceType);
   document.getElementById('radius-service-type-id').value = serviceType.id;
-  document.getElementById('radius-service-type-name').textContent = `${serviceType.icon || '🚗'} ${serviceType.name}`;
+  document.getElementById('radius-service-type-name').textContent = `${serviceType.icon || '🚗'} ${getServiceTypeDisplayName(serviceType)}`;
   document.getElementById('radius-initial-km').value = config.initialKm;
   document.getElementById('radius-expand-step-km').value = config.expandStepKm;
   document.getElementById('radius-max-km').value = config.maxKm;
@@ -4316,7 +5354,7 @@ function saveMatchingRadius() {
   closeModal('matching-radius-modal');
   renderMatchingRadiusTable();
   scheduleSave();
-  toast(`Đã lưu bán kính ghép chuyến cho ${serviceType.name}`, 'success');
+  toast(`Đã lưu bán kính ghép chuyến cho ${getServiceTypeDisplayName(serviceType)}`, 'success');
 }
 
 function renderServiceTypes() {
@@ -4335,7 +5373,7 @@ function renderServiceTypes() {
     const commission = COMMISSIONS.find(c => c.vehicleType === s.vehicleType);
     const drivers = getServiceTypeDrivers(s.id);
     return `<tr>
-      <td><div class="service-type-name"><span class="service-type-icon">${s.icon || '🚗'}</span><div><div class="fw-600">${esc(s.name)}</div><div class="text-muted" style="font-size:11px">${esc(s.code)} · ${esc(s.description || '')}</div></div></div></td>
+      <td><div class="service-type-name"><span class="service-type-icon">${s.icon || '🚗'}</span><div><div class="fw-600">${esc(getServiceTypeDisplayName(s))}</div><div class="text-muted" style="font-size:11px">${esc(getServiceTypeDisplayCode(s))} · ${esc(s.description || '')}</div></div></div></td>
       <td><div class="fw-600">${VEHICLE_TYPES[s.vehicleType]?.icon || ''} ${VEHICLE_TYPES[s.vehicleType]?.label || s.vehicleType}</div><div class="text-muted" style="font-size:11px">${s.seats || 1} chỗ</div></td>
       <td><button class="service-link-card price" onclick="openServiceTypePricing('${s.id}')"><span>💵 ${esc(PRICING[s.pricingKey]?.label || s.pricingKey)}</span><small>${getServiceTypePriceSummary(s)}</small></button></td>
       <td><div class="service-link-card commission readonly"><span>📈 ${s.vehicleType} · Tài xế nhận ${commission ? 100 - commission.rate : '—'}%</span><small>Chỉ xem · lấy từ cấu hình chiết khấu ${s.vehicleType === 'BIKE' ? 'Bike' : 'Car'}</small></div></td>
@@ -4343,7 +5381,7 @@ function renderServiceTypes() {
       <td><span class="badge badge-${s.status === 'active' ? 'active' : 'expired'}">${s.status === 'active' ? 'Hoạt động' : 'Tạm dừng'}</span></td>
       <td><button class="btn btn-sm btn-outline" onclick="openServiceTypeModal('${s.id}')">✏️ Sửa</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">Chưa có loại dịch vụ Bike/Car</div></div></td></tr>';
+  }).join('') || '<tr><td colspan="7"><div class="empty-state"><div class="empty-state-text">Chưa có loại xe Bike/Car</div></div></td></tr>';
   renderMatchingRadiusTable();
 }
 
@@ -4384,7 +5422,7 @@ function refreshServiceTypeFormOptions(preferredPricingKey = null, selectedDrive
 function openServiceTypeModal(id = null) {
   const serviceType = id ? getServiceType(id) : null;
   document.getElementById('st-id').value = serviceType?.id || '';
-  document.getElementById('service-type-modal-title').textContent = serviceType ? `Chỉnh sửa loại dịch vụ · ${serviceType.id}` : 'Tạo loại dịch vụ Bike/Car';
+  document.getElementById('service-type-modal-title').textContent = serviceType ? `Chỉnh sửa loại xe · ${serviceType.id}` : 'Tạo loại xe Bike/Car';
   document.getElementById('st-code').value = serviceType?.code || '';
   document.getElementById('st-name').value = serviceType?.name || '';
   document.getElementById('st-vehicle-type').value = serviceType?.vehicleType || 'BIKE';
@@ -4458,7 +5496,7 @@ function renderCommissions() {
       <div class="commission-card-header">
         <span class="commission-card-icon">${vt?.icon||'🚗'}</span>
         <div>
-          <div class="commission-card-title">${serviceType ? `${serviceType.icon || ''} ${esc(serviceType.name)}` : (vt?.label||c.vehicleType)}</div>
+          <div class="commission-card-title">${serviceType ? `${serviceType.icon || ''} ${esc(getServiceTypeDisplayName(serviceType))}` : (vt?.label||c.vehicleType)}</div>
           <div class="commission-card-subtitle">${c.description}</div>
         </div>
       </div>
@@ -4506,7 +5544,7 @@ function openCommissionEdit(id) {
   const serviceType = getServiceType(c.serviceTypeId);
   document.getElementById('ce-id').value = c.id;
   document.getElementById('ce-service').innerHTML = serviceType
-    ? `${serviceType.icon || ''} ${esc(serviceType.name)} <span class="text-muted" style="font-weight:400">· ${esc(serviceType.code)}</span>`
+    ? `${serviceType.icon || ''} ${esc(getServiceTypeDisplayName(serviceType))} <span class="text-muted" style="font-weight:400">· ${esc(getServiceTypeDisplayCode(serviceType))}</span>`
     : `${vt?.icon||''} ${vt?.label||c.vehicleType}`;
   document.getElementById('ce-desc').value = c.description || '';
   const feeRate = c.rate;
@@ -4579,31 +5617,124 @@ function switchCommissionTab(tab, btn) {
 
 function switchPricingTab(type, btn) {
   document.querySelectorAll('#pricing-sub-tabs .tab-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
   renderPricingPanel(type);
 }
 
 function renderPricingTabs(activeKey = null) {
   const host = document.getElementById('pricing-sub-tabs');
   if (!host) return;
-  const entries = [];
-  const used = new Set();
-  SERVICE_TYPES.forEach(s => {
-    if (!PRICING[s.pricingKey] || used.has(s.pricingKey)) return;
-    used.add(s.pricingKey);
-    entries.push({ key: s.pricingKey, label: s.name, icon: s.icon });
-  });
-  [
+  const linkedRidePricing = SERVICE_TYPES.find(s => s.pricingKey === activeKey);
+  if (linkedRidePricing) selectedPricingKeyByGroup[linkedRidePricing.vehicleType] = activeKey;
+  const entries = [
+    { key: 'BIKE', label: 'Xe máy', icon: '🏍️' },
+    { key: 'CAR', label: 'Xe hơi', icon: '🚗' },
     { key: 'INTERCITY', label: 'Liên tỉnh', icon: '🚌' },
     { key: 'SERVICE_ORDER', label: 'Đăng kiểm hộ', icon: '📋' },
     { key: 'MAINTENANCE_ORDER', label: 'Bảo dưỡng hộ', icon: '🔧' }
-  ].forEach(e => { if (PRICING[e.key] && !used.has(e.key)) entries.push(e); });
-  const key = entries.some(e => e.key === activeKey) ? activeKey : (entries[0]?.key || 'BIKE');
+  ].filter(e => ['BIKE', 'CAR'].includes(e.key) || PRICING[e.key]);
+  const activeTabKey = linkedRidePricing?.vehicleType || activeKey;
+  const key = entries.some(e => e.key === activeTabKey) ? activeTabKey : 'BIKE';
   host.innerHTML = entries.map(e => `<button class="tab-btn ${e.key === key ? 'active' : ''}" data-ptab="${e.key}" onclick="switchPricingTab('${e.key}', this)">${e.icon || ''} ${esc(e.label)}</button>`).join('');
   renderPricingPanel(key);
 }
 
+function selectRidePricingProfile(vehicleType, pricingKey) {
+  selectedPricingKeyByGroup[vehicleType] = pricingKey;
+  renderPricingPanel(vehicleType);
+}
+
+function getRideVehicleTypeByPricingKey(pricingKey) {
+  return SERVICE_TYPES.find(serviceType => serviceType.pricingKey === pricingKey)?.vehicleType || null;
+}
+
+function openVehicleModelCreateForService(serviceType) {
+  openVehicleModelCreate();
+  document.getElementById('vm-service-type').value = serviceType;
+  onVehicleModelServiceTypeChange();
+}
+
+function renderRidePricingGroup(vehicleType) {
+  const panel = document.getElementById('pricing-panel');
+  const serviceTypes = SERVICE_TYPES
+    .filter(serviceType => serviceType.vehicleType === vehicleType && PRICING[serviceType.pricingKey])
+    .sort((a, b) => Number(a.seats || 1) - Number(b.seats || 1) || getServiceTypeDisplayName(a).localeCompare(getServiceTypeDisplayName(b), 'vi'));
+  if (!serviceTypes.length) {
+    panel.innerHTML = `<div class="table-container"><div class="empty-state"><div class="empty-state-text">Chưa có loại xe ${vehicleType === 'BIKE' ? 'xe máy' : 'xe hơi'} để tạo giá.</div><button class="btn btn-primary" onclick="openVehicleModelCreateForService('${vehicleType}')">➕ Thêm loại xe</button></div></div>`;
+    return;
+  }
+  if (!serviceTypes.some(serviceType => serviceType.pricingKey === selectedPricingKeyByGroup[vehicleType])) {
+    selectedPricingKeyByGroup[vehicleType] = serviceTypes[0].pricingKey;
+  }
+  const selectedServiceType = serviceTypes.find(serviceType => serviceType.pricingKey === selectedPricingKeyByGroup[vehicleType]) || serviceTypes[0];
+  const selectedProfile = PRICING[selectedServiceType.pricingKey];
+  const model = getServiceTypeVehicleModel(selectedServiceType);
+  const commission = COMMISSIONS.find(c => c.vehicleType === vehicleType);
+  const opening = selectedProfile.km?.slice().sort((a, b) => Number(a.fromKm) - Number(b.fromKm))[0];
+  const headerTitle = vehicleType === 'BIKE' ? 'Giá xe máy' : 'Giá ô tô';
+  const rowActions = (kind, id) => `
+    <button class="btn btn-outline btn-sm" onclick="openPricingForm('${selectedServiceType.pricingKey}','${kind}','${id}')">✏️</button>
+    <button class="btn btn-outline btn-sm" onclick="deletePricingRow('${selectedServiceType.pricingKey}','${kind}','${id}')">🗑️</button>`;
+
+  panel.innerHTML = `
+    <div class="table-container" style="margin-bottom:16px">
+      <div class="table-header">
+        <div><span class="table-title">${headerTitle}</span><div class="text-muted" style="font-size:12px;margin-top:4px">Loại xe áp dụng được quản lý ở Dữ liệu vận tải → Tuyến & Lịch chạy → Loại xe.</div></div>
+        <div class="table-actions"><button class="btn btn-primary" onclick="openVehicleModelCreateForService('${vehicleType}')">➕ Thêm bảng giá</button></div>
+      </div>
+    </div>
+    <div class="pricing-master-detail">
+      <div class="table-container pricing-list-pane">
+        <div class="table-header"><div><span class="table-title">Bảng giá</span><div class="text-muted" style="font-size:12px;margin-top:4px">${serviceTypes.length} bảng giá</div></div></div>
+        <div class="pricing-card-list">
+          ${serviceTypes.map(serviceType => {
+            const itemProfile = PRICING[serviceType.pricingKey];
+            const itemModel = getServiceTypeVehicleModel(serviceType);
+            const itemOpening = itemProfile?.km?.slice().sort((a, b) => Number(a.fromKm) - Number(b.fromKm))[0];
+            const isSelected = serviceType.pricingKey === selectedServiceType.pricingKey;
+            return `<button class="pricing-card ${isSelected ? 'selected' : ''}" onclick="selectRidePricingProfile('${vehicleType}','${serviceType.pricingKey}')">
+              <span class="service-type-icon">${serviceType.icon || (vehicleType === 'BIKE' ? '🏍️' : '🚗')}</span>
+              <span class="pricing-card-main"><b>${esc(getServiceTypeDisplayName(serviceType))}</b><small>${esc(getServiceTypeDisplayCode(serviceType))}</small><em>${esc(itemModel?.name || '')}</em></span>
+              <span class="pricing-card-meta"><small>Giá mở cửa</small><b>${fmt(itemOpening?.pricePerKm || 0)}</b><small>Khung km ${itemProfile?.km?.length || 0}</small></span>
+            </button>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="table-container pricing-detail-pane">
+        <div class="table-header">
+          <div class="service-type-name"><span class="service-type-icon">${selectedServiceType.icon || '🚗'}</span><div><span class="table-title">${esc(getServiceTypeDisplayName(selectedServiceType))}</span><div class="text-muted" style="font-size:12px;margin-top:4px">${esc(getServiceTypeDisplayCode(selectedServiceType))}</div></div></div>
+          <div class="table-actions"><button class="btn btn-outline" onclick="openVehicleModelPricing('${model?.id || ''}')">↻ Mở từ loại xe</button></div>
+        </div>
+        <div class="detail-grid" style="grid-template-columns:repeat(4,1fr);margin:0 0 16px">
+          <div class="detail-card"><span>Áp dụng cho</span><b>${esc(model?.name || getServiceTypeDisplayName(selectedServiceType))}</b></div>
+          <div class="detail-card"><span>Giá mở cửa</span><b class="text-success">${fmt(opening?.pricePerKm || 0)}</b></div>
+          <div class="detail-card"><span>Khung KM</span><b>${selectedProfile.km?.length || 0}</b></div>
+          <div class="detail-card"><span>Chiết khấu</span><b>${commission ? `TX nhận ${100 - commission.rate}%` : 'Chưa cấu hình'}</b></div>
+        </div>
+        <div class="table-wrapper" style="margin-bottom:18px">
+          <table><thead><tr><th>Từ km</th><th>Đến km</th><th>Giá / km</th><th>Ghi chú</th><th>Thao tác</th></tr></thead>
+          <tbody>${(selectedProfile.km || []).map(k => `<tr>
+            <td class="fw-600">${k.fromKm}</td>
+            <td class="fw-600">${k.toKm == null ? 'Trở lên' : k.toKm}</td>
+            <td class="fw-700 text-success">${fmt(k.pricePerKm)}</td>
+            <td class="text-muted">${esc(k.note || '--')}</td>
+            <td>${rowActions('km', k.id)}</td>
+          </tr>`).join('') || '<tr><td colspan="5" class="text-muted">Chưa có khung giá</td></tr>'}</tbody></table>
+        </div>
+        <div class="table-header" style="padding-left:0;padding-right:0"><span class="table-title">⏰ Phụ phí khung giờ</span><div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${selectedServiceType.pricingKey}','timeSlot')">➕ Thêm khung giờ</button></div></div>
+        <div class="table-wrapper" style="margin-bottom:18px"><table><thead><tr><th>Từ</th><th>Đến</th><th>Phụ phí</th><th>Ghi chú</th><th>Thao tác</th></tr></thead><tbody>${(selectedProfile.timeSlot || []).map(t => `<tr><td>${t.from}</td><td>${t.to}</td><td class="fw-700 text-warning">+ ${fmt(t.surcharge)}</td><td class="text-muted">${esc(t.note || '')}</td><td>${rowActions('timeSlot', t.id)}</td></tr>`).join('') || '<tr><td colspan="5" class="text-muted">Chưa có khung giờ</td></tr>'}</tbody></table></div>
+        <div class="table-header" style="padding-left:0;padding-right:0"><span class="table-title">📅 Phụ phí thời điểm</span><div class="table-actions"><button class="btn btn-primary btn-sm" onclick="openPricingForm('${selectedServiceType.pricingKey}','period')">➕ Thêm thời điểm</button></div></div>
+        <div class="table-wrapper"><table><thead><tr><th>Tên</th><th>Loại</th><th>Khoảng thời gian</th><th>Phụ phí</th><th>Thao tác</th></tr></thead><tbody>${(selectedProfile.period || []).map(pe => `<tr><td class="fw-600">${esc(pe.name)}</td><td>${pe.type === 'weekend' ? 'Cuối tuần' : 'Khoảng ngày'}</td><td class="text-muted">${pe.type === 'date_range' ? `${pe.from} → ${pe.to}` : '—'}</td><td class="fw-700 text-warning">+ ${fmt(pe.surcharge)}</td><td>${rowActions('period', pe.id)}</td></tr>`).join('') || '<tr><td colspan="5" class="text-muted">Chưa có thời điểm</td></tr>'}</tbody></table></div>
+      </div>
+    </div>
+  `;
+}
+
 function renderPricingPanel(type) {
+  if (['BIKE', 'CAR'].includes(type)) {
+    renderRidePricingGroup(type);
+    return;
+  }
   const p = PRICING[type];
   if (!p) return;
   const panel = document.getElementById('pricing-panel');
@@ -4761,6 +5892,39 @@ function togglePricingPeriodRange() {
   document.getElementById('pf-range-to-wrap').style.display = isRange ? '' : 'none';
 }
 
+function validatePricingRows(kind, rows) {
+  if (kind === 'km') {
+    const sorted = rows.slice().sort((a, b) => Number(a.fromKm) - Number(b.fromKm));
+    if (!sorted.length || Number(sorted[0].fromKm) !== 0) return 'Bảng giá phải bắt đầu từ km 0.';
+    for (let i = 0; i < sorted.length; i++) {
+      const row = sorted[i];
+      if (row.toKm == null && i !== sorted.length - 1) return 'Chỉ khung km cuối cùng được để không giới hạn.';
+      if (i > 0 && Number(sorted[i - 1].toKm) !== Number(row.fromKm)) return 'Các khoảng km phải liên tục, không bị hở hoặc chồng lấn.';
+    }
+  }
+  if (kind === 'timeSlot') {
+    const intervals = [];
+    rows.forEach(row => {
+      const start = timeToMinutes(row.from); const end = timeToMinutes(row.to);
+      if (start == null || end == null || start === end) return;
+      if (start < end) intervals.push({ start, end, id: row.id });
+      else {
+        intervals.push({ start, end: 1440, id: row.id });
+        intervals.push({ start: 0, end, id: row.id });
+      }
+    });
+    for (let i = 0; i < intervals.length; i++) {
+      for (let j = i + 1; j < intervals.length; j++) {
+        if (intervals[i].id === intervals[j].id) continue;
+        if (Math.max(intervals[i].start, intervals[j].start) < Math.min(intervals[i].end, intervals[j].end)) {
+          return 'Các khung giờ không được chồng lấn.';
+        }
+      }
+    }
+  }
+  return '';
+}
+
 function openPricingForm(type, kind, id) {
   if (type === 'SERVICE_ORDER' && kind === 'services' && !id) {
     alert('Đăng kiểm hộ chỉ có một loại dịch vụ. Vui lòng sửa giá ở dòng hiện có.');
@@ -4813,22 +5977,32 @@ function savePricingForm() {
       const from = get('from').value;
       const to = get('to').value;
       if (!from || !to) return alert('Nhập đủ Từ ngày và Đến ngày.');
+      if (from > to) return alert('Từ ngày không được sau Đến ngày.');
       payload.from = from; payload.to = to;
     }
   }
 
-  if (id) {
-    const idx = arr.findIndex(x => x.id === id);
-    if (idx >= 0) arr[idx] = { ...arr[idx], ...payload };
-  } else {
-    arr.push({ id: genPricingId(type, kind), ...payload });
-  }
+  const nextId = id || genPricingId(type, kind);
+  const candidate = id
+    ? arr.map(row => row.id === id ? { ...row, ...payload } : row)
+    : [...arr, { id: nextId, ...payload }];
+  const validationError = validatePricingRows(kind, candidate);
+  if (validationError) return alert(validationError);
+  arr.length = 0;
+  candidate.forEach(row => arr.push(row));
   if (typeof createAuditLog === 'function') {
     createAuditLog({ action: 'pricing.' + (id ? 'update' : 'create'), target: `${type}.${kind}.${id || '(new)'}`, before: null, after: payload });
   }
   if (type === 'SERVICE_ORDER' && kind === 'services') normalizeRegistrationPricing();
   closeModal('pricing-form-modal');
-  renderPricingPanel(type);
+  const rideVehicleType = getRideVehicleTypeByPricingKey(type);
+  if (rideVehicleType) {
+    selectedPricingKeyByGroup[rideVehicleType] = type;
+    renderPricingPanel(rideVehicleType);
+  } else {
+    renderPricingPanel(type);
+  }
+  scheduleSave();
 }
 
 function deletePricingRow(type, kind, id) {
@@ -4846,7 +6020,10 @@ function deletePricingRow(type, kind, id) {
   if (typeof createAuditLog === 'function') {
     createAuditLog({ action: 'pricing.delete', target: `${type}.${kind}.${id}`, before: item, after: null });
   }
-  renderPricingPanel(type);
+  const rideVehicleType = getRideVehicleTypeByPricingKey(type);
+  if (rideVehicleType) renderPricingPanel(rideVehicleType);
+  else renderPricingPanel(type);
+  scheduleSave();
 }
 
 // ============================================
@@ -5109,11 +6286,12 @@ function renderMonitoring() {
 // ============================================
 function updateBadges() {
   const pending = BOOKINGS.filter(b => b.bookingStatus === 'PENDING_CONFIRMATION').length;
+  const fulfillmentPending = BOOKINGS.filter(b => b.bookingStatus === 'CONFIRMED' && (b.paymentStatus === 'CONFIRMED' || b.paymentStatus === 'CASH') && (!b.fulfillmentStatus || b.fulfillmentStatus === 'PENDING')).length;
   const el1 = document.getElementById('pending-badge');
   const el2 = document.getElementById('fulfillment-badge');
   const el3 = document.getElementById('refund-badge');
   if (el1) { el1.textContent = pending; el1.style.display = pending > 0 ? '' : 'none'; }
-  if (el2) { el2.textContent = pending; el2.style.display = pending > 0 ? '' : 'none'; }
+  if (el2) { el2.textContent = fulfillmentPending; el2.style.display = fulfillmentPending > 0 ? '' : 'none'; }
   const refPending = REFUNDS.filter(r => r.status === 'PENDING').length;
   if (el3) { el3.textContent = refPending; el3.style.display = refPending > 0 ? '' : 'none'; }
   renderHeaderNotifications();
@@ -5123,13 +6301,41 @@ function updateBadges() {
 // ============================================
 // INIT
 // ============================================
+function pulseDriverHeartbeats() {
+  const nowIso = new Date().toISOString();
+  DRIVERS.forEach(driver => {
+    if (driver.status === 'offline') return;
+    driver.lastHeartbeatAt = nowIso;
+    if (driver.gpsEnabled !== false) {
+      driver.lastLocationAt = nowIso;
+      // Dịch chuyển nhẹ để mô phỏng app tài xế cập nhật GPS mỗi 5 giây.
+      driver.lat = Number(driver.lat) + (Math.random() - 0.5) * 0.00008;
+      driver.lng = Number(driver.lng) + (Math.random() - 0.5) * 0.00008;
+    }
+  });
+}
+
+function startBikeCarOperationalTimers() {
+  clearInterval(_driverHeartbeatTimer);
+  clearInterval(_offerTicker);
+  pulseDriverHeartbeats();
+  _driverHeartbeatTimer = setInterval(pulseDriverHeartbeats, 5000);
+  _offerTicker = setInterval(() => {
+    expirePendingDriverOffers();
+    if (currentPage === 'fulfillment') renderFulfillment();
+    if (_simTab === 'driver' && document.getElementById('sim-panel')?.classList.contains('open')) renderSimPanel();
+  }, 1000);
+}
+
 function init() {
   // Khôi phục dữ liệu đã lưu (nếu có) TRƯỚC khi heal — để heal làm việc trên data thật.
   hydrateStore();
   ensureNotificationConfigs();
+  ensureIntercityServiceLocationData();
 
   // Heal & sync derived state trước khi render
   healData();
+  startBikeCarOperationalTimers();
   seedHeaderNotifications();
   saveStore(); // chốt trạng thái sau heal (lần đầu tạo snapshot từ seed)
 
@@ -5255,41 +6461,38 @@ function renderAgentDashboard() {
 // ---- Locations dropdown ----
 function getLocation(id) { return LOCATIONS.find(l => l.id === id); }
 
-// Hiển thị label đầy đủ cho 1 location:
-// - city (TP trực thuộc TW) → "TP.HCM"
-// - district → "Tỉnh - Huyện" (vd: "Lâm Đồng - Đà Lạt")
+// Hiển thị label đầy đủ cho một địa điểm phục vụ.
+// Địa điểm có parent dùng dạng "Nhóm tỉnh - Địa danh" để tránh trùng tên.
 function locationLabel(loc) {
   if (!loc) return '';
-  if (loc.type === 'city' || !loc.parentId) return loc.name;
+  if (!loc.parentId) return loc.name;
   const parent = getLocation(loc.parentId);
   return parent ? `${parent.name} - ${loc.name}` : loc.name;
 }
 
-// Build options cho <select> theo cây tỉnh-huyện.
-// TP trực thuộc TW → option phẳng. Tỉnh → optgroup chứa các huyện.
+// Build options theo địa điểm phục vụ: địa điểm trực tiếp ở ngoài,
+// địa danh có parent được nhóm theo tỉnh để người dùng dễ nhận biết.
 function buildLocationOptions(locIds, includeBlank = true) {
   const ids = Array.from(new Set(locIds)).filter(Boolean);
   const items = ids.map(id => getLocation(id)).filter(Boolean);
 
-  // Tách: TPs (parentId=null, type=city) vs Districts (có parentId)
-  const cities = items.filter(l => l.type === 'city' && !l.parentId);
-  const districts = items.filter(l => l.parentId);
+  const directLocations = items.filter(l => !l.parentId && l.type !== 'province');
+  const groupedLocations = items.filter(l => l.parentId);
 
-  // Group districts theo parent (tỉnh)
-  const districtsByProv = {};
-  districts.forEach(d => {
-    (districtsByProv[d.parentId] = districtsByProv[d.parentId] || []).push(d);
+  const locationsByGroup = {};
+  groupedLocations.forEach(location => {
+    (locationsByGroup[location.parentId] = locationsByGroup[location.parentId] || []).push(location);
   });
 
   let html = includeBlank ? '<option value="">-- Chọn --</option>' : '';
 
-  // Cities trước
-  cities
+  // Các địa điểm có thể chọn trực tiếp, ví dụ TP.HCM và Bình Dương.
+  directLocations
     .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
     .forEach(c => { html += `<option value="${c.id}">${c.name}</option>`; });
 
-  // Sau đó các tỉnh có district (sort theo tên tỉnh)
-  Object.keys(districtsByProv)
+  // Sau đó là các địa danh được nhóm theo tỉnh.
+  Object.keys(locationsByGroup)
     .sort((a, b) => {
       const pa = getLocation(a)?.name || a;
       const pb = getLocation(b)?.name || b;
@@ -5297,7 +6500,10 @@ function buildLocationOptions(locIds, includeBlank = true) {
     })
     .forEach(provId => {
       const prov = getLocation(provId);
-      const locs = districtsByProv[provId].slice().sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+      const typePriority = { service_area: 0, city: 0, commune: 1 };
+      const locs = locationsByGroup[provId].slice().sort((a, b) =>
+        (typePriority[a.type] ?? 2) - (typePriority[b.type] ?? 2) || a.name.localeCompare(b.name, 'vi')
+      );
       html += `<optgroup label="${prov?.name || provId}">`;
       locs.forEach(l => { html += `<option value="${l.id}">${l.name}</option>`; });
       html += '</optgroup>';
@@ -5802,7 +7008,7 @@ async function createRegistrationOrder() {
     paymentReference: null,
     fulfillmentTaskId: null,
     serviceOrderId: newReg.id,
-    createdAt: nowStr(), updatedAt: nowStr()
+    createdAt: nowStr(), createdAtEpoch: Date.now(), updatedAt: nowStr()
   };
   BOOKINGS.push(booking);
   newReg.bookingId = booking.id;
@@ -6490,14 +7696,16 @@ function renderSimPanel() {
 
 // ---------- TAB KHÁCH ----------
 function renderSimCustomer() {
-  const custOpts = CUSTOMERS.map(c => `<option value="${c.id}">${esc(c.name)} · ${c.phone}</option>`).join('');
+  if (!_simCustomerId || !CUSTOMERS.some(c => c.id === _simCustomerId)) _simCustomerId = CUSTOMERS[0]?.id || null;
+  const custOpts = CUSTOMERS.map(c => `<option value="${c.id}" ${c.id === _simCustomerId ? 'selected' : ''}>${esc(c.name)} · ${c.phone}</option>`).join('');
   const serviceOpts = SERVICE_TYPES.filter(s => s.status === 'active').map(s => {
-    const available = getServiceTypeAvailableDrivers(s.id).length;
-    const sampleFare = calculateServiceTypeFare(s, 5);
-    return `<option value="${s.id}" ${available ? '' : 'disabled'}>${s.icon || ''} ${esc(s.name)} · khoảng ${fmt(sampleFare)}/5km${available ? ` · ${available} tài xế khả dụng` : ' · Không khả dụng'}</option>`;
+    const config = getMatchingRadiusConfig(s);
+    const available = getServiceTypeAvailableDrivers(s.id, DEFAULT_PICKUP_LOCATION, config.initialKm).length;
+    const sampleFare = calculateServiceTypeFare(s, 5, new Date());
+    return `<option value="${s.id}" ${available ? '' : 'disabled'}>${s.icon || ''} ${esc(getServiceTypeDisplayName(s))} · khoảng ${fmt(sampleFare)}/5km${available ? ` · ${available} tài xế khả dụng` : ' · Không khả dụng'}</option>`;
   }).join('') || '<option value="" disabled>Hiện chưa có dịch vụ hoạt động</option>';
   // Đơn đang hoạt động của khách (để huỷ / đổi lịch)
-  const active = BOOKINGS.filter(b => ['PENDING_CONFIRMATION','CONFIRMED','IN_PROGRESS','RESCHEDULE_REQUESTED'].includes(b.bookingStatus));
+  const active = BOOKINGS.filter(b => b.customerId === _simCustomerId && ['PENDING_CONFIRMATION','CONFIRMED','IN_PROGRESS','RESCHEDULE_REQUESTED'].includes(b.bookingStatus));
   const cards = active.slice(0, 30).map(b => {
     const vt = VEHICLE_TYPES[b.bookingType];
     const serviceType = getServiceType(b.serviceTypeId);
@@ -6505,7 +7713,7 @@ function renderSimCustomer() {
     const canReschedule = b.bookingStatus === 'CONFIRMED';
     return `<div class="sim-card">
       <div class="sc-top"><span class="sc-code">${serviceType?.icon || vt?.icon || ''} ${b.bookingCode}</span>${statusBadge(BOOKING_STATUSES, b.bookingStatus)}</div>
-      <div class="sc-route"><b>${esc(serviceType?.name || vt?.label || b.bookingType)}</b></div>
+      <div class="sc-route"><b>${esc(getServiceTypeDisplayName(serviceType) || vt?.label || b.bookingType)}</b></div>
       <div class="sc-route">${esc(getCustomerName(b.customerId))} · ${esc(b.pickup)} → ${esc(b.dropoff)}</div>
       <div class="sim-actions">
         ${canCancel ? `<button class="btn btn-sm btn-danger" onclick="simCustomerCancel('${b.id}')">Huỷ chuyến</button>` : ''}
@@ -6514,11 +7722,24 @@ function renderSimCustomer() {
       </div></div>`;
   }).join('') || '<div class="sim-empty">Chưa có đơn đang hoạt động</div>';
 
+  const reviewable = BOOKINGS.filter(b =>
+    b.customerId === _simCustomerId && b.bookingStatus === 'COMPLETED' &&
+    ['BIKE', 'CAR'].includes(b.bookingType) && b.driverId &&
+    !DRIVER_RATINGS.some(r => r.bookingId === b.id)
+  );
+  const reviewCards = reviewable.map(b => `<div class="sim-card">
+    <div class="sc-top"><span class="sc-code">⭐ Đánh giá ${esc(b.bookingCode)}</span><span class="badge badge-completed">Đã hoàn thành</span></div>
+    <div class="sc-route">Tài xế: <b>${esc(getDriverName(b.driverId))}</b></div>
+    <label>Số sao</label><select class="input" id="rating-score-${b.id}"><option value="5">5 sao</option><option value="4">4 sao</option><option value="3">3 sao</option><option value="2">2 sao</option><option value="1">1 sao</option></select>
+    <label>Nhận xét (không bắt buộc)</label><input class="input" id="rating-comment-${b.id}" placeholder="Chia sẻ trải nghiệm chuyến đi">
+    <button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="simSubmitDriverRating('${b.id}')">Gửi đánh giá</button>
+  </div>`).join('') || '<div class="sim-empty">Không có chuyến chờ đánh giá</div>';
+
   return `
     <div class="sim-form sim-card">
       <div class="sc-code" style="margin-bottom:4px">🚕 Đặt xe mới (như app khách)</div>
       <label>Khách hàng</label>
-      <select class="input" id="sim-cust">${custOpts}</select>
+      <select class="input" id="sim-cust" onchange="simSelectCustomer(this.value)">${custOpts}</select>
       <label>Loại dịch vụ</label>
       <select class="input" id="sim-service-type">${serviceOpts}</select>
       <label>Điểm đón</label>
@@ -6533,7 +7754,14 @@ function renderSimCustomer() {
       <button class="btn btn-primary" style="width:100%;margin-top:12px" onclick="simCreateRideBooking()">📲 Khách đặt xe</button>
     </div>
     <div class="sc-code" style="margin:14px 0 8px">Đơn đang hoạt động</div>
-    ${cards}`;
+    ${cards}
+    <div class="sc-code" style="margin:14px 0 8px">Đánh giá sau chuyến</div>
+    ${reviewCards}`;
+}
+
+function simSelectCustomer(customerId) {
+  _simCustomerId = customerId;
+  renderSimPanel();
 }
 
 function simCreateRideBooking() {
@@ -6541,13 +7769,16 @@ function simCreateRideBooking() {
   const serviceTypeId = document.getElementById('sim-service-type').value;
   const serviceType = getServiceType(serviceTypeId);
   if (!serviceType || serviceType.status !== 'active') return alert('Dịch vụ đã tạm dừng hoặc không còn tồn tại. Vui lòng chọn dịch vụ khác.');
-  if (!getServiceTypeAvailableDrivers(serviceTypeId).length) return alert('Dịch vụ hiện không khả dụng do chưa có tài xế phù hợp. Vui lòng chọn dịch vụ khác.');
   const type = serviceType.vehicleType;
   const pickup = document.getElementById('sim-pickup').value.trim() || 'Vị trí khách';
   const dropoff = document.getElementById('sim-dropoff').value.trim() || 'Điểm đến';
+  const pickupLocation = resolvePickupLocation(pickup);
+  const radius = getMatchingRadiusConfig(serviceType).initialKm;
+  if (!getServiceTypeAvailableDrivers(serviceTypeId, pickupLocation, radius).length) return alert('Dịch vụ hiện không khả dụng trong bán kính ban đầu. Vui lòng chọn dịch vụ khác.');
   const method = document.getElementById('sim-pay').value === 'cash' ? 'cash' : 'wallet';
   const distance = Math.round((3 + Math.random() * 12) * 10) / 10;
-  const fare = calculateServiceTypeFare(serviceType, distance);
+  const pricingBreakdown = calculateServiceTypeFareBreakdown(serviceType, distance, new Date());
+  const fare = pricingBreakdown.total;
   const traceId = newTraceId();
   const id = genId('BK', BOOKINGS);
   const b = {
@@ -6555,16 +7786,16 @@ function simCreateRideBooking() {
     bookingType: type, serviceTypeId, pricingKey: serviceType.pricingKey,
     bookingStatus: 'PENDING_CONFIRMATION', paymentStatus: 'PENDING', fulfillmentStatus: null,
     customerId: custId, agentId: null, driverId: null,
-    pickup, dropoff, fareSnapshot: fare, distance,
-    pricingSnapshot: { serviceTypeId, pricingKey: serviceType.pricingKey, fare, distance },
+    pickup, dropoff, pickupLat: pickupLocation.lat, pickupLng: pickupLocation.lng, fareSnapshot: fare, distance,
+    pricingSnapshot: pricingBreakdown,
     paymentMethod: method, paymentReference: null, fulfillmentTaskId: null,
-    createdAt: nowStr(), updatedAt: nowStr()
+    createdAt: nowStr(), createdAtEpoch: Date.now(), updatedAt: nowStr()
   };
   BOOKINGS.unshift(b);
   createAuditLog({ action: 'booking.create', target: id, traceId, actor: custId, actorRole: 'CUSTOMER',
     sourceSite: 'customer', before: null, after: { type, serviceTypeId, fare } });
   createNotification({ type: 'booking_created', recipient: custId,
-    content: `Đã đặt ${serviceType.name} ${b.bookingCode}, đang xử lý thanh toán...` });
+    content: `Đã đặt ${getServiceTypeDisplayName(serviceType)} ${b.bookingCode}, đang xử lý thanh toán...` });
   const pay = processPayment(b, traceId);
   if (pay.success) {
     b.bookingStatus = 'CONFIRMED'; b.fulfillmentStatus = 'PENDING'; b.updatedAt = nowStr();
@@ -6575,6 +7806,28 @@ function simCreateRideBooking() {
     toast(`Đặt ${b.bookingCode} nhưng thanh toán thất bại (ví không đủ) — nạp ví rồi thử lại`, 'warning');
   }
   renderPage(currentPage); updateBadges(); renderSimPanel();
+}
+
+function simSubmitDriverRating(bookingId) {
+  const booking = BOOKINGS.find(b => b.id === bookingId);
+  if (!booking || booking.bookingStatus !== 'COMPLETED' || booking.customerId !== _simCustomerId || !booking.driverId) return alert('Chuyến chưa đủ điều kiện đánh giá.');
+  if (DRIVER_RATINGS.some(r => r.bookingId === bookingId)) return alert('Chuyến này đã được đánh giá.');
+  const score = Number(document.getElementById(`rating-score-${bookingId}`)?.value);
+  const comment = document.getElementById(`rating-comment-${bookingId}`)?.value.trim() || '';
+  if (!Number.isInteger(score) || score < 1 || score > 5) return alert('Điểm đánh giá phải từ 1 đến 5 sao.');
+  const driver = findDriver(booking.driverId);
+  if (!driver) return alert('Không tìm thấy tài xế.');
+  const previousCount = getDriverRatingCount(driver);
+  const previousAverage = Number(driver.rating) || 0;
+  driver.rating = Math.round(((previousAverage * previousCount + score) / (previousCount + 1)) * 10) / 10;
+  driver.ratingCount = previousCount + 1;
+  DRIVER_RATINGS.unshift({ id: genId('DRT', DRIVER_RATINGS), bookingId, driverId: driver.id, customerId: booking.customerId, score, comment, createdAt: nowStr() });
+  createAuditLog({ action: 'driver.rating.create', target: bookingId, actor: booking.customerId, actorRole: 'CUSTOMER', before: null, after: { driverId: driver.id, score } });
+  createNotification({ type: 'driver_rating_received', recipient: driver.id, content: `Bạn nhận được đánh giá ${score} sao cho chuyến ${booking.bookingCode}` });
+  scheduleSave();
+  toast('Đã gửi đánh giá tài xế', 'success');
+  renderPage(currentPage);
+  renderSimPanel();
 }
 
 function simCustomerCancel(bookingId) {
@@ -6614,16 +7867,20 @@ function resolveReschedule(bookingId, approve) {
 
 // ---------- TAB TÀI XẾ ----------
 function renderSimDriver() {
-  const tasks = FULFILLMENT_TASKS.filter(t => ['ASSIGNED','IN_PROGRESS'].includes(t.status));
-  if (!tasks.length) return '<div class="sim-empty">Chưa có nhiệm vụ nào được phân cho tài xế.<br>Hãy phân công đơn ở mục "Nhiệm vụ phân công".</div>';
-  return tasks.map(t => {
+  if (!_simDriverId || !DRIVERS.some(d => d.id === _simDriverId)) _simDriverId = DRIVERS[0]?.id || null;
+  const driver = findDriver(_simDriverId);
+  if (!driver) return '<div class="sim-empty">Chưa có tài xế Bike/Car.</div>';
+  const driverOptions = DRIVERS.map(d => `<option value="${d.id}" ${d.id === driver.id ? 'selected' : ''}>${esc(d.name)} · ${esc(d.plate)}</option>`).join('');
+  const tasks = FULFILLMENT_TASKS.filter(t => t.driverId === driver.id && ['ASSIGNED','IN_PROGRESS'].includes(t.status));
+  const taskCards = tasks.map(t => {
     const b = BOOKINGS.find(x => x.id === t.bookingId);
     if (!b) return '';
     const vt = VEHICLE_TYPES[b.bookingType];
     let acts = '';
     if (t.status === 'ASSIGNED' && !t.acceptedAt) {
+      const remaining = t.offerExpiresAt ? Math.max(0, Math.ceil((new Date(t.offerExpiresAt).getTime() - Date.now()) / 1000)) : DRIVER_OFFER_TIMEOUT_SECONDS;
       acts = `<button class="btn btn-sm btn-success" onclick="simDriver('accept','${b.id}')">✅ Nhận</button>
-              <button class="btn btn-sm btn-danger" onclick="simDriver('reject','${b.id}')">❌ Từ chối</button>`;
+              <button class="btn btn-sm btn-danger" onclick="simDriver('reject','${b.id}')">❌ Từ chối</button><span class="badge badge-pending">Còn ${remaining}s</span>`;
     } else if (t.status === 'ASSIGNED') {
       acts = `<button class="btn btn-sm btn-primary" onclick="simDriver('start','${b.id}')">▶️ Bắt đầu</button>
               <button class="btn btn-sm btn-danger" onclick="simDriver('reject','${b.id}')">❌ Từ chối</button>`;
@@ -6636,7 +7893,45 @@ function renderSimDriver() {
       <div class="sc-route">🧑‍✈️ ${esc(getDriverName(t.driverId))}${t.vehicleId ? ' · '+esc(getVehicleName(t.vehicleId)) : ''}</div>
       <div class="sc-route">${esc(b.pickup)} → ${esc(b.dropoff)} · ${fmt(b.fareSnapshot)}${t.acceptedAt ? ' · đã nhận' : ''}</div>
       <div class="sim-actions">${acts}</div></div>`;
-  }).join('');
+  }).join('') || '<div class="sim-empty">Tài xế chưa có nhiệm vụ đang hoạt động.</div>';
+
+  const latestRatings = DRIVER_RATINGS.filter(r => r.driverId === driver.id).slice(0, 3);
+  const ratingHtml = latestRatings.map(r => `<div class="sim-card"><div class="sc-top"><span class="sc-code">${'⭐'.repeat(r.score)}</span><span class="text-muted">${esc(r.createdAt)}</span></div><div class="sc-route">${esc(r.comment || 'Khách không để lại nhận xét')}</div></div>`).join('') || '<div class="sim-empty">Chưa có đánh giá mới trong bản demo.</div>';
+  return `<div class="sim-card sim-form">
+    <label>Tài xế</label><select class="input" onchange="simSelectDriver(this.value)">${driverOptions}</select>
+    <div class="sc-route" style="margin-top:8px"><b>${driverBadge(driver.status)}</b> · GPS ${driver.gpsEnabled === false ? 'đang tắt' : 'đang bật'}</div>
+    <div class="sc-route">Tổng ${Number(driver.trips || 0).toLocaleString()} chuyến · hôm nay ${getDriverCompletedToday(driver.id)} · ⭐ ${Number(driver.rating || 0).toFixed(1)} (${getDriverRatingCount(driver)} lượt)</div>
+    <div class="sim-actions"><button class="btn btn-sm ${driver.status === 'offline' ? 'btn-success' : 'btn-outline'}" onclick="simDriverSetOnline('${driver.id}',${driver.status === 'offline'})">${driver.status === 'offline' ? '🟢 Bật Online' : '⚫ Tắt Online'}</button><button class="btn btn-sm btn-outline" onclick="simDriverToggleGps('${driver.id}')">📍 ${driver.gpsEnabled === false ? 'Bật GPS' : 'Tắt GPS'}</button></div>
+  </div>
+  <div class="sc-code" style="margin:14px 0 8px">Nhiệm vụ của tài xế</div>${taskCards}
+  <div class="sc-code" style="margin:14px 0 8px">Đánh giá gần nhất</div>${ratingHtml}`;
+}
+
+function simSelectDriver(driverId) { _simDriverId = driverId; renderSimPanel(); }
+
+function simDriverSetOnline(driverId, online) {
+  const driver = findDriver(driverId);
+  if (!driver) return;
+  if (!online && (driver.status === 'busy' || driver.currentAssignmentId)) return alert('Không thể Offline khi tài xế đang có chuyến.');
+  driver.status = online ? 'online' : 'offline';
+  driver.gpsEnabled = online;
+  if (online) {
+    driver.lastHeartbeatAt = new Date().toISOString();
+    driver.lastLocationAt = new Date().toISOString();
+  }
+  createAuditLog({ action: 'driver.work_status.update', target: driverId, actor: driverId, actorRole: 'DRIVER', before: null, after: { status: driver.status } });
+  scheduleSave(); renderPage(currentPage); renderSimPanel();
+}
+
+function simDriverToggleGps(driverId) {
+  const driver = findDriver(driverId);
+  if (!driver || driver.status === 'offline') return alert('Tài xế phải Online trước khi bật GPS.');
+  driver.gpsEnabled = driver.gpsEnabled === false;
+  if (driver.gpsEnabled) {
+    driver.lastHeartbeatAt = new Date().toISOString();
+    driver.lastLocationAt = new Date().toISOString();
+  }
+  scheduleSave(); renderPage(currentPage); renderSimPanel();
 }
 
 function simDriver(action, bookingId) {

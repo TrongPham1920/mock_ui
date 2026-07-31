@@ -99,6 +99,8 @@ const PORTAL_USERS = [
 // ---- TRANSPORT MASTER DATA ----
 // ---- VEHICLE_CATEGORIES — phân loại xe (chung cho mọi serviceType) ----
 const VEHICLE_CATEGORIES = {
+  motorbike:     { label: 'Xe máy',       icon: '🏍️' },
+  car:           { label: 'Ô tô',         icon: '🚗' },
   seat:          { label: 'Ghế ngồi',     icon: '💺' },
   sleeper:       { label: 'Giường nằm',   icon: '🛏️' },
   limo_seat:     { label: 'Limousine ngồi', icon: '🚐' },
@@ -113,9 +115,12 @@ const VEHICLE_MODELS = [
   { id: 'SL002', name: 'Giường nằm 36 chỗ',  serviceType: 'INTERCITY', category: 'sleeper',      seats: 36, status: 'active', luggage: '25kg/khách', description: 'Giường nằm 2 tầng', rows: 12, cols: 3 },
   { id: 'SL003', name: 'Limousine 22 chỗ',   serviceType: 'INTERCITY', category: 'limo_seat',    seats: 22, status: 'active', luggage: '15kg/khách', description: 'Limousine cao cấp', rows: 6, cols: 4 },
   { id: 'VM004', name: 'Limousine nằm 18 chỗ', serviceType: 'INTERCITY', category: 'limo_sleeper', seats: 18, status: 'active', luggage: '20kg/khách', description: 'Limousine giường nằm cao cấp', rows: 6, cols: 3 },
-  { id: 'VM005', name: 'Xe máy phổ thông',   serviceType: 'BIKE',      category: 'other',        seats: 1,  status: 'active', luggage: '', description: 'Xe máy 2 bánh chở 1 khách' },
-  { id: 'VM006', name: 'Xe hơi 4 chỗ',       serviceType: 'CAR',       category: 'seat',         seats: 4,  status: 'active', luggage: '2 vali', description: 'Sedan 4 chỗ' },
-  { id: 'VM007', name: 'Xe hơi 7 chỗ',       serviceType: 'CAR',       category: 'seat',         seats: 7,  status: 'active', luggage: '3 vali', description: 'SUV/MPV 7 chỗ' },
+  { id: 'VM005', code: 'B-TK',       name: 'Bike phổ thông',      serviceType: 'BIKE', category: 'motorbike', tier: 'standard', seats: 1, status: 'active', luggage: '',       description: 'Xe máy tiêu chuẩn cho nhu cầu di chuyển hằng ngày', pricingKey: 'BIKE' },
+  { id: 'VM008', code: 'B-P',        name: 'Bike Premium',        serviceType: 'BIKE', category: 'motorbike', tier: 'premium',  seats: 1, status: 'active', luggage: '',       description: 'Xe máy chất lượng cao hơn, tài xế/xe được chọn lọc', pricingKey: 'BIKE_ECONOMY' },
+  { id: 'VM006', code: 'CTK-04-01',  name: 'Car 04 phổ thông',    serviceType: 'CAR',  category: 'car',       tier: 'standard', seats: 4, status: 'active', luggage: '2 vali', description: 'Ô tô 4 chỗ phổ thông, tối đa 4 khách', pricingKey: 'CAR' },
+  { id: 'VM009', code: 'CP-04-01',   name: 'Car 4 Premium',       serviceType: 'CAR',  category: 'car',       tier: 'premium',  seats: 4, status: 'active', luggage: '2 vali', description: 'Ô tô 4 chỗ chất lượng cao hơn', pricingKey: 'CAR_4_PREMIUM' },
+  { id: 'VM007', code: 'CTK-06-01',  name: 'Car 06 phổ thông',    serviceType: 'CAR',  category: 'car',       tier: 'standard', seats: 6, status: 'active', luggage: '3 vali', description: 'Ô tô 6/7 chỗ phổ thông, tối đa 6 khách', pricingKey: 'CAR_7' },
+  { id: 'VM010', code: 'CP-06',      name: 'Car 06 Premium',      serviceType: 'CAR',  category: 'car',       tier: 'premium',  seats: 6, status: 'active', luggage: '3 vali', description: 'Ô tô 6/7 chỗ chất lượng cao hơn', pricingKey: 'CAR_06_PREMIUM' },
 ];
 // Backward compat alias
 const SEAT_LAYOUTS = VEHICLE_MODELS.map(v => ({ id: v.id, name: v.name, type: v.category === 'seat' ? 'seat' : (v.category === 'sleeper' ? 'sleeper' : 'vip'), totalSeats: v.seats, rows: v.rows, cols: v.cols }));
@@ -818,6 +823,10 @@ const FULFILLMENT_TASKS = [
   { id: 'FT-MNT-LIVE', bookingId: 'BK-MNT-LIVE', driverId: 'IDR002', vehicleId: null, status: 'IN_PROGRESS', assignedAt: '2026-05-26 21:00', startedAt: '2026-05-27 09:00', completedAt: null },
 ];
 
+// Đánh giá tài xế từ app khách. Các điểm trung bình lịch sử vẫn nằm trên hồ sơ
+// tài xế; collection này lưu từng đánh giá mới phát sinh để xem chi tiết/audit.
+const DRIVER_RATINGS = [];
+
 // ---- INTERCITY VEHICLES ----
 // Xe liên tỉnh quản lý độc lập với tài xế. 1 xe có thể gán nhiều tài xế khác nhau theo từng chuyến,
 // và 1 tài xế có thể lái nhiều xe khác nhau.
@@ -1058,39 +1067,79 @@ const PRICING = {
 };
 
 // ---- BIKE/CAR SERVICE TYPES ----
-// Mỗi loại dịch vụ có profile giá riêng; chiết khấu kế thừa theo nhóm BIKE/CAR.
-// Driver có thể được cấp quyền chạy nhiều loại qua serviceTypeIds.
+// Tương thích nội bộ: mỗi loại xe Bike/Car được map 1-1 sang serviceType để booking/matching hiện tại không vỡ.
+// Trên CMS, admin thao tác bằng "Loại xe"; giá và quyền tài xế bám theo loại xe đó.
 const SERVICE_TYPES = [
   {
-    id: 'SVT001', code: 'BIKE_STANDARD', name: 'Bike Phổ thông', icon: '🏍️',
+    id: 'SVT001', code: 'BIKE_STANDARD', name: 'Bike phổ thông', icon: '🏍️', vehicleModelId: 'VM005',
     vehicleType: 'BIKE', seats: 1, description: 'Xe máy tiêu chuẩn, phù hợp nhu cầu di chuyển hằng ngày',
     pricingKey: 'BIKE', matchingRadius: { initialKm: 2, expandStepKm: 2, maxKm: 10 }, status: 'active'
   },
   {
-    id: 'SVT002', code: 'BIKE_ECONOMY', name: 'Bike Tiết kiệm', icon: '🛵',
-    vehicleType: 'BIKE', seats: 1, description: 'Lựa chọn tiết kiệm, thời gian đón có thể lâu hơn',
+    id: 'SVT002', code: 'BIKE_PREMIUM', name: 'Bike Premium', icon: '🛵', vehicleModelId: 'VM008',
+    vehicleType: 'BIKE', seats: 1, description: 'Xe máy chất lượng cao hơn, tài xế/xe được chọn lọc',
     pricingKey: 'BIKE_ECONOMY', matchingRadius: { initialKm: 3, expandStepKm: 2, maxKm: 10 }, status: 'active'
   },
   {
-    id: 'SVT003', code: 'CAR_4_SEAT', name: 'Car 4 chỗ', icon: '🚗',
-    vehicleType: 'CAR', seats: 4, description: 'Xe 4 chỗ cho tối đa 4 hành khách',
+    id: 'SVT003', code: 'CAR_04_STANDARD', name: 'Car 04 phổ thông', icon: '🚗', vehicleModelId: 'VM006',
+    vehicleType: 'CAR', seats: 4, description: 'Ô tô 4 chỗ phổ thông, tối đa 4 khách',
     pricingKey: 'CAR', matchingRadius: { initialKm: 3, expandStepKm: 3, maxKm: 15 }, status: 'active'
   },
   {
-    id: 'SVT004', code: 'CAR_7_SEAT', name: 'Car 7 chỗ', icon: '🚙',
-    vehicleType: 'CAR', seats: 7, description: 'Xe 7 chỗ cho nhóm đông hoặc nhiều hành lý',
+    id: 'SVT004', code: 'CAR_06_STANDARD', name: 'Car 06 phổ thông', icon: '🚙', vehicleModelId: 'VM007',
+    vehicleType: 'CAR', seats: 6, description: 'Ô tô 6/7 chỗ phổ thông, tối đa 6 khách',
     pricingKey: 'CAR_7', matchingRadius: { initialKm: 5, expandStepKm: 5, maxKm: 20 }, status: 'active'
+  },
+  {
+    id: 'SVT005', code: 'CAR_04_PREMIUM', name: 'Car 4 Premium', icon: '🚘', vehicleModelId: 'VM009',
+    vehicleType: 'CAR', seats: 4, description: 'Ô tô 4 chỗ chất lượng cao hơn',
+    pricingKey: 'CAR_4_PREMIUM', matchingRadius: { initialKm: 3, expandStepKm: 3, maxKm: 15 }, status: 'active'
+  },
+  {
+    id: 'SVT006', code: 'CAR_06_PREMIUM', name: 'Car 06 Premium', icon: '🚙', vehicleModelId: 'VM010',
+    vehicleType: 'CAR', seats: 6, description: 'Ô tô 6/7 chỗ chất lượng cao hơn',
+    pricingKey: 'CAR_06_PREMIUM', matchingRadius: { initialKm: 5, expandStepKm: 5, maxKm: 20 }, status: 'active'
   }
+];
+
+// ---- VEHICLE_PERMISSION_RULES ----
+// Rule mặc định để suy ra tài xế được nhận loại xe nào từ xe riêng của tài xế.
+// Premium vẫn cần cờ driver.premiumQualified = true; override trong hồ sơ tài xế chỉ dùng cho ngoại lệ.
+const VEHICLE_PERMISSION_RULES = [
+  { id: 'VPR001', sourceVehicleModelId: 'VM005', allowedVehicleModelIds: ['VM005'], note: 'Bike phổ thông chỉ nhận Bike phổ thông' },
+  { id: 'VPR002', sourceVehicleModelId: 'VM008', allowedVehicleModelIds: ['VM008', 'VM005'], note: 'Bike Premium có thể nhận Premium và phổ thông' },
+  { id: 'VPR003', sourceVehicleModelId: 'VM006', allowedVehicleModelIds: ['VM006'], note: 'Car 04 phổ thông chỉ nhận Car 04 phổ thông' },
+  { id: 'VPR004', sourceVehicleModelId: 'VM009', allowedVehicleModelIds: ['VM009', 'VM006'], note: 'Car 4 Premium có thể nhận Premium và phổ thông cùng số ghế' },
+  { id: 'VPR005', sourceVehicleModelId: 'VM007', allowedVehicleModelIds: ['VM007', 'VM006'], note: 'Car 06 phổ thông có thể nhận Car 06 và Car 04 phổ thông' },
+  { id: 'VPR006', sourceVehicleModelId: 'VM010', allowedVehicleModelIds: ['VM010', 'VM007', 'VM009', 'VM006'], note: 'Car 06 Premium có thể nhận các loại Car phù hợp số ghế' },
 ];
 
 // Các profile mới khởi tạo từ bảng giá Bike/Car hiện tại và có thể chỉnh độc lập trên UI.
 PRICING.BIKE_ECONOMY = {
   ...JSON.parse(JSON.stringify(PRICING.BIKE)),
-  label: 'Bike Tiết kiệm', icon: '🛵'
+  label: 'Bike Premium', icon: '🛵'
 };
 PRICING.CAR_7 = {
   ...JSON.parse(JSON.stringify(PRICING.CAR)),
-  label: 'Car 7 chỗ', icon: '🚙'
+  label: 'Car 06 phổ thông', icon: '🚙'
+};
+PRICING.CAR_4_PREMIUM = {
+  ...JSON.parse(JSON.stringify(PRICING.CAR)),
+  label: 'Car 4 Premium', icon: '🚘',
+  km: [
+    { id: 'KM-C4P0', fromKm: 0, toKm: 1, pricePerKm: 30000, note: 'Giá mở cửa (1km đầu)' },
+    { id: 'KM-C4P1', fromKm: 1, toKm: 20, pricePerKm: 16000, note: 'Từ km 1 → km 20' },
+    { id: 'KM-C4P2', fromKm: 20, toKm: null, pricePerKm: 14000, note: 'Trên 20 km' },
+  ]
+};
+PRICING.CAR_06_PREMIUM = {
+  ...JSON.parse(JSON.stringify(PRICING.CAR_7)),
+  label: 'Car 06 Premium', icon: '🚙',
+  km: [
+    { id: 'KM-C6P0', fromKm: 0, toKm: 1, pricePerKm: 35000, note: 'Giá mở cửa (1km đầu)' },
+    { id: 'KM-C6P1', fromKm: 1, toKm: 20, pricePerKm: 18000, note: 'Từ km 1 → km 20' },
+    { id: 'KM-C6P2', fromKm: 20, toKm: null, pricePerKm: 15000, note: 'Trên 20 km' },
+  ]
 };
 
 // ---- MAINTENANCE (Bảo dưỡng hộ) — pickupAddress = địa chỉ cá nhân của khách, kèm engineType ----
@@ -1185,55 +1234,63 @@ const AGENTS = [
   { id: 'AGT003', name: 'Trần Agent HN', code: 'AGENT_HN_001', phone: '0901000022', email: 'agent.hn@rideops.vn', status: 'active', walletBalance: 2100000, todayBookings: 15, todayRevenue: 4500000, joinedDate: '2024-05-10' },
 ];
 
-// ---- LOCATIONS (Cây hành chính 2 cấp: Tỉnh/TP — Huyện) ----
-// - TP trực thuộc TW (HCM/HN/DN/HP/CT): type='city', parentId=null → 1 cấp, dropdown hiển thị thẳng.
-// - Tỉnh: type='province', parentId=null → là parent group.
-// - Huyện/TP thuộc tỉnh: type='district', parentId=<tỉnh-id> → dropdown nested dưới tỉnh.
-// Route chỉ trỏ về leaf (city hoặc district), không trỏ thẳng vào province.
+// ---- LOCATIONS (Địa điểm phục vụ + toàn bộ xã mới) ----
+// Nguồn hành chính hiện hành: 34 tỉnh/thành và 2.621 xã từ vietnam-communes-2025.js.
+// Phường và đặc khu không được đưa vào dropdown tạo tuyến theo yêu cầu nghiệp vụ.
+const VN_PROVINCE_LOCATIONS = VN_PROVINCES_2025.map(province => ({
+  id: `VN_PROVINCE_${province.code}`,
+  name: province.shortName,
+  officialName: province.name,
+  type: 'province',
+  adminCode: province.code,
+  parentId: null
+}));
+
+const SERVICE_LOCATIONS = [
+  // Địa điểm phục vụ chọn trực tiếp, không xổ xuống các phường nội đô.
+  { id: 'HCM', name: 'TP.HCM', type: 'city', parentId: null, adminProvinceCode: '79' },
+  { id: 'HN',  name: 'Hà Nội', type: 'city', parentId: null, adminProvinceCode: '01' },
+  { id: 'DN',  name: 'Đà Nẵng', type: 'city', parentId: null, adminProvinceCode: '48' },
+  { id: 'HP',  name: 'Hải Phòng', type: 'city', parentId: null, adminProvinceCode: '31' },
+  { id: 'CT',  name: 'Cần Thơ', type: 'city', parentId: null, adminProvinceCode: '92' },
+
+  // Các địa danh vận hành được gắn với tỉnh/thành mới sau sắp xếp.
+  { id: 'BDU', name: 'Bình Dương', type: 'service_area', parentId: 'VN_PROVINCE_79' },
+  { id: 'VT',  name: 'Vũng Tàu', type: 'service_area', parentId: 'VN_PROVINCE_79' },
+  { id: 'BR',  name: 'Bà Rịa', type: 'service_area', parentId: 'VN_PROVINCE_79' },
+  { id: 'LT',  name: 'Long Điền', type: 'service_area', parentId: 'VN_PROVINCE_79' },
+  { id: 'DL',  name: 'Đà Lạt', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'BL',  name: 'Bảo Lộc', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'DD',  name: 'Đức Trọng', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'PT',  name: 'Phan Thiết', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'LG',  name: 'La Gi', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'MN',  name: 'Mũi Né', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'DUL', name: 'Đức Linh', type: 'service_area', parentId: 'VN_PROVINCE_68' },
+  { id: 'NT',  name: 'Nha Trang', type: 'service_area', parentId: 'VN_PROVINCE_56' },
+  { id: 'CR',  name: 'Cam Ranh', type: 'service_area', parentId: 'VN_PROVINCE_56' },
+  { id: 'HA',  name: 'Hội An', type: 'service_area', parentId: 'VN_PROVINCE_48' },
+  { id: 'TK',  name: 'Tam Kỳ', type: 'service_area', parentId: 'VN_PROVINCE_48' },
+  { id: 'BH',  name: 'Biên Hòa', type: 'service_area', parentId: 'VN_PROVINCE_75' },
+  { id: 'LK',  name: 'Long Khánh', type: 'service_area', parentId: 'VN_PROVINCE_75' }
+];
+
+const VN_COMMUNE_LOCATIONS = VN_COMMUNES_2025.map(commune => ({
+  id: `VN_XA_${commune.code}`,
+  name: commune.name,
+  type: 'commune',
+  adminCode: commune.code,
+  adminVersion: VN_ADMINISTRATIVE_VERSION,
+  parentId: `VN_PROVINCE_${commune.provinceCode}`
+}));
+
 const LOCATIONS = [
-  // ===== 5 TP trực thuộc TW (1 cấp) =====
-  { id: 'HCM',  name: 'TP.HCM',            type: 'city', parentId: null },
-  { id: 'HN',   name: 'Hà Nội',            type: 'city', parentId: null },
-  { id: 'DN',   name: 'Đà Nẵng',           type: 'city', parentId: null },
-  { id: 'HP',   name: 'Hải Phòng',         type: 'city', parentId: null },
-  { id: 'CT',   name: 'Cần Thơ',           type: 'city', parentId: null },
-
-  // ===== Lâm Đồng =====
-  { id: 'LD',   name: 'Lâm Đồng',          type: 'province', parentId: null },
-  { id: 'DL',   name: 'Đà Lạt',            type: 'district', parentId: 'LD' },
-  { id: 'BL',   name: 'Bảo Lộc',           type: 'district', parentId: 'LD' },
-  { id: 'DD',   name: 'Đức Trọng',         type: 'district', parentId: 'LD' },
-
-  // ===== Khánh Hòa =====
-  { id: 'KH',   name: 'Khánh Hòa',         type: 'province', parentId: null },
-  { id: 'NT',   name: 'Nha Trang',         type: 'district', parentId: 'KH' },
-  { id: 'CR',   name: 'Cam Ranh',          type: 'district', parentId: 'KH' },
-
-  // ===== Bà Rịa - Vũng Tàu =====
-  { id: 'BRVT', name: 'Bà Rịa - Vũng Tàu', type: 'province', parentId: null },
-  { id: 'VT',   name: 'Vũng Tàu',          type: 'district', parentId: 'BRVT' },
-  { id: 'BR',   name: 'Bà Rịa',            type: 'district', parentId: 'BRVT' },
-  { id: 'LT',   name: 'Long Điền',         type: 'district', parentId: 'BRVT' },
-
-  // ===== Bình Thuận =====
-  { id: 'BT',   name: 'Bình Thuận',        type: 'province', parentId: null },
-  { id: 'PT',   name: 'Phan Thiết',        type: 'district', parentId: 'BT' },
-  { id: 'LG',   name: 'La Gi',             type: 'district', parentId: 'BT' },
-  { id: 'MN',   name: 'Mũi Né',            type: 'district', parentId: 'BT' },
-
-  // ===== Quảng Nam =====
-  { id: 'QN',   name: 'Quảng Nam',         type: 'province', parentId: null },
-  { id: 'HA',   name: 'Hội An',            type: 'district', parentId: 'QN' },
-  { id: 'TK',   name: 'Tam Kỳ',            type: 'district', parentId: 'QN' },
-
-  // ===== Đồng Nai =====
-  { id: 'DON',  name: 'Đồng Nai',          type: 'province', parentId: null },
-  { id: 'BH',   name: 'Biên Hòa',          type: 'district', parentId: 'DON' },
-  { id: 'LK',   name: 'Long Khánh',        type: 'district', parentId: 'DON' },
+  ...VN_PROVINCE_LOCATIONS,
+  ...SERVICE_LOCATIONS,
+  ...VN_COMMUNE_LOCATIONS
 ];
 
 // ---- INTERCITY ROUTES ----
-// originId/destinationId trỏ về LOCATIONS (leaf: city hoặc district).
+// originId/destinationId trỏ về LOCATIONS (địa điểm phục vụ hoặc xã).
 // origin/destination giữ lại làm text hiển thị (backward-compat với booking cũ).
 const INTERCITY_ROUTES = [
   { id: 'INT001', originId: 'HCM', destinationId: 'DL', origin: 'TP.HCM', destination: 'Đà Lạt',    operators: ['PTR001','PTR002'], priceFrom: 280000, duration: '7h',   distance: 305,  schedules: 4  },
@@ -1250,6 +1307,10 @@ const INTERCITY_ROUTES = [
   { id: 'INT011', originId: 'HCM', destinationId: 'BL', origin: 'TP.HCM', destination: 'Bảo Lộc',   operators: ['PTR002'],          priceFrom: 220000, duration: '5h',   distance: 200,  schedules: 4  },
   { id: 'INT012', originId: 'HCM', destinationId: 'MN', origin: 'TP.HCM', destination: 'Mũi Né',    operators: ['PTR005'],          priceFrom: 200000, duration: '4h30', distance: 220,  schedules: 3  },
   { id: 'INT013', originId: 'HCM', destinationId: 'BH', origin: 'TP.HCM', destination: 'Biên Hòa',  operators: ['PTR001'],          priceFrom: 80000,  duration: '1h',   distance: 30,   schedules: 12 },
+  // Tuyến mẫu theo địa điểm phục vụ (không ép cùng cấp hành chính)
+  { id: 'INT014', originId: 'DL',  destinationId: 'HCM', origin: 'Đà Lạt', destination: 'TP.HCM',    operators: ['PTR001','PTR002'], priceFrom: 280000, duration: '7h',   distance: 305,  schedules: 4  },
+  { id: 'INT015', originId: 'DUL', destinationId: 'BDU', origin: 'Đức Linh', destination: 'Bình Dương', operators: ['PTR005'],       priceFrom: 190000, duration: '4h',   distance: 175,  schedules: 2  },
+  { id: 'INT016', originId: 'VT',  destinationId: 'PT',  origin: 'Vũng Tàu', destination: 'Phan Thiết', operators: ['PTR005'],       priceFrom: 220000, duration: '4h30', distance: 210,  schedules: 3  },
 ];
 
 // ---- INTERCITY TRIPS ----
@@ -1303,6 +1364,11 @@ const INTERCITY_TRIPS = [
   { id: 'TRP103', routeId: 'INT005', operatorId: 'PTR005', operatorName: 'Nhà xe Việt Thanh', departureTime: '14:00', arrivalTime: '16:30', vehicleType: 'Ghế ngồi 45 chỗ', price: 120000, seatsTotal: 45, seatsAvailable: 30, status: 'available', date: '2026-05-27' },
   // TRP104: PTR001, 07:00-14:00 → OVERLAP MẠNH với TRP100
   { id: 'TRP104', routeId: 'INT011', operatorId: 'PTR002', operatorName: 'Nhà xe Thành Bưởi', departureTime: '07:00', arrivalTime: '14:00', vehicleType: 'Giường nằm 36 chỗ', price: 220000, seatsTotal: 36, seatsAvailable: 25, status: 'available', date: '2026-05-27' },
+
+  // ===== TUYẾN MẪU THEO ĐỊA ĐIỂM PHỤC VỤ =====
+  { id: 'TRP105', routeId: 'INT014', operatorId: 'PTR002', operatorName: 'Nhà xe Thành Bưởi', departureTime: '08:00', arrivalTime: '15:00', vehicleType: 'Giường nằm 36 chỗ', price: 280000, seatsTotal: 36, seatsAvailable: 18, status: 'available', date: '2026-07-07' },
+  { id: 'TRP106', routeId: 'INT015', operatorId: 'PTR005', operatorName: 'Nhà xe Việt Thanh', departureTime: '07:30', arrivalTime: '11:30', vehicleType: 'Ghế ngồi 16 chỗ', price: 190000, seatsTotal: 16, seatsAvailable: 10, status: 'available', date: '2026-07-07' },
+  { id: 'TRP107', routeId: 'INT016', operatorId: 'PTR005', operatorName: 'Nhà xe Việt Thanh', departureTime: '09:00', arrivalTime: '13:30', vehicleType: 'Ghế ngồi 16 chỗ', price: 220000, seatsTotal: 16, seatsAvailable: 9, status: 'available', date: '2026-07-07' },
 ];
 
 // ============================================================
@@ -1719,9 +1785,9 @@ const STORE_KEY = 'hahago_store_v3';
 const STORE_COLLECTIONS = {
   PORTAL_USERS, ROLES, VEHICLE_MODELS, STOPS, ROUTES, SCHEDULES,
   DRIVERS, INTERCITY_DRIVERS, DRIVER_APPLICATIONS, CUSTOMERS,
-  BOOKINGS, FULFILLMENT_TASKS, INTERCITY_VEHICLES, PARTNERS,
+  BOOKINGS, FULFILLMENT_TASKS, DRIVER_RATINGS, INTERCITY_VEHICLES, PARTNERS,
   PROMOS, WALLETS, WALLET_TRANSACTIONS, REFUNDS, NOTIFICATIONS,
-  NOTIFICATION_CONFIGS, AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, SERVICE_TYPES, MAINTENANCE, REGISTRATIONS,
+  NOTIFICATION_CONFIGS, AUDIT_LOGS, COMMISSIONS, COMMISSION_HISTORY, SERVICE_TYPES, VEHICLE_PERMISSION_RULES, MAINTENANCE, REGISTRATIONS,
   INTERCITY_ROUTES, INTERCITY_TRIPS, AGENT_CUSTOMERS, PRICING
 };
 
