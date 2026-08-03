@@ -969,8 +969,12 @@
           </div>
           <div class="input-group span-2">
             <label>Loại xe hệ thống cho phép nhận</label>
-            <label class="permission-override-toggle"><input type="checkbox" id="driver-permission-override" onchange="renderDriverPermissionPreview()"> Tùy chỉnh ngoại lệ cho tài xế này</label>
+            <label class="permission-override-toggle"><input type="checkbox" id="driver-permission-override" onchange="onDriverPermissionOverrideChange()"> Tùy chỉnh ngoại lệ cho tài xế này</label>
             <div id="driver-service-types" class="service-permission-picker"></div>
+            <div class="driver-override-reason" id="driver-override-reason-wrap" style="display:none">
+              <label>Lý do ngoại lệ <span class="required">*</span></label>
+              <textarea id="driver-override-reason" rows="2" placeholder="Ví dụ: Khóa Premium tạm thời do chưa đủ hồ sơ / Chỉ cho chạy Car 04 trong thời gian thử việc"></textarea>
+            </div>
             <div class="text-muted" style="font-size:11px;margin-top:6px">Mặc định hệ thống tự suy ra từ loại xe tài xế đang chạy và cờ Premium. Chỉ bật tùy chỉnh khi cần cấp/khóa ngoại lệ.</div>
           </div>
         </div>

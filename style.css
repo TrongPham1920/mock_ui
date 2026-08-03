@@ -1858,6 +1858,26 @@ select {
   font-weight: 600;
 }
 .permission-override-toggle input { accent-color: var(--accent); }
+.driver-override-reason {
+  margin: 8px 0 10px;
+}
+.driver-override-reason label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.driver-override-reason textarea {
+  width: 100%;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 185, 70, 0.35);
+  border-radius: 10px;
+  color: var(--text-primary);
+  background: rgba(255, 185, 70, 0.08);
+  resize: vertical;
+}
 .driver-quick-flags {
   display: flex;
   flex-wrap: wrap;

@@ -1611,8 +1611,10 @@ function ensureBikeCarServiceTypeData() {
     if (d.permissionOverrideEnabled) {
       d.overrideServiceTypeIds = (Array.isArray(d.overrideServiceTypeIds) && d.overrideServiceTypeIds.length ? d.overrideServiceTypeIds : (d.serviceTypeIds || []))
         .filter(id => SERVICE_TYPES.some(s => s.id === id));
+      d.overrideReason = (d.overrideReason || '').trim();
     } else {
       d.overrideServiceTypeIds = [];
+      d.overrideReason = '';
     }
     d.serviceTypePermissionVersion = 3;
     syncDriverDerivedVehiclePermissions(d);
@@ -3002,7 +3004,7 @@ function approveDriverApplication(id, fromModal) {
     const driver = {
       id: newId, name: a.name, phone: a.phone, vehicleType: a.vehicleType, plate: a.plate,
       vehicleModelId: vehicleModel?.id || null, vehicleSeats,
-      largeCarQualified, premiumQualified, permissionOverrideEnabled: false, overrideServiceTypeIds: [],
+      largeCarQualified, premiumQualified, permissionOverrideEnabled: false, overrideReason: '', overrideServiceTypeIds: [],
       status: 'offline', operatorId: null, rating: 5.0, trips: 0, avatar: a.avatar || '👤', currentAssignmentId: null
     };
     driver.serviceTypePermissionVersion = 3;
@@ -3388,9 +3390,25 @@ function getDraftDriverPermissionInput(selectedIds = null) {
   return { model, vehicleType, largeCarQualified, premiumQualified, overrideEnabled, defaultIds, overrideIds };
 }
 
+function syncDriverOverrideReasonVisibility() {
+  const overrideEnabled = document.getElementById('driver-permission-override')?.checked === true;
+  const wrap = document.getElementById('driver-override-reason-wrap');
+  if (wrap) wrap.style.display = overrideEnabled ? 'block' : 'none';
+  if (!overrideEnabled) {
+    const reasonInput = document.getElementById('driver-override-reason');
+    if (reasonInput) reasonInput.value = '';
+  }
+}
+
+function onDriverPermissionOverrideChange() {
+  syncDriverOverrideReasonVisibility();
+  renderDriverPermissionPreview();
+}
+
 function renderDriverPermissionPreview(selectedIds = null) {
   const host = document.getElementById('driver-service-types');
   if (!host) return;
+  syncDriverOverrideReasonVisibility();
   const { vehicleType, largeCarQualified, premiumQualified, overrideEnabled, defaultIds, overrideIds } = getDraftDriverPermissionInput(selectedIds);
   const overrideModelIds = getAllowedVehicleModelIdsByDriverCapabilities(vehicleType, { largeCarQualified, premiumQualified: true });
   const services = getServiceTypesForVehicle(vehicleType, true)
@@ -3437,6 +3455,8 @@ function openDriverModal(driverId = null) {
   document.getElementById('driver-status').value = driver?.status || 'offline';
   const overrideToggle = document.getElementById('driver-permission-override');
   if (overrideToggle) overrideToggle.checked = driver?.permissionOverrideEnabled === true;
+  const overrideReasonInput = document.getElementById('driver-override-reason');
+  if (overrideReasonInput) overrideReasonInput.value = driver?.overrideReason || '';
   document.getElementById('driver-save-btn').textContent = driver ? '💾 Lưu thay đổi' : '➕ Thêm tài xế';
   renderDriverPermissionPreview(driver?.permissionOverrideEnabled ? driver?.overrideServiceTypeIds : null);
   openModal('driver-modal');
@@ -3454,6 +3474,7 @@ function saveDriver() {
   const largeCarQualified = vehicleType === 'CAR' && document.getElementById('driver-six-seat')?.checked === true;
   const premiumQualified = document.getElementById('driver-premium-qualified')?.checked === true;
   const permissionOverrideEnabled = document.getElementById('driver-permission-override')?.checked === true;
+  const overrideReason = permissionOverrideEnabled ? (document.getElementById('driver-override-reason')?.value || '').trim() : '';
   const draftPermission = getDraftDriverPermissionInput();
   const overrideServiceTypeIds = permissionOverrideEnabled
     ? Array.from(document.querySelectorAll('#driver-service-types input:checked')).map(x => x.value)
@@ -3469,11 +3490,15 @@ function saveDriver() {
     alert(permissionOverrideEnabled ? 'Vui lòng chọn ít nhất một loại xe ngoại lệ cho tài xế.' : 'Chưa có loại xe hệ thống cho phép nhận. Vui lòng kiểm tra loại xe hoặc cờ Premium.');
     return;
   }
+  if (permissionOverrideEnabled && !overrideReason) {
+    alert('Vui lòng nhập lý do ngoại lệ để lưu audit.');
+    return;
+  }
 
   if (editId) {
     const driver = DRIVERS.find(d => d.id === editId);
     if (!driver) return;
-    Object.assign(driver, { name, phone, vehicleType, vehicleModelId, vehicleSeats, plate, operatorId: null, status, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideServiceTypeIds, serviceTypeIds, vehicleModelPermissionIds, serviceTypePermissionVersion: 3 });
+    Object.assign(driver, { name, phone, vehicleType, vehicleModelId, vehicleSeats, plate, operatorId: null, status, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideReason, overrideServiceTypeIds, serviceTypeIds, vehicleModelPermissionIds, serviceTypePermissionVersion: 3 });
     if (status === 'online') {
       driver.gpsEnabled = true;
       driver.lastHeartbeatAt = new Date().toISOString();
@@ -3481,16 +3506,16 @@ function saveDriver() {
     } else if (status === 'offline') {
       driver.gpsEnabled = false;
     }
-    createAuditLog({ action: 'driver.vehicle_permission_rule.update', target: editId, before: null, after: { vehicleModelId, largeCarQualified, premiumQualified, permissionOverrideEnabled, serviceTypeIds } });
+    createAuditLog({ action: 'driver.vehicle_permission_rule.update', target: editId, before: null, after: { vehicleModelId, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideReason, serviceTypeIds } });
   } else {
     const id = genId('DRV', DRIVERS);
     const point = deterministicLocation(id);
     DRIVERS.push({ id, name, phone, vehicleType, vehicleModelId, vehicleSeats, plate, operatorId: null,
-      status, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideServiceTypeIds, serviceTypeIds, vehicleModelPermissionIds, serviceTypePermissionVersion: 3, rating: 0, ratingCount: 0, trips: 0, avatar: '👤', currentAssignmentId: null,
+      status, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideReason, overrideServiceTypeIds, serviceTypeIds, vehicleModelPermissionIds, serviceTypePermissionVersion: 3, rating: 0, ratingCount: 0, trips: 0, avatar: '👤', currentAssignmentId: null,
       profileApproved: true, documentsValid: true, gpsEnabled: status === 'online', lat: point.lat, lng: point.lng,
       lastHeartbeatAt: status === 'online' ? new Date().toISOString() : null,
       lastLocationAt: status === 'online' ? new Date().toISOString() : null });
-    createAuditLog({ action: 'driver.create', target: id, before: null, after: { vehicleType, vehicleModelId, vehicleSeats, largeCarQualified, premiumQualified, permissionOverrideEnabled, serviceTypeIds } });
+    createAuditLog({ action: 'driver.create', target: id, before: null, after: { vehicleType, vehicleModelId, vehicleSeats, largeCarQualified, premiumQualified, permissionOverrideEnabled, overrideReason, serviceTypeIds } });
   }
   closeModal('driver-modal');
   renderDrivers();
